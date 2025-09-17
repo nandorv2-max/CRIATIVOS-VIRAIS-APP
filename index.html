@@ -13,10 +13,28 @@
     <style>
       body { 
         font-family: 'Inter', sans-serif; 
-        background-color: #000000; 
+        background-color: #000000;
+        color: #e5e7eb;
+        overflow: hidden;
       }
       .font-caveat { 
         font-family: 'Caveat', cursive; 
+      }
+      .futuristic-background {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        background: linear-gradient(315deg, #0f0c29, #302b63, #24243e);
+        background-size: 400% 400%;
+        animation: gradientAnimation 15s ease infinite;
+        z-index: -1;
+      }
+      @keyframes gradientAnimation {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
       }
       @keyframes fade-in-down { 
         0% { opacity: 0; transform: translateY(-20px) translateX(-50%); } 
@@ -24,6 +42,42 @@
       }
       .animate-fade-in-down { 
         animation: fade-in-down 0.5s ease-out forwards;
+      }
+      /* Custom scrollbar for webkit browsers */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1f2937; /* gray-800 */
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #4b5563; /* gray-600 */
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; /* gray-500 */
+      }
+      /* Custom styles for the hue slider thumb in the color picker */
+      .hue-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        background-color: white;
+        border: 2px solid #e5e7eb; /* gray-200 */
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        cursor: grab;
+        margin-top: -3px; /* Center thumb on track */
+      }
+      .hue-range::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        background-color: white;
+        border: 2px solid #e5e7eb; /* gray-200 */
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        cursor: grab;
       }
     </style>
   <script>
@@ -39,12 +93,14 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.17.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
     "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.12",
-    "@imgly/background-removal": "https://esm.sh/@imgly/background-removal@1.0.4"
+    "@imgly/background-removal": "https://esm.sh/@imgly/background-removal@1.0.4",
+    "mp4-muxer": "https://unpkg.com/mp4-muxer@2.0.2/build/mp4-muxer.mjs"
   }
 }
 </script>
 </head>
   <body>
+    <div class="futuristic-background"></div>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

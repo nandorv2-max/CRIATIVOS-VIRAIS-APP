@@ -17,7 +17,9 @@ const UploadOption: React.FC<{ icon: React.ReactNode; label: string; onClick: ()
         </div>
     );
     
-    return disabled ? <div onClick={() => alert('Esta funcionalidade será adicionada em breve!')}>{content}</div> : <button onClick={onClick}>{content}</button>;
+    // FIX: Prefix 'alert' with 'window.' to ensure it is available in non-browser-default environments.
+    // FIX: Property 'alert' does not exist on type 'Window'.
+    return disabled ? <div onClick={() => window.alert('Esta funcionalidade será adicionada em breve!')}>{content}</div> : <button onClick={onClick}>{content}</button>;
 };
 
 const UploadOptionsModal: React.FC<UploadOptionsModalProps> = ({ isOpen, onClose, onLocalUpload, onGoogleDriveUpload }) => {

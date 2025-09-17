@@ -1,4 +1,5 @@
 
+
 const DB_NAME = 'CreativeEditorDB';
 const STORE_NAME = 'projects';
 const DB_VERSION = 1;
@@ -10,8 +11,10 @@ function getDB(): Promise<IDBDatabase> {
         if (db) {
             return resolve(db);
         }
-
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        // FIX: Prefix with `window.` for broader environment compatibility.
+        // FIX: Property 'indexedDB' does not exist on type 'Window'.
+        const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = () => {
             console.error('IndexedDB error:', request.error);

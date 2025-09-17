@@ -1,4 +1,5 @@
 
+
 export const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -6,12 +7,23 @@ export const toBase64 = (file: File): Promise<string> => new Promise((resolve, r
     reader.onerror = error => reject(error);
 });
 
+export const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+});
+
 export const cropImage = (imageUrl: string, aspectRatio: string): Promise<string> => new Promise((resolve, reject) => {
-    const img = new Image();
+    // FIX: Use `window.Image` to access the constructor in environments where DOM globals are not automatically available.
+    // FIX: Property 'Image' does not exist on type 'Window'.
+    const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.src = imageUrl;
     img.onload = () => {
-        const canvas = document.createElement('canvas');
+        // FIX: Use `window.document` to access the DOM in environments where it's not a global.
+        // FIX: Property 'document' does not exist on type 'Window'.
+        const canvas = window.document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) {
             return reject(new Error('Failed to get canvas context'));
@@ -50,11 +62,15 @@ export const cropImage = (imageUrl: string, aspectRatio: string): Promise<string
 export const createSingleFramedImage = (imageUrl: string, cropRatio: string, labelText: string | null = null): Promise<string> => new Promise(async (resolve, reject) => {
     try {
         const croppedImgUrl = await cropImage(imageUrl, cropRatio);
-        const img = new Image();
+        // FIX: Use `window.Image` to access the constructor in environments where DOM globals are not automatically available.
+        // FIX: Property 'Image' does not exist on type 'Window'.
+        const img = new window.Image();
         img.crossOrigin = "anonymous";
         img.src = croppedImgUrl;
         img.onload = () => {
-            const canvas = document.createElement('canvas');
+            // FIX: Use `window.document` to access the DOM in environments where it's not a global.
+            // FIX: Property 'document' does not exist on type 'Window'.
+            const canvas = window.document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 return reject(new Error('Failed to get canvas context'));
@@ -111,10 +127,16 @@ export const delay = (ms: number): Promise<void> => {
 
 export const extractLastFrame = (videoBlob: Blob): Promise<{ base64data: string; mimeType: string }> => {
   return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    const canvas = document.createElement('canvas');
+    // FIX: Use `window.document` to access the DOM in environments where it's not a global.
+    // FIX: Property 'document' does not exist on type 'Window'.
+    const video = window.document.createElement('video');
+    // FIX: Use `window.document` to access the DOM in environments where it's not a global.
+    // FIX: Property 'document' does not exist on type 'Window'.
+    const canvas = window.document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const url = URL.createObjectURL(videoBlob);
+    // FIX: Use `window.URL` to access the URL API in environments where it's not a global.
+    // FIX: Property 'URL' does not exist on type 'Window'.
+    const url = window.URL.createObjectURL(videoBlob);
 
     video.src = url;
     video.muted = true;
@@ -135,12 +157,16 @@ export const extractLastFrame = (videoBlob: Blob): Promise<{ base64data: string;
       const dataUrl = canvas.toDataURL(mimeType, 0.9);
       const base64data = dataUrl.split(',')[1];
 
-      URL.revokeObjectURL(url);
+      // FIX: Use `window.URL` to access the URL API in environments where it's not a global.
+      // FIX: Property 'URL' does not exist on type 'Window'.
+      window.URL.revokeObjectURL(url);
       resolve({ base64data, mimeType });
     };
 
     video.onerror = (e) => {
-      URL.revokeObjectURL(url);
+      // FIX: Use `window.URL` to access the URL API in environments where it's not a global.
+      // FIX: Property 'URL' does not exist on type 'Window'.
+      window.URL.revokeObjectURL(url);
       reject(new Error('Failed to load video for frame extraction.'));
     };
     video.load();

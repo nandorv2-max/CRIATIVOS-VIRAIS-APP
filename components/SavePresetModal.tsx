@@ -49,7 +49,8 @@ const SavePresetModal: React.FC<SavePresetModalProps> = ({ isOpen, onClose, onSa
                             id="preset-name"
                             type="text"
                             value={presetName}
-                            onChange={e => setPresetName(e.target.value)}
+                            // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+                            onChange={e => setPresetName((e.target as any).value)}
                             className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400"
                         />
                     </div>

@@ -1,17 +1,12 @@
 import type { Templates } from './types';
+import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine } from './components/Icons';
 
 export const TEMPLATES: Templates = {
-    criativo: {
-        name: 'Criativo',
-        description: 'Crie anúncios com um editor interativo.',
-        icon: '💥',
-        isPolaroid: false,
-        prompts: []
-    },
     criativoViral: {
         name: 'Criativo Viral',
         description: 'Crie designs com fotos, vídeos e áudio.',
         icon: '🚀',
+        sidebarIcon: IconRocket,
         isPolaroid: false,
         prompts: []
     },
@@ -19,6 +14,7 @@ export const TEMPLATES: Templates = {
         name: 'Vídeo',
         description: 'Crie sequências de vídeos a partir de uma foto.',
         icon: '🎬',
+        sidebarIcon: IconMovie,
         isPolaroid: false,
         prompts: []
     },
@@ -26,11 +22,12 @@ export const TEMPLATES: Templates = {
         name: 'Cenas do Instagram',
         description: 'Descreva uma cena e crie 6 fotos para as suas redes.',
         icon: '✨',
+        sidebarIcon: IconInstagram,
         isPolaroid: false,
         prompts: []
     },
     worldTour: {
-        name: 'Viagem pelo Mundo', description: 'Escolha um destino e veja-se lá.', icon: '🌍', isPolaroid: true,
+        name: 'Viagem pelo Mundo', description: 'Escolha um destino e veja-se lá.', icon: '🌍', sidebarIcon: IconWorld, isPolaroid: true,
         destinations: [
             { id: 'Paris', prompts: [ { id: 'Torre Eiffel', base: 'a posar em frente à Torre Eiffel ao pôr do sol, com roupa de turista estilosa' }, { id: 'Museu do Louvre', base: 'a caminhar casualmente em frente à pirâmide do Museu do Louvre, segurando um café' }, { id: 'Rio Sena', base: 'num cruzeiro de barco no Rio Sena, com a Catedral de Notre-Dame ao fundo' }, { id: 'Montmartre', base: 'sentado num café pitoresco em Montmartre, com a Basílica de Sacré-Cœur visível na colina' }, { id: 'Arco do Trifo', base: 'uma foto espontânea atravessando a rua na Champs-Élysées com o Arco do Trifo ao fundo' }, { id: 'Jardim de Luxemburgo', base: 'a relaxar numa cadeira verde no Jardim de Luxemburgo, com o palácio ao fundo' } ] },
             { id: 'Roma', prompts: [ { id: 'Coliseu', base: 'a posar perto do Coliseu, com roupas leves de verão e óculos de sol' }, { id: 'Fonte de Trevi', base: 'a atirar uma moeda sobre o ombro na Fonte de Trevi, com uma multidão desfocada' }, { id: 'Vaticano', base: 'de pé na Praça de São Pedro no Vaticano, com a Basílica ao fundo' }, { id: 'Panteão', base: 'a olhar para o óculo do Panteão, com um raio de luz a iluminar' }, { id: 'Trastevere', base: 'a comer um gelado numa rua de paralelepípedos em Trastevere' }, { id: 'Fórum Romano', base: 'a caminhar por entre as ruínas antigas do Fórum Romano' } ] },
@@ -43,11 +40,20 @@ export const TEMPLATES: Templates = {
         name: 'Editor Profissional',
         description: 'Ajustes manuais e edições com IA.',
         icon: '🛠️',
+        sidebarIcon: IconTools,
         isPolaroid: false,
         prompts: []
     },
     cleanAndSwap: {
-        name: 'Limpar e Trocar', description: 'Remova itens de interface e troque a pessoa da foto.', icon: '🧹', isPolaroid: false,
+        name: 'Limpar e Trocar', description: 'Remova itens de interface e troque a pessoa da foto.', icon: '🧹', sidebarIcon: IconBroom, isPolaroid: false,
         prompts: [{ id: 'Resultado', base: 'Imagem limpa e com a pessoa trocada' }]
+    },
+    unir: {
+        name: 'Unir',
+        description: 'Combine elementos de várias imagens em uma só.',
+        icon: '🔗',
+        sidebarIcon: IconCombine,
+        isPolaroid: false,
+        prompts: []
     }
 };

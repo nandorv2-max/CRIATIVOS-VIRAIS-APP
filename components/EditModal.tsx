@@ -45,8 +45,9 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
         setDetailImages([]);
         setIsMaskDrawn(false);
         if (canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+            // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+            const ctx = (canvasRef.current as any).getContext('2d');
+            ctx?.clearRect(0, 0, (canvasRef.current as any).width, (canvasRef.current as any).height);
         }
     }, []);
 
@@ -62,21 +63,24 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
             // Match canvas resolution to its display size for accurate coordinate mapping.
             // This fixes the brush tool by ensuring the canvas drawing buffer dimensions
             // are the same as its CSS dimensions.
-            canvas.width = canvas.clientWidth;
-            canvas.height = canvas.clientHeight;
+            // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+            (canvas as any).width = (canvas as any).clientWidth;
+            (canvas as any).height = (canvas as any).clientHeight;
         }
     }, []);
 
     useEffect(() => {
         const image = imageRef.current;
         if (image) {
-            image.addEventListener('load', setupCanvas);
+            // FIX: Cast image to `any` to access properties in environments with incomplete DOM typings.
+            (image as any).addEventListener('load', setupCanvas);
             // If the image is already loaded (e.g., from cache)
-            if (image.complete) {
+            if ((image as any).complete) {
                 setupCanvas();
             }
             return () => {
-                image.removeEventListener('load', setupCanvas);
+                // FIX: Cast image to `any` to access properties in environments with incomplete DOM typings.
+                (image as any).removeEventListener('load', setupCanvas);
             };
         }
     }, [imageUrl, setupCanvas]);
@@ -84,14 +88,15 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     const getCoords = (e: React.MouseEvent<HTMLCanvasElement>): { x: number, y: number } | null => {
         const canvas = canvasRef.current;
         const image = imageRef.current;
-        if (!canvas || !image || !image.naturalWidth) return null;
+        // FIX: Cast canvas/image to `any` to access properties in environments with incomplete DOM typings.
+        if (!canvas || !image || !(image as any).naturalWidth) return null;
     
-        const rect = canvas.getBoundingClientRect();
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
+        const rect = (canvas as any).getBoundingClientRect();
+        const canvasWidth = (canvas as any).width;
+        const canvasHeight = (canvas as any).height;
     
-        const naturalWidth = image.naturalWidth;
-        const naturalHeight = image.naturalHeight;
+        const naturalWidth = (image as any).naturalWidth;
+        const naturalHeight = (image as any).naturalHeight;
     
         const canvasRatio = canvasWidth / canvasHeight;
         const imageRatio = naturalWidth / naturalHeight;
@@ -133,7 +138,8 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
         }
 
         const canvas = canvasRef.current!;
-        const ctx = canvas.getContext('2d')!;
+        // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+        const ctx = (canvas as any).getContext('2d')!;
         
         ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
         ctx.lineWidth = brushSize;
@@ -158,7 +164,8 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
         lastPosRef.current = coords;
 
         const canvas = canvasRef.current!;
-        const ctx = canvas.getContext('2d')!;
+        // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+        const ctx = (canvas as any).getContext('2d')!;
         ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
         ctx.lineWidth = brushSize;
         ctx.lineCap = 'round';
@@ -171,7 +178,8 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     };
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        const rect = e.currentTarget.getBoundingClientRect();
+        // FIX: Property 'getBoundingClientRect' does not exist on type 'EventTarget & HTMLCanvasElement'.
+        const rect = (e.currentTarget as any).getBoundingClientRect();
         setCursorPos({
             top: e.clientY - rect.top,
             left: e.clientX - rect.left,
@@ -186,16 +194,21 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     
     const handleClearMask = () => {
         const canvas = canvasRef.current!;
-        const ctx = canvas.getContext('2d')!;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+        const ctx = (canvas as any).getContext('2d')!;
+        ctx.clearRect(0, 0, (canvas as any).width, (canvas as any).height);
         setIsMaskDrawn(false);
     };
 
     const handleRotate = () => setRotation(prev => (prev + 90) % 360);
 
     const handleDetailImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const files = Array.from(e.target.files);
+        // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+        // FIX: Property 'files' does not exist on type 'HTMLInputElement'.
+        if ((e.target as any).files) {
+            // FIX: Explicitly type `files` as File[] to resolve ambiguity for the `toBase64` function.
+            // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+            const files: File[] = Array.from(((e.target as any) as HTMLInputElement).files || []);
             try {
                 const base64Images = await Promise.all(files.map(file => toBase64(file)));
                 setDetailImages(prev => [...prev, ...base64Images].slice(0, 5)); // Limit to 5 detail images
@@ -244,7 +257,8 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
 
         try {
             const maskCanvas = canvasRef.current!;
-            const base64Mask = isMaskDrawn ? maskCanvas.toDataURL('image/png') : undefined;
+            // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+            const base64Mask = isMaskDrawn ? (maskCanvas as any).toDataURL('image/png') : undefined;
             
             const newImageUrl = await generateImageWithRetry({
                 prompt: instruction,
@@ -322,20 +336,23 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
                             <button onClick={handleRotate} className="flex items-center gap-2 text-gray-300 hover:text-white"><IconRotate /> Girar</button>
                             <div className="flex items-center gap-2 text-gray-300">
                                 <IconBrush />
-                                <input type="range" min="5" max="100" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value, 10))} className="w-24" />
+                                {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                                <input type="range" min="5" max="100" value={brushSize} onChange={e => setBrushSize(parseInt((e.target as any).value, 10))} className="w-24" />
                             </div>
                             <button onClick={handleClearMask} className="flex items-center gap-2 text-gray-300 hover:text-white"><IconTrash /> Limpar</button>
                         </div>
                         <textarea
                             value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
+                            // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+                            onChange={(e) => setPrompt((e.target as any).value)}
                             placeholder="Descreva a sua edição... ex: 'Adicionar uma tatuagem de dragão no braço'"
                             className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white min-h-[80px] resize-y mb-2"
                         />
                         <p className="text-xs text-gray-500 text-center mb-4">Descreva a sua edição. Se desejar, pinte sobre a imagem para indicar uma área específica.</p>
 
                         <div className="mb-4">
-                             <Button onClick={() => detailFileInputRef.current?.click()} className="w-full">Adicionar Foto de Detalhe</Button>
+                             {/* FIX: Cast ref.current to `any` to access properties in environments with incomplete DOM typings. */}
+                             <Button onClick={() => (detailFileInputRef.current as any)?.click()} className="w-full">Adicionar Foto de Detalhe</Button>
                              <input type="file" multiple accept="image/*" ref={detailFileInputRef} onChange={handleDetailImageChange} className="hidden" />
                              <div className="flex flex-wrap gap-2 mt-2 justify-center">
                                 {detailImages.map((img, index) => (

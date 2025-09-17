@@ -1,3 +1,5 @@
+
+
 export type GeneratedImageStatus = 'pending' | 'success' | 'failed';
 
 export interface GeneratedImage {
@@ -25,6 +27,8 @@ export interface BaseTemplate {
     name: string;
     description: string;
     icon: string;
+    // FIX: Added sidebarIcon to the BaseTemplate interface to resolve errors in constants.ts and Sidebar.tsx.
+    sidebarIcon: React.FC<{ className?: string }>;
     isPolaroid: boolean;
 }
 
@@ -164,3 +168,13 @@ export type UploadedAsset = {
     thumbnail: string; // For display in the gallery
     name: string;
 };
+
+export interface DownloadJob {
+  id: string;
+  fileName: string;
+  status: 'preparing' | 'rendering' | 'encoding' | 'done' | 'error';
+  progress: number; // 0-100
+  resultUrl?: string;
+  error?: string;
+  thumbnail?: string;
+}

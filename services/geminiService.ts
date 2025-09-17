@@ -1,3 +1,5 @@
+
+
 import { GoogleGenAI, Modality, GenerateContentResponse, Part } from "@google/genai";
 import type { ModelInstructionOptions, Prompt } from '../types';
 import { toBase64, delay } from "../utils/imageUtils";
@@ -118,7 +120,7 @@ export const generateImageWithRetry = async ({
                     return `data:image/png;base64,${base64ImageBytes}`;
                 }
             }
-            // Fix: Use response.text to get the text response, instead of manually searching for text parts.
+            // FIX: Use response.text to get the text response, instead of manually searching for text parts.
             const textResponse = response.text;
             if (textResponse) {
                 console.warn("API returned a text response instead of an image:", textResponse);
@@ -217,7 +219,9 @@ export const generateVideo = async (
   }
   const url = `${v.video.uri}&key=${API_KEY}`;
   
-  const res = await fetch(url);
+  // FIX: Prefix `fetch` with `window.` to ensure it resolves in non-browser default environments.
+  // FIX: Property 'fetch' does not exist on type 'Window'.
+  const res = await window.fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch video: ${res.statusText}`);
   }
@@ -265,29 +269,27 @@ export const getModelInstruction = (
 
     let finalInstruction = baseInstruction;
     
-    // Camera Angle Logic (doesn't apply to enhancements or creative composites)
-    if(template !== 'criativo'){
-        let angleInstruction = '';
-        const effectiveAngle = cameraAngle === 'Padrão' 
-            ? (template === 'cenasDoInstagram' ? 'Frontal' : 'Padrão')
-            : cameraAngle;
+    // Camera Angle Logic
+    let angleInstruction = '';
+    const effectiveAngle = cameraAngle === 'Padrão' 
+        ? (template === 'cenasDoInstagram' ? 'Frontal' : 'Padrão')
+        : cameraAngle;
 
-        switch (effectiveAngle) {
-            case 'Frontal':
-                angleInstruction = " The person should be looking forward, as if speaking directly to the camera or viewer.";
-                break;
-            case 'Low Angle':
-                angleInstruction = " The photo should be taken from a low angle looking up (worm's-eye view), making the person appear more imposing.";
-                break;
-            case 'High Angle':
-                angleInstruction = " The photo should be taken from a high angle looking down (bird's-eye view) on the person.";
-                break;
-            case 'Extreme Close-up':
-                angleInstruction = " The photo should be an extreme close-up, focusing intensely on one part of the face, like the eyes or mouth.";
-                break;
-        }
-        finalInstruction += angleInstruction;
+    switch (effectiveAngle) {
+        case 'Frontal':
+            angleInstruction = " The person should be looking forward, as if speaking directly to the camera or viewer.";
+            break;
+        case 'Low Angle':
+            angleInstruction = " The photo should be taken from a low angle looking up (worm's-eye view), making the person appear more imposing.";
+            break;
+        case 'High Angle':
+            angleInstruction = " The photo should be taken from a high angle looking down (bird's-eye view) on the person.";
+            break;
+        case 'Extreme Close-up':
+            angleInstruction = " The photo should be an extreme close-up, focusing intensely on one part of the face, like the eyes or mouth.";
+            break;
     }
+    finalInstruction += angleInstruction;
 
     return finalInstruction;
 };

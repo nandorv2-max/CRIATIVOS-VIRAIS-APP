@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button';
@@ -18,24 +17,29 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
 
     const stopCamera = useCallback(() => {
         if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+            // FIX: Cast to any to access getTracks, for environments with incomplete MediaStream types.
+            (streamRef.current as any).getTracks().forEach((track: any) => track.stop());
             streamRef.current = null;
         }
-        if (videoRef.current) { videoRef.current.srcObject = null; }
+        // FIX: Cast to any to access srcObject, for environments with incomplete HTMLVideoElement types.
+        if (videoRef.current) { (videoRef.current as any).srcObject = null; }
     }, []);
 
     const startCamera = useCallback(async () => {
         if (videoRef.current) {
             setCameraError(null);
             setCapturedImage(null);
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            // FIX: Use `(window as any).navigator` to access mediaDevices in environments where DOM globals are not available.
+            if (!(window as any).navigator.mediaDevices || !(window as any).navigator.mediaDevices.getUserMedia) {
                 setCameraError("O seu navegador não suporta o acesso à câmara. Por favor, tente um navegador diferente.");
                 return;
             }
             try {
                 stopCamera();
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1024 }, height: { ideal: 1024 }, facingMode: 'user' } });
-                videoRef.current.srcObject = stream;
+                // FIX: Use `(window as any).navigator` to access mediaDevices.
+                const stream = await (window as any).navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1024 }, height: { ideal: 1024 }, facingMode: 'user' } });
+                // FIX: Cast to any to access srcObject for wider compatibility.
+                (videoRef.current as any).srcObject = stream;
                 streamRef.current = stream;
             } catch (err: any) {
                 console.warn("Aviso ao aceder à câmara (isto pode ser normal se o utilizador negar a permissão):", err);
@@ -59,13 +63,14 @@ const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCapture })
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const context = canvas.getContext('2d');
+            // FIX: Cast to any to access video/canvas properties in environments with incomplete DOM types.
+            (canvas as any).width = (video as any).videoWidth;
+            (canvas as any).height = (video as any).videoHeight;
+            const context = (canvas as any).getContext('2d');
             if(context) {
                 context.scale(-1, 1);
-                context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/png');
+                context.drawImage(video, -(canvas as any).width, 0, (canvas as any).width, (canvas as any).height);
+                const dataUrl = (canvas as any).toDataURL('image/png');
                 setCapturedImage(dataUrl);
             }
         }

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Layer, ImageLayer, ShapeLayer, LayerUpdateProps, UploadedAsset } from '../types';
@@ -6,6 +5,7 @@ import { IconChevronDown, IconFlipHorizontal, IconFlipVertical, IconImage, IconL
 import UploadOptionsModal from './UploadOptionsModal';
 import { toBase64 } from '../utils/imageUtils';
 import { showGoogleDrivePicker } from '../services/googleDriveService';
+import ColorPicker from './ColorPicker';
 
 type CreativeEditorSidebarProps = {
     onAddLayer: (type: 'text' | 'shape' | 'image' | 'frame' | 'video', options?: any) => void;
@@ -13,18 +13,18 @@ type CreativeEditorSidebarProps = {
     selectedLayer: Layer | null;
     onAITool: (tool: 'bg' | 'expand') => void;
     onGenerateAIImage: (prompt: string) => void;
-    // FIX: Added 'project' to the union type to accommodate the loading state for project saving/loading.
     isLoadingAI: 'bg' | 'expand' | 'generate' | 'download' | 'project' | null;
     onToggleLayersPanel: () => void;
     onUpdateBackgroundColor: (color: string) => void;
     backgroundColor: string;
     onOpenBgRemover: () => void;
-    isViralMode: boolean;
     onTriggerUpload: (type: 'image' | 'video' | 'audio') => void;
     uploadedAssets: UploadedAsset[];
     onAssetClick: (asset: UploadedAsset) => void;
     onSaveProject: () => void;
     onLoadProject: () => void;
+    canvasSize: { w: number; h: number };
+    onSetCanvasSize: (size: { w: number; h: number }) => void;
 };
 
 interface AccordionProps {
@@ -33,6 +33,12 @@ interface AccordionProps {
     children: React.ReactNode;
     defaultOpen?: boolean;
 }
+
+const SIZES = [
+    { name: 'Universal', w: 1080, h: 1080 },
+    { name: 'Feed', w: 1080, h: 1350 },
+    { name: 'Stories', w: 1080, h: 1920 }
+];
 
 const Accordion: React.FC<AccordionProps> = ({ title, icon, children, defaultOpen = false }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -65,12 +71,13 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
     onUpdateBackgroundColor,
     backgroundColor,
     onOpenBgRemover,
-    isViralMode,
     onTriggerUpload,
     uploadedAssets,
     onAssetClick,
     onSaveProject,
-    onLoadProject
+    onLoadProject,
+    canvasSize,
+    onSetCanvasSize
 }) => {
     const [aiPrompt, setAiPrompt] = useState('');
     
@@ -110,9 +117,26 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
             <div className="overflow-y-auto">
                  <Accordion title="Projeto" icon={<IconFolder className="w-5 h-5" />}>
                      <div className="space-y-2 p-2 text-sm">
-                         <button onClick={onSaveProject} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors">Salvar Projeto</button>
-                         <button onClick={onLoadProject} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors">Carregar Projeto</button>
-                         <p className="text-xs text-gray-500 pt-1">O seu projeto é guardado automaticamente no seu navegador.</p>
+                         <button onClick={onSaveProject} disabled={isLoadingAI === 'project'} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50">
+                            {isLoadingAI === 'project' ? 'A salvar...' : 'Salvar Projeto'}
+                         </button>
+                         <button onClick={onLoadProject} disabled={isLoadingAI === 'project'} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50">
+                            {isLoadingAI === 'project' ? 'A carregar...' : 'Carregar Projeto'}
+                         </button>
+                         <p className="text-xs text-gray-500 pt-1">Salve e carregue os seus templates como ficheiros no seu computador.</p>
+                     </div>
+                 </Accordion>
+                 <Accordion title="Tamanho" icon={<IconFrame/>}>
+                     <div className="p-2 flex flex-col gap-2">
+                        {SIZES.map(s => (
+                            <button 
+                                key={s.name} 
+                                onClick={() => onSetCanvasSize({w: s.w, h: s.h})} 
+                                className={`text-sm p-2 rounded-md transition-colors font-semibold text-left ${canvasSize.w === s.w && canvasSize.h === s.h ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                            >
+                                {s.name} <span className="text-xs font-normal opacity-75">{s.w} x {s.h}px</span>
+                            </button>
+                        ))}
                      </div>
                  </Accordion>
                  <Accordion title="Stúdio Mágico" icon={<IconSparkles />} defaultOpen>
@@ -123,7 +147,8 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                             <div className="pt-2 border-t border-gray-700/50 space-y-3">
                                 <label className="block text-gray-400">
                                     Transparência
-                                    <input type="range" min="0" max="1" step="0.01" value={selectedLayer.opacity} onChange={handleOpacityChange} className="w-full mt-1"/>
+                                    {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                                    <input type="range" min="0" max="1" step="0.01" value={selectedLayer.opacity} onChange={e => onUpdateSelectedLayer({ opacity: parseFloat((e.target as any).value) }, true)} className="w-full mt-1"/>
                                 </label>
                                  <div className="flex gap-2">
                                      <button onClick={() => handleFlip('h')} disabled={selectedLayer.type !== 'image' && selectedLayer.type !== 'shape' && selectedLayer.type !== 'frame' && selectedLayer.type !== 'video'} className="w-full p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><IconFlipHorizontal /> Inverter H</button>
@@ -137,7 +162,11 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                     <div className="p-2">
                         <label className="flex items-center justify-between text-gray-400">
                             Cor de Fundo
-                            <input type="color" value={backgroundColor} onChange={e => onUpdateBackgroundColor(e.target.value)} className="w-10 h-8 p-0 border-none bg-transparent cursor-pointer"/>
+                            <ColorPicker
+                                color={backgroundColor}
+                                onChange={onUpdateBackgroundColor}
+                                onInteractionEnd={() => {}}
+                            />
                         </label>
                     </div>
                  </Accordion>
@@ -172,11 +201,11 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                                 <div className="mt-3">
                                     <label className="flex items-center gap-2 text-gray-400">
                                         Cor:
-                                        <input type="color" 
-                                            value={(selectedLayer as ShapeLayer).fill} 
-                                            onInput={e => onUpdateSelectedLayer({ fill: (e.target as HTMLInputElement).value }, false)}
-                                            onChange={e => onUpdateSelectedLayer({ fill: (e.target as HTMLInputElement).value }, true)}
-                                            className="w-8 h-8 p-0 border-none bg-transparent"/>
+                                        <ColorPicker
+                                            color={(selectedLayer as ShapeLayer).fill}
+                                            onChange={newColor => onUpdateSelectedLayer({ fill: newColor }, false)}
+                                            onInteractionEnd={() => onUpdateSelectedLayer({}, true)}
+                                        />
                                     </label>
                                 </div>
                              )}
@@ -185,17 +214,14 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                  </Accordion>
                   <Accordion title="Uploads" icon={<IconImage />} defaultOpen>
                      <div className="p-2 space-y-3">
-                        {isViralMode ? (
-                            <div className="grid grid-cols-3 gap-2">
-                                <button onClick={() => onTriggerUpload('image')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Imagem</button>
-                                <button onClick={() => onTriggerUpload('video')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Vídeo</button>
-                                <button onClick={() => onTriggerUpload('audio')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Áudio</button>
-                            </div>
-                        ) : (
-                            <button onClick={() => onTriggerUpload('image')} className="w-full p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold">Adicionar Imagem</button>
-                        )}
+                        <div className="grid grid-cols-3 gap-2">
+                            <button onClick={() => onTriggerUpload('image')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Imagem</button>
+                            <button onClick={() => onTriggerUpload('video')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Vídeo</button>
+                            <button onClick={() => onTriggerUpload('audio')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Áudio</button>
+                        </div>
                          <div className="space-y-2 pt-2 border-t border-gray-700/50">
-                            <input type="text" value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} placeholder="Descreva uma imagem..." className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-yellow-400"/>
+                            {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                            <input type="text" value={aiPrompt} onChange={e => setAiPrompt((e.target as any).value)} placeholder="Descreva uma imagem..." className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-yellow-400"/>
                             <button onClick={() => onGenerateAIImage(aiPrompt)} disabled={!aiPrompt || !!isLoadingAI} className="w-full p-2 text-center rounded bg-yellow-400 text-black font-semibold hover:bg-yellow-300 transition-colors disabled:opacity-50">{isLoadingAI === 'generate' ? 'A gerar...' : 'Gerar com IA'}</button>
                          </div>
                          {uploadedAssets.length > 0 && (
@@ -205,9 +231,9 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                                         key={asset.id} 
                                         onClick={() => onAssetClick(asset)} 
                                         draggable="true" 
-                                        onDragStart={(e) => { 
-                                            e.dataTransfer.setData('asset-src', asset.src);
-                                            e.dataTransfer.setData('asset-type', asset.type);
+                                        onDragStart={(e: React.DragEvent) => { 
+                                            (e as any).dataTransfer.setData('asset-src', asset.src);
+                                            (e as any).dataTransfer.setData('asset-type', asset.type);
                                         }} 
                                         className="aspect-square bg-gray-700 hover:opacity-80 rounded overflow-hidden cursor-pointer relative group">
                                         <img src={asset.thumbnail} className="w-full h-full object-cover pointer-events-none" alt={asset.name} />

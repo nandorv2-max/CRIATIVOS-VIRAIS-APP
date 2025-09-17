@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button';
-import { IconRotate, IconSparkles, IconUndo, IconRedo, IconX, IconTrash, IconArrowsHorizontal } from './Icons';
+import { IconRotate, IconSparkles, IconUndo, IconRedo, IconX, IconTrash, IconArrowsHorizontal, IconUpload, IconCamera } from './Icons';
 import { generateImageWithRetry } from '../services/geminiService';
 import SavePresetModal, { AdjustmentGroup } from './SavePresetModal';
 import UploadOptionsModal from './UploadOptionsModal';
 import { showGoogleDriveDngPicker } from '../services/googleDriveService';
+import { toBase64 } from '../utils/imageUtils';
+import CameraModal from './CameraModal';
 
 interface ProfessionalEditorModalProps {
     isOpen: boolean;
@@ -75,10 +77,12 @@ const AdjustmentSlider: React.FC<AdjustmentSliderProps> = ({label, value, onChan
         const slider = sliderRef.current;
         if (!slider) return;
 
-        const rect = slider.getBoundingClientRect();
+        // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+        const rect = (slider as any).getBoundingClientRect();
 
         const handleMouseMove = (mouseMoveEvent: MouseEvent) => {
-            const x = Math.max(0, Math.min(mouseMoveEvent.clientX - rect.left, rect.width));
+            // FIX: Cast event to `any` to access properties in environments with incomplete DOM typings.
+            const x = Math.max(0, Math.min((mouseMoveEvent as any).clientX - rect.left, rect.width));
             const percentage = x / rect.width;
             const rawValue = min + (percentage * (max - min));
             const steppedValue = Math.round(rawValue / step) * step;
@@ -86,14 +90,20 @@ const AdjustmentSlider: React.FC<AdjustmentSliderProps> = ({label, value, onChan
         };
 
         const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
+            // FIX: Use window.document to access the DOM.
+            // FIX: Property 'document' does not exist on type 'Window'.
+            window.document.removeEventListener('mousemove', handleMouseMove as any);
+            // FIX: Property 'document' does not exist on type 'Window'.
+            window.document.removeEventListener('mouseup', handleMouseUp as any);
         };
 
-        handleMouseMove(mouseDownEvent.nativeEvent);
+        handleMouseMove(mouseDownEvent.nativeEvent as MouseEvent);
 
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        // FIX: Use window.document to access the DOM.
+        // FIX: Property 'document' does not exist on type 'Window'.
+        window.document.addEventListener('mousemove', handleMouseMove as any);
+        // FIX: Property 'document' does not exist on type 'Window'.
+        window.document.addEventListener('mouseup', handleMouseUp as any);
 
     }, [min, max, step, onChange, disabled]);
 
@@ -127,7 +137,9 @@ const UpscaleComparison: React.FC<{ before: string, after: string, onClose: () =
     const [aspectRatio, setAspectRatio] = useState('16 / 9');
 
     useEffect(() => {
-        const img = new Image();
+        // FIX: Use `window.Image` to access the constructor.
+        // FIX: Property 'Image' does not exist on type 'Window'.
+        const img = new window.Image();
         img.onload = () => {
             if (img.naturalWidth > 0 && img.naturalHeight > 0) {
                 setAspectRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
@@ -138,15 +150,16 @@ const UpscaleComparison: React.FC<{ before: string, after: string, onClose: () =
 
     const updatePosition = (e: MouseEvent | TouchEvent) => {
         if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+        const rect = (containerRef.current as any).getBoundingClientRect();
+        const clientX = 'touches' in e ? (e as any).touches[0].clientX : (e as any).clientX;
         const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
         setPosition((x / rect.width) * 100);
     };
 
     const handleInteractionStart = (e: React.MouseEvent | React.TouchEvent) => {
         isDraggingRef.current = true;
-        updatePosition(e.nativeEvent);
+        updatePosition(e.nativeEvent as MouseEvent | TouchEvent);
     };
 
     const handleInteractionEnd = () => {
@@ -155,19 +168,25 @@ const UpscaleComparison: React.FC<{ before: string, after: string, onClose: () =
 
     const handleInteractionMove = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggingRef.current) return;
-        updatePosition(e.nativeEvent);
+        updatePosition(e.nativeEvent as MouseEvent | TouchEvent);
     };
 
     useEffect(() => {
         const handleMouseUp = () => handleInteractionEnd();
         const handleTouchEnd = () => handleInteractionEnd();
         
-        window.addEventListener('mouseup', handleMouseUp);
-        window.addEventListener('touchend', handleTouchEnd);
+        // FIX: Use `window.addEventListener` for broader compatibility.
+        // FIX: Property 'addEventListener' does not exist on type 'Window'.
+        (window as any).addEventListener('mouseup', handleMouseUp as any);
+        // FIX: Property 'addEventListener' does not exist on type 'Window'.
+        (window as any).addEventListener('touchend', handleTouchEnd as any);
         
         return () => {
-            window.removeEventListener('mouseup', handleMouseUp);
-            window.removeEventListener('touchend', handleTouchEnd);
+            // FIX: Use `window.removeEventListener` for broader compatibility.
+            // FIX: Property 'removeEventListener' does not exist on type 'Window'.
+            (window as any).removeEventListener('mouseup', handleMouseUp as any);
+            // FIX: Property 'removeEventListener' does not exist on type 'Window'.
+            (window as any).removeEventListener('touchend', handleTouchEnd as any);
         };
     }, []);
 
@@ -219,6 +238,8 @@ const ProfessionalEditorModal: React.FC<ProfessionalEditorModalProps> = ({ isOpe
     const [prompt, setPrompt] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    
+    const [internalImageUrl, setInternalImageUrl] = useState<string | null>(null);
 
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -237,7 +258,9 @@ const ProfessionalEditorModal: React.FC<ProfessionalEditorModalProps> = ({ isOpe
     const imageRef = useRef<HTMLImageElement>(null);
     const imageContainerRef = useRef<HTMLDivElement>(null);
     const dngInputRef = useRef<HTMLInputElement>(null);
+    const imageUploadInputRef = useRef<HTMLInputElement>(null);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
     
     // Advanced Adjustments State
     const [exposure, setExposure] = useState(0);
@@ -275,39 +298,59 @@ const ProfessionalEditorModal: React.FC<ProfessionalEditorModalProps> = ({ isOpe
         setExposure(0); setContrast(0); setHighlights(0); setShadows(0);
         setWhites(0); setBlacks(0); setTemperature(0); setHue(0);
         setSaturate(0); setSharpen(0); setGrain(0); setFade(0); setVignette(0);
-        if (!keepHistory) { setHistory([]); setHistoryIndex(-1); }
+        if (!keepHistory) { setInternalImageUrl(null); setHistory([]); setHistoryIndex(-1); }
     }, []);
     
     useEffect(() => {
         try {
-            const savedPresets = localStorage.getItem('photoEditorPresets');
+            // FIX: Prefix `localStorage` with `window.` to ensure it is available.
+            const savedPresets = (window as any).localStorage.getItem('photoEditorPresets');
             if (savedPresets) { setPresets(JSON.parse(savedPresets)); }
         } catch (e) { console.error("Failed to load presets from localStorage", e); }
     }, []);
 
     const savePresetsToStorage = (updatedPresets: Preset[]) => {
         try {
-            localStorage.setItem('photoEditorPresets', JSON.stringify(updatedPresets));
+            // FIX: Prefix `localStorage` with `window.` to ensure it is available.
+            (window as any).localStorage.setItem('photoEditorPresets', JSON.stringify(updatedPresets));
         } catch(e) { console.error("Failed to save presets to localStorage", e); }
     };
 
     useEffect(() => {
-        if (isOpen && imageUrl) {
-            resetVisualAdjustments();
-            setHistory([imageUrl]);
-            setHistoryIndex(0);
-            setOutputSize(null);
-        } else if (!isOpen) {
+        if (isOpen) {
             resetVisualAdjustments();
             setPrompt(''); setError(null); setIsLoading(false);
+            if (imageUrl) {
+                setInternalImageUrl(imageUrl);
+                setHistory([imageUrl]);
+                setHistoryIndex(0);
+            }
+            setOutputSize(null);
         }
     }, [isOpen, imageUrl, resetVisualAdjustments]);
     
     const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
         const img = e.currentTarget;
-        const newSize = { w: img.naturalWidth, h: img.naturalHeight };
+        // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+        const newSize = { w: (img as any).naturalWidth, h: (img as any).naturalHeight };
         setImageNaturalSize(newSize);
         handleSetOutputSize(outputSize, newSize); // Recalculate zoom based on new image
+    };
+
+    const handleLocalImageUpload = async (file: File) => {
+        if (!file) return;
+        setIsLoading(true);
+        try {
+            const base64 = await toBase64(file);
+            setInternalImageUrl(base64);
+            setHistory([base64]);
+            setHistoryIndex(0);
+        } catch (e) {
+            setError("Falha ao carregar a imagem.");
+            console.error(e);
+        } finally {
+            setIsLoading(false);
+        }
     };
     
     const handleSetOutputSize = (size: { w: number; h: number; name: string } | null, naturalSize?: { w: number; h: number }) => {
@@ -317,7 +360,8 @@ const ProfessionalEditorModal: React.FC<ProfessionalEditorModalProps> = ({ isOpe
 
         if (size && imgNaturalSize.w > 1 && imageContainerRef.current) {
             const container = imageContainerRef.current;
-            const containerRect = container.getBoundingClientRect();
+            // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+            const containerRect = (container as any).getBoundingClientRect();
             
             const targetRatio = size.w / size.h;
             let cropBoxW = containerRect.width;
@@ -423,44 +467,48 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
         setIsLoading(true);
         try {
             const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-                const image = new Image();
+                // FIX: Use `window.Image` to access the constructor.
+                // FIX: Property 'Image' does not exist on type 'Window'.
+                const image = new window.Image();
                 image.crossOrigin = "anonymous";
                 image.onload = () => resolve(image);
                 image.onerror = reject;
                 image.src = currentImageUrl;
             });
 
-            const canvas = document.createElement('canvas');
+            // FIX: Use `window.document` to access the DOM.
+            // FIX: Property 'document' does not exist on type 'Window'.
+            const canvas = window.document.createElement('canvas');
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) throw new Error("Could not get canvas context");
             
-            const finalW = outputSize?.w ?? img.naturalWidth;
-            const finalH = outputSize?.h ?? img.naturalHeight;
+            const finalW = outputSize?.w ?? (img as any).naturalWidth;
+            const finalH = outputSize?.h ?? (img as any).naturalHeight;
             canvas.width = finalW; canvas.height = finalH;
             
             // Calculate source rect from original image based on pan, zoom, and crop
             const finalRatio = finalW / finalH;
             
             let sourceW, sourceH;
-            if (img.naturalWidth / img.naturalHeight > finalRatio) {
-                sourceH = img.naturalHeight;
+            if ((img as any).naturalWidth / (img as any).naturalHeight > finalRatio) {
+                sourceH = (img as any).naturalHeight;
                 sourceW = sourceH * finalRatio;
             } else {
-                sourceW = img.naturalWidth;
+                sourceW = (img as any).naturalWidth;
                 sourceH = sourceW / finalRatio;
             }
             
             sourceW /= zoom;
             sourceH /= zoom;
 
-            const maxPanX = (img.naturalWidth / zoom - sourceW) / 2;
-            const maxPanY = (img.naturalHeight / zoom - sourceH) / 2;
+            const maxPanX = ((img as any).naturalWidth / zoom - sourceW) / 2;
+            const maxPanY = ((img as any).naturalHeight / zoom - sourceH) / 2;
             
-            const currentPanX = (panOffset.x / (imageContainerRef.current?.clientWidth ?? 1)) * (img.naturalWidth / zoom);
-            const currentPanY = (panOffset.y / (imageContainerRef.current?.clientHeight ?? 1)) * (img.naturalHeight / zoom);
+            const currentPanX = (panOffset.x / ((imageContainerRef.current as any)?.clientWidth ?? 1)) * ((img as any).naturalWidth / zoom);
+            const currentPanY = (panOffset.y / ((imageContainerRef.current as any)?.clientHeight ?? 1)) * ((img as any).naturalHeight / zoom);
             
-            const sourceX = (img.naturalWidth - sourceW * zoom) / 2 - currentPanX + (sourceW * zoom - sourceW) / 2;
-            const sourceY = (img.naturalHeight - sourceH * zoom) / 2 - currentPanY + (sourceH * zoom - sourceH) / 2;
+            const sourceX = ((img as any).naturalWidth - sourceW * zoom) / 2 - currentPanX + (sourceW * zoom - sourceW) / 2;
+            const sourceY = ((img as any).naturalHeight - sourceH * zoom) / 2 - currentPanY + (sourceH * zoom - sourceH) / 2;
             
             ctx.save();
             ctx.translate(finalW / 2, finalH / 2);
@@ -502,7 +550,8 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
         if (!isPanning || !imageContainerRef.current) return;
         e.preventDefault();
         
-        const containerRect = imageContainerRef.current.getBoundingClientRect();
+        // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+        const containerRect = (imageContainerRef.current as any).getBoundingClientRect();
         
         const dx = e.clientX - panStartRef.current.x;
         const dy = e.clientY - panStartRef.current.y;
@@ -571,17 +620,18 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
         if (xmpStart === -1 || xmpEnd === -1) throw new Error("Metadados XMP não encontrados no arquivo DNG.");
         
         const xmpString = fileContent.substring(xmpStart, xmpEnd + 12);
-        const parser = new DOMParser();
+        // FIX: Use `window.DOMParser` to access the constructor.
+        const parser = new (window as any).DOMParser();
         const xmlDoc = parser.parseFromString(xmpString, "application/xml");
         const descriptionNode = xmlDoc.getElementsByTagName('rdf:Description')[0];
         if (!descriptionNode) throw new Error("Nenhuma tag rdf:Description encontrada no XMP.");
 
         const importedSettings: Partial<Adjustments> = {};
-        for (const attr of Array.from(descriptionNode.attributes)) {
-            const [prefix, name] = attr.name.split(':');
+        for (const attr of Array.from(descriptionNode.attributes as any)) {
+            const [prefix, name] = (attr as any).name.split(':');
             if (prefix === 'crs' && XMP_CRS_MAP[name]) {
                 const { key, scale } = XMP_CRS_MAP[name];
-                const parsedValue = parseFloat(attr.value);
+                const parsedValue = parseFloat((attr as any).value);
                 if (!isNaN(parsedValue)) importedSettings[key] = parsedValue * scale;
             }
         }
@@ -605,7 +655,8 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
     };
 
     const handleDngImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
+        // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+        const file = (event.target as any).files?.[0];
         if (!file) return;
         
         setError(null);
@@ -621,7 +672,8 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
             console.error("Failed to import DNG preset:", err);
             setError(`Erro ao importar: ${err.message}`);
         } finally {
-            if(event.target) event.target.value = ''; // Reset file input
+            // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+            if(event.target) ((event.target as any) as HTMLInputElement).value = ''; // Reset file input
         }
     };
 
@@ -650,7 +702,8 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
     const cropBoxStyle = useMemo(() => {
         if (!outputSize || !imageContainerRef.current) return { display: 'none' };
         
-        const containerRect = imageContainerRef.current.getBoundingClientRect();
+        // FIX: Cast element to `any` to access properties in environments with incomplete DOM typings.
+        const containerRect = (imageContainerRef.current as any).getBoundingClientRect();
         const targetRatio = outputSize.w / outputSize.h;
         
         let width = containerRect.width;
@@ -680,10 +733,12 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
 
     return (
         <>
+            {/* FIX: Correctly handle camera capture by setting image state directly. */}
+            <CameraModal isOpen={isCameraModalOpen} onClose={() => setIsCameraModalOpen(false)} onCapture={(img) => { setInternalImageUrl(img); setHistory([img]); setHistoryIndex(0); }} />
             <UploadOptionsModal
                 isOpen={isUploadModalOpen}
                 onClose={() => setIsUploadModalOpen(false)}
-                onLocalUpload={() => { dngInputRef.current?.click(); setIsUploadModalOpen(false); }}
+                onLocalUpload={() => { (dngInputRef.current as any)?.click(); setIsUploadModalOpen(false); }}
                 onGoogleDriveUpload={() => { handleGoogleDriveDngImport(); setIsUploadModalOpen(false); }}
             />
             <SavePresetModal isOpen={isSavePresetModalOpen} onClose={() => setIsSavePresetModalOpen(false)} onSave={handleSavePreset} />
@@ -691,13 +746,22 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
             <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }} className="bg-gray-900 rounded-2xl p-2 md:p-6 border border-gray-700 shadow-2xl w-full max-w-7xl relative flex flex-col md:flex-row gap-6 h-[90vh] md:h-auto md:max-h-[90vh]">
                     <div ref={imageContainerRef} className="h-3/5 md:h-auto flex-shrink-0 md:flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden relative cursor-grab active:cursor-grabbing" onMouseDown={handlePanStart} onMouseMove={handlePanMove} onMouseUp={handlePanEnd} onMouseLeave={handlePanEnd}>
-                        {currentImageUrl && (
+                        {!internalImageUrl ? (
+                            <div className="flex flex-col items-center gap-4 text-gray-400">
+                                <IconUpload className="w-16 h-16" />
+                                <h3 className="text-xl font-semibold">Carregar uma Foto para Editar</h3>
+                                <p>Comece por carregar uma imagem do seu computador.</p>
+                                <Button primary onClick={() => (imageUploadInputRef.current as any)?.click()}>Carregar do Computador</Button>
+                                {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                                <input type="file" ref={imageUploadInputRef} onChange={(e) => (e.target as any).files?.[0] && handleLocalImageUpload((e.target as any).files![0])} accept="image/*" className="hidden" />
+                            </div>
+                        ) : (
                             <>
                                 <img
                                     ref={imageRef}
                                     key={currentImageUrl}
                                     crossOrigin="anonymous"
-                                    src={currentImageUrl}
+                                    src={currentImageUrl!}
                                     alt="Imagem para editar"
                                     className="select-none max-w-full max-h-full"
                                     style={{
@@ -728,12 +792,13 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
                             <div className='flex justify-between items-center mb-2'><h4 className="font-semibold text-gray-300">Edição com IA</h4><div className="flex items-center gap-2"><button onClick={handleUndo} disabled={historyIndex <= 0} className="disabled:opacity-40"><IconUndo /></button><button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="disabled:opacity-40"><IconRedo /></button></div></div>
                             <textarea
                                 value={prompt}
-                                onChange={(e) => setPrompt(e.target.value)}
+                                // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
+                                onChange={(e) => setPrompt((e.target as any).value)}
                                 placeholder="Ex: 'Remover o relógio do braço esquerdo'..."
                                 className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none"
                                 rows={2}
                             />
-                            <Button onClick={handleAIGenerate} primary disabled={isLoading || !prompt || isUpscaling} className="w-full mt-2 text-sm">
+                            <Button onClick={handleAIGenerate} primary disabled={isLoading || !prompt || isUpscaling || !internalImageUrl} className="w-full mt-2 text-sm">
                                 {isLoading ? (
                                     <div className="flex items-center justify-center gap-2">
                                         <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-black"></div>
@@ -757,10 +822,10 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
                             <div className="text-sm space-y-2">
                                 <h5 className="font-medium text-gray-400">Fator de Escala</h5>
                                 <div className="flex flex-wrap gap-2">
-                                    {[2, 4, 8, 16].map(factor => <RadioPill key={factor} name="scale" value={factor} label={`${factor}X`} checked={upscaleFactor === factor} onChange={(e) => setUpscaleFactor(Number(e.target.value))} />)}
+                                    {[2, 4, 8, 16].map(factor => <RadioPill key={factor} name="scale" value={factor} label={`${factor}X`} checked={upscaleFactor === factor} onChange={(e) => setUpscaleFactor(Number((e.target as any).value))} />)}
                                 </div>
                             </div>
-                            <fieldset disabled={isUpscaleAutomatic} className="space-y-3 disabled:opacity-60">
+                            <fieldset disabled={isUpscaleAutomatic || !internalImageUrl} className="space-y-3 disabled:opacity-60">
                                  <AdjustmentSlider label="Criatividade" value={upscaleCreativity} onChange={setUpscaleCreativity} min={0} max={100} disabled={isUpscaleAutomatic} />
                                  <AdjustmentSlider label="HDR" value={upscaleHdr} onChange={setUpscaleHdr} min={0} max={100} disabled={isUpscaleAutomatic} />
                                  <AdjustmentSlider label="Semelhança" value={upscaleResemblance} onChange={setUpscaleResemblance} min={0} max={100} disabled={isUpscaleAutomatic} />
@@ -768,11 +833,11 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
                                 <div className="text-sm space-y-2">
                                     <h5 className="font-medium text-gray-400">Motor</h5>
                                     <div className="flex flex-wrap gap-2">
-                                        {['Illusio', 'Sharpy', 'Sparkle'].map(engine => <RadioPill key={engine} name="engine" value={engine} label={engine} checked={upscaleEngine === engine} onChange={(e) => setUpscaleEngine(e.target.value)} disabled={isUpscaleAutomatic}/>)}
+                                        {['Illusio', 'Sharpy', 'Sparkle'].map(engine => <RadioPill key={engine} name="engine" value={engine} label={engine} checked={upscaleEngine === engine} onChange={(e) => setUpscaleEngine((e.target as any).value)} disabled={isUpscaleAutomatic}/>)}
                                     </div>
                                 </div>
                             </fieldset>
-                             <Button onClick={handleUpscale} primary disabled={isUpscaling || isLoading} className="w-full mt-2 text-sm">
+                             <Button onClick={handleUpscale} primary disabled={isUpscaling || isLoading || !internalImageUrl} className="w-full mt-2 text-sm">
                                 {isUpscaling ? (
                                     <div className="flex items-center justify-center gap-2"><div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-black"></div><span>A processar...</span></div>
                                 ) : (
@@ -781,65 +846,74 @@ Sua tarefa é realizar um "super-resolution" na imagem fornecida, agindo como um
                             </Button>
                         </details>
 
-                        <div>
-                            <h4 className="font-semibold text-gray-300 mb-2">Tamanho da Foto</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => handleSetOutputSize(null)} className={`text-xs p-2 rounded-md transition-colors ${!outputSize ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600'}`}>Original</button>
-                                {SIZES.map(s => (
-                                    <button key={s.name} onClick={() => handleSetOutputSize(s)} className={`text-xs p-2 rounded-md transition-colors ${outputSize?.name === s.name ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600'}`}>{s.name}</button>
-                                ))}
-                            </div>
-                        </div>
-
                         <div className="space-y-3">
-                            <h4 className="font-semibold text-gray-300">Ajustes</h4>
-                            <AdjustmentSlider label="Zoom" value={zoom * 100} onChange={(v) => setZoom(v / 100)} min={minZoom * 100} max={400} />
+                             <h4 className="font-semibold text-gray-300">Ajustes</h4>
+                             <fieldset disabled={!internalImageUrl} className="disabled:opacity-60 space-y-3">
+                                <div>
+                                    <h4 className="font-semibold text-gray-300 mb-2">Tamanho da Foto</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => handleSetOutputSize(null)} className={`text-xs p-2 rounded-md transition-colors ${!outputSize ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600'}`}>Original</button>
+                                        {SIZES.map(s => (
+                                            <button key={s.name} onClick={() => handleSetOutputSize(s)} className={`text-xs p-2 rounded-md transition-colors ${outputSize?.name === s.name ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600'}`}>{s.name}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <AdjustmentSlider label="Zoom" value={zoom * 100} onChange={(v) => setZoom(v / 100)} min={minZoom * 100} max={400} />
+                             </fieldset>
                         </div>
 
                         <details className="space-y-3">
                             <summary className="font-semibold text-gray-300 cursor-pointer">Luz</summary>
-                            <AdjustmentSlider label="Exposição" value={exposure} onChange={setExposure} min={-100} max={100} />
-                            <AdjustmentSlider label="Contraste" value={contrast} onChange={setContrast} min={-100} max={100} />
-                            <AdjustmentSlider label="Destaques" value={highlights} onChange={setHighlights} min={-100} max={100} />
-                            <AdjustmentSlider label="Sombras" value={shadows} onChange={setShadows} min={-100} max={100} />
-                            <AdjustmentSlider label="Brancos" value={whites} onChange={setWhites} min={-100} max={100} />
-                            <AdjustmentSlider label="Pretos" value={blacks} onChange={setBlacks} min={-100} max={100} />
+                            <fieldset disabled={!internalImageUrl} className="disabled:opacity-60 space-y-3">
+                                <AdjustmentSlider label="Exposição" value={exposure} onChange={setExposure} min={-100} max={100} />
+                                <AdjustmentSlider label="Contraste" value={contrast} onChange={setContrast} min={-100} max={100} />
+                                <AdjustmentSlider label="Destaques" value={highlights} onChange={setHighlights} min={-100} max={100} />
+                                <AdjustmentSlider label="Sombras" value={shadows} onChange={setShadows} min={-100} max={100} />
+                                <AdjustmentSlider label="Brancos" value={whites} onChange={setWhites} min={-100} max={100} />
+                                <AdjustmentSlider label="Pretos" value={blacks} onChange={setBlacks} min={-100} max={100} />
+                            </fieldset>
                         </details>
 
                         <details className="space-y-3">
                             <summary className="font-semibold text-gray-300 cursor-pointer">Cor</summary>
-                            <AdjustmentSlider label="Temperatura" value={temperature} onChange={setTemperature} min={-100} max={100} />
-                            <AdjustmentSlider label="Matiz" value={hue} onChange={setHue} min={-100} max={100} />
-                            <AdjustmentSlider label="Saturação" value={saturate} onChange={setSaturate} min={-100} max={100} />
+                             <fieldset disabled={!internalImageUrl} className="disabled:opacity-60 space-y-3">
+                                <AdjustmentSlider label="Temperatura" value={temperature} onChange={setTemperature} min={-100} max={100} />
+                                <AdjustmentSlider label="Matiz" value={hue} onChange={setHue} min={-100} max={100} />
+                                <AdjustmentSlider label="Saturação" value={saturate} onChange={setSaturate} min={-100} max={100} />
+                            </fieldset>
                         </details>
 
                         <details className="space-y-3">
                             <summary className="font-semibold text-gray-300 cursor-pointer">Efeitos</summary>
-                            <AdjustmentSlider label="Nitidez" value={sharpen} onChange={setSharpen} min={0} max={100} />
-                            <AdjustmentSlider label="Partículas" value={grain} onChange={setGrain} min={0} max={100} />
-                            <AdjustmentSlider label="Fade" value={fade} onChange={setFade} min={0} max={100} />
-                            <AdjustmentSlider label="Vinheta" value={vignette} onChange={setVignette} min={-100} max={100} />
+                             <fieldset disabled={!internalImageUrl} className="disabled:opacity-60 space-y-3">
+                                <AdjustmentSlider label="Nitidez" value={sharpen} onChange={setSharpen} min={0} max={100} />
+                                <AdjustmentSlider label="Partículas" value={grain} onChange={setGrain} min={0} max={100} />
+                                <AdjustmentSlider label="Fade" value={fade} onChange={setFade} min={0} max={100} />
+                                <AdjustmentSlider label="Vinheta" value={vignette} onChange={setVignette} min={-100} max={100} />
+                            </fieldset>
                         </details>
 
                         <div className="space-y-2">
                             <h4 className="font-semibold text-gray-300">Predefinições</h4>
                             <div className="flex gap-2 items-center">
-                                <select value={selectedPreset} onChange={e => applyPreset(e.target.value)} className="w-full bg-gray-900 border border-gray-600 rounded-lg py-2 px-3 focus:outline-none focus:ring-1 focus:ring-yellow-400 text-white text-sm">
+                                {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                                {/* FIX: Property 'value' does not exist on type 'HTMLInputElement'. */}
+                                <select value={selectedPreset} onChange={e => applyPreset((e.target as any).value)} className="w-full bg-gray-900 border border-gray-600 rounded-lg py-2 px-3 focus:outline-none focus:ring-1 focus:ring-yellow-400 text-white text-sm" disabled={!internalImageUrl}>
                                     <option value="">Selecionar predefinição...</option>
                                     {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                                 </select>
-                                <button onClick={handleDeletePreset} disabled={!selectedPreset} className="p-2 bg-gray-700 rounded-md hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <button onClick={handleDeletePreset} disabled={!selectedPreset || !internalImageUrl} className="p-2 bg-gray-700 rounded-md hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
                                     <IconTrash />
                                 </button>
                             </div>
-                            <Button onClick={() => setIsSavePresetModalOpen(true)} className="w-full text-sm">Criar Predefinição</Button>
+                            <Button onClick={() => setIsSavePresetModalOpen(true)} className="w-full text-sm" disabled={!internalImageUrl}>Criar Predefinição</Button>
                             <Button onClick={() => setIsUploadModalOpen(true)} className="w-full text-sm">Importar Predefinição</Button>
                             <input type="file" ref={dngInputRef} onChange={handleDngImport} accept=".dng,image/x-adobe-dng" className="hidden" />
                         </div>
 
                         <div className="mt-auto pt-4 border-t border-gray-700 flex justify-center gap-4">
                             <Button onClick={onClose} disabled={isLoading || isUpscaling}>Cancelar</Button>
-                            <Button onClick={handleApplyChanges} primary disabled={isLoading || isUpscaling}>
+                            <Button onClick={handleApplyChanges} primary disabled={isLoading || isUpscaling || !internalImageUrl}>
                                 {isLoading ? 'A aplicar...' : 'Aplicar'}
                             </Button>
                         </div>

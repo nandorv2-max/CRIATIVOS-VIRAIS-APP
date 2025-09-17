@@ -49,7 +49,9 @@ const fileToB64 = (blob: Blob): Promise<string> => new Promise((resolve, reject)
 const authenticateAndShowPicker = async (viewId: any, mimeTypes: string): Promise<any[]> => {
     if (!CLIENT_ID || !DEVELOPER_KEY) {
         // Use an alert for a user-facing message, then throw for developer console.
-        alert("A integração com o Google Drive não está configurada. O proprietário do site precisa de configurar um 'Client ID' da API do Google para ativar esta funcionalidade.");
+        // FIX: Prefix 'alert' with 'window.' to ensure it is available in non-browser-default environments.
+        // FIX: Property 'alert' does not exist on type 'Window'.
+        window.alert("A integração com o Google Drive não está configurada. O proprietário do site precisa de configurar um 'Client ID' da API do Google para ativar esta funcionalidade.");
         throw new Error("A configuração da API do Google Drive está em falta. Por favor, configure um GOOGLE_CLIENT_ID e certifique-se de que a API_KEY está disponível.");
     }
 

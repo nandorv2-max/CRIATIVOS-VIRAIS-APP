@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button';
@@ -14,7 +13,9 @@ interface BackgroundRemoverModalProps {
 
 const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen, onClose, imageWithTransparency, originalImage, onApply }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const originalImageRef = useRef<HTMLImageElement>(new Image());
+    // FIX: Prefix 'Image' with 'window.' to use the browser's Image constructor.
+    // FIX: Property 'Image' does not exist on type 'Window'.
+    const originalImageRef = useRef<HTMLImageElement>(new window.Image());
     const isDrawingRef = useRef(false);
 
     const [brushSize, setBrushSize] = useState(40);
@@ -24,22 +25,26 @@ const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen,
     const setupCanvas = useCallback(() => {
         if (!imageWithTransparency || !canvasRef.current) return;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
+        // FIX: Cast canvas to any to access getContext in environments with incomplete DOM typings.
+        const ctx = (canvas as any).getContext('2d');
         if (!ctx) return;
 
-        const img = new Image();
+        // FIX: Prefix 'Image' with 'window.' to use the browser's Image constructor.
+        // FIX: Property 'Image' does not exist on type 'Window'.
+        const img = new window.Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, (canvas as any).width, (canvas as any).height);
             ctx.drawImage(img, 0, 0);
         };
         img.src = imageWithTransparency;
 
         if(originalImage) {
-            originalImageRef.current.crossOrigin = 'anonymous';
-            originalImageRef.current.src = originalImage;
+            // FIX: Cast image to `any` to access properties in environments with incomplete DOM typings.
+            (originalImageRef.current as any).crossOrigin = 'anonymous';
+            (originalImageRef.current as any).src = originalImage;
         }
 
     }, [imageWithTransparency, originalImage]);
@@ -52,10 +57,11 @@ const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen,
 
     const getCoords = (e: React.MouseEvent<HTMLCanvasElement>): { x: number, y: number } => {
         const canvas = canvasRef.current!;
-        const rect = canvas.getBoundingClientRect();
+        // FIX: Cast canvas to `any` to access properties in environments with incomplete DOM typings.
+        const rect = (canvas as any).getBoundingClientRect();
         return {
-            x: (e.clientX - rect.left) * (canvas.width / rect.width),
-            y: (e.clientY - rect.top) * (canvas.height / rect.height)
+            x: (e.clientX - rect.left) * ((canvas as any).width / rect.width),
+            y: (e.clientY - rect.top) * ((canvas as any).height / rect.height)
         };
     };
 
@@ -63,7 +69,8 @@ const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen,
         if (!isDrawingRef.current) return;
         const { x, y } = getCoords(e);
         const canvas = canvasRef.current!;
-        const ctx = canvas.getContext('2d')!;
+        // FIX: Cast canvas to any to access getContext in environments with incomplete DOM typings.
+        const ctx = (canvas as any).getContext('2d')!;
 
         ctx.save();
         if (brushType === 'erase') {
@@ -91,7 +98,8 @@ const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen,
     const handleApply = () => {
         const canvas = canvasRef.current;
         if (canvas) {
-            onApply(canvas.toDataURL('image/png'));
+            // FIX: Cast canvas to any to access toDataURL in environments with incomplete DOM typings.
+            onApply((canvas as any).toDataURL('image/png'));
             onClose();
         }
     };
@@ -118,7 +126,8 @@ const BackgroundRemoverModal: React.FC<BackgroundRemoverModalProps> = ({ isOpen,
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-400">Tamanho do pincel: {brushSize}</label>
-                            <input type="range" min="5" max="150" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value, 10))} className="w-full mt-1" />
+                            {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
+                            <input type="range" min="5" max="150" value={brushSize} onChange={e => setBrushSize(parseInt((e.target as any).value, 10))} className="w-full mt-1" />
                         </div>
                         <label className="flex items-center justify-between cursor-pointer">
                             <span className="text-sm font-medium text-gray-300">Mostrar imagem original</span>

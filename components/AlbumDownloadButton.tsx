@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button';
@@ -14,11 +13,15 @@ const AlbumDownloadButton: React.FC<AlbumDownloadButtonProps> = ({ isDownloading
     const menuRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
+        // FIX: Cast event.target to `any` to use the 'contains' method, and to resolve 'Cannot find name 'Node'' error.
+        // FIX: Property 'contains' does not exist on type 'HTMLDivElement'.
         const handleClickOutside = (event: MouseEvent) => { 
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) setIsOpen(false); 
+            if (menuRef.current && !menuRef.current.contains(event.target as any)) setIsOpen(false); 
         };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => { document.removeEventListener("mousedown", handleClickOutside); };
+        // FIX: Use `(window as any).document` to ensure access to the DOM, especially in non-standard environments.
+        (window as any).document.addEventListener("mousedown", handleClickOutside);
+        // FIX: Use `(window as any).document` to ensure access to the DOM, especially in non-standard environments.
+        return () => { (window as any).document.removeEventListener("mousedown", handleClickOutside); };
     }, []);
     
     const handleButtonClick = () => { setIsOpen(!isOpen); };

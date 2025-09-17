@@ -1,16 +1,15 @@
-
-
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Button from './Button';
 import CreativeEditorSidebar from './CreativeEditorSidebar';
-import DownloadModal from './DownloadModal';
+import DownloadModal, { DownloadOptions } from './DownloadModal';
 import LayersPanel from './LayersPanel';
 import BackgroundRemoverModal from './BackgroundRemoverModal';
-import { Layer, TextLayer, ImageLayer, ShapeLayer, LayerType, LayerUpdateProps, FrameLayer, FrameFill, VideoLayer, AudioTrack, UploadedAsset, FrameFillContent } from '../types';
+import ColorPicker from './ColorPicker';
+import { Layer, TextLayer, ImageLayer, ShapeLayer, LayerType, LayerUpdateProps, FrameLayer, FrameFill, VideoLayer, AudioTrack, UploadedAsset, FrameFillContent, DownloadJob } from '../types';
 import { IconAlignCenter, IconAlignLeft, IconAlignRight, IconBold, IconItalic, IconTrash, IconType, IconUnderline, IconLetterCase, IconBringForward, IconSendBackward, IconUndo, IconRedo, IconDuplicate, IconLine, IconArrow } from './Icons';
 import { generateImageFromPrompt, generateImageWithRetry, AI_PROMPTS } from '../../services/geminiService';
-import { toBase64 } from '../utils/imageUtils';
+import { blobToBase64 } from '../../utils/imageUtils';
 import { setItem, getItem, keyExists } from '../../utils/db';
 
 
@@ -19,7 +18,7 @@ interface CreativeEditorModalProps {
     onClose: () => void;
     imageUrl: string | null;
     onApply: (newImageUrl: string) => void;
-    activeTemplate: string | null;
+    setDownloads: React.Dispatch<React.SetStateAction<DownloadJob[]>>;
 }
 
 const SIZES = [
@@ -53,19 +52,6 @@ type SnapTarget = {
     value: number;
     start: number;
     end: number;
-};
-
-const findSnap = (point: number, targets: SnapTarget[], threshold: number): SnapTarget | null => {
-    let bestSnap: SnapTarget | null = null;
-    let min_dist = threshold;
-    for (const target of targets) {
-        const dist = Math.abs(point - target.value);
-        if (dist < min_dist) {
-            min_dist = dist;
-            bestSnap = target;
-        }
-    }
-    return bestSnap;
 };
 
 const formatTime = (seconds: number) => {
@@ -208,7 +194,7 @@ const CreativeEditorHeader: React.FC<{
     const nextCase: Record<TextLayer['letterCase'], TextLayer['letterCase']> = { normal: 'uppercase', uppercase: 'lowercase', lowercase: 'normal' };
 
     return (
-        <div className="bg-gray-800/50 p-2 rounded-lg flex items-center justify-between gap-4 text-white text-sm z-10 w-full h-16">
+        <div className="bg-gray-900 p-2 rounded-lg flex items-center justify-between gap-4 text-white text-sm z-10 w-full h-16 shadow-md">
             <div className="flex items-center gap-2">
                 <button onClick={onUndo} disabled={!canUndo} title="Desfazer (Ctrl+Z)" className="p-2 bg-gray-700 rounded-md text-white hover:bg-gray-600 disabled:opacity-50"><IconUndo /></button>
                 <button onClick={onRedo} disabled={!canRedo} title="Refazer (Ctrl+Y)" className="p-2 bg-gray-700 rounded-md text-white hover:bg-gray-600 disabled:opacity-50"><IconRedo /></button>
@@ -225,7 +211,11 @@ const CreativeEditorHeader: React.FC<{
                     <select value={layer.fontFamily} onChange={(e) => handleUpdate({ fontFamily: e.target.value }, true)} className="bg-gray-700 rounded p-1 h-9">{fonts.map(f => <option key={f}>{f}</option>)}</select>
                     <button onClick={onTriggerFontUpload} className="p-2 h-9 rounded bg-gray-700"><IconType /></button>
                     <input type="number" value={layer.fontSize} onMouseUp={() => handleUpdate({}, true)} onChange={e => handleUpdate({ fontSize: parseInt(e.target.value, 10) || 0 })} className="w-16 bg-gray-700 rounded p-1 text-center h-9" />
-                    <input type="color" value={layer.color} onMouseUp={() => handleUpdate({}, true)} onChange={e => handleUpdate({ color: e.target.value })} className="w-9 h-9 p-0 border-none bg-transparent cursor-pointer" />
+                    <ColorPicker
+                        color={layer.color}
+                        onChange={newColor => handleUpdate({ color: newColor }, false)}
+                        onInteractionEnd={() => handleUpdate({}, true)}
+                    />
                     <button onClick={() => handleUpdate({ fontWeight: layer.fontWeight === 'bold' ? 'normal' : 'bold' }, true)} className={`p-2 h-9 rounded ${layer.fontWeight === 'bold' ? 'bg-yellow-400 text-black' : 'bg-gray-700'}`}><IconBold /></button>
                     <button onClick={() => handleUpdate({ fontStyle: layer.fontStyle === 'italic' ? 'normal' : 'italic' }, true)} className={`p-2 h-9 rounded ${layer.fontStyle === 'italic' ? 'bg-yellow-400 text-black' : 'bg-gray-700'}`}><IconItalic /></button>
                     <button onClick={() => handleUpdate({ textDecoration: layer.textDecoration === 'underline' ? 'none' : 'underline' }, true)} className={`p-2 h-9 rounded ${layer.textDecoration === 'underline' ? 'bg-yellow-400 text-black' : 'bg-gray-700'}`}><IconUnderline /></button>
@@ -249,11 +239,11 @@ const blobUrlToDataUrl = (blobUrl: string): Promise<string> =>
         .then(blob => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
+            reader.onerror = () => reject(reader.error || new Error('FileReader error'));
             reader.readAsDataURL(blob);
         }));
 
-const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClose, imageUrl, onApply, activeTemplate }) => {
+const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClose, imageUrl, onApply, setDownloads }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const fontInputRef = useRef<HTMLInputElement>(null);
@@ -262,17 +252,17 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     const imageUploadRef = useRef<HTMLInputElement>(null);
     const videoUploadRef = useRef<HTMLInputElement>(null);
     const audioUploadRef = useRef<HTMLInputElement>(null);
+    const projectLoadInputRef = useRef<HTMLInputElement>(null);
+    const animationFrameId = useRef<number>();
     
     const prevLayersRef = useRef<Layer[]>([]);
     const prevAudioTracksRef = useRef<AudioTrack[]>([]);
     const allMediaElementsRef = useRef<(HTMLVideoElement | HTMLAudioElement)[]>([]);
     const autoSaveInProgress = useRef(false);
 
-
-    const isViralMode = activeTemplate === 'criativoViral';
     
     const [canvasSize, setCanvasSize] = useState({ w: SIZES[0].w, h: SIZES[0].h });
-    const [backgroundColor, setBackgroundColor] = useState('#111827');
+    const [backgroundColor, setBackgroundColor] = useState('#FFFFFF');
     const [layers, setLayers] = useState<Layer[]>([]);
     const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
     const [uploadedAssets, setUploadedAssets] = useState<UploadedAsset[]>([]);
@@ -282,7 +272,8 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
     const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
     const [editingTextValue, setEditingTextValue] = useState('');
-    const [scale, setScale] = useState(1);
+    const [fitScale, setFitScale] = useState(1);
+    const [userZoom, setUserZoom] = useState(1);
     const [isLoadingAI, setIsLoadingAI] = useState<null | 'bg' | 'expand' | 'generate' | 'download' | 'project'>(null);
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
     const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(false);
@@ -299,9 +290,11 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     const [editingLayerProps, setEditingLayerProps] = useState<LayerUpdateProps | null>(null);
     const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
 
+    const finalScale = fitScale * userZoom;
     const selectedLayer = layers.find(l => l.id === selectedLayerId) || null;
     const editingFrame = layers.find(l => l.id === editingFrameId) as FrameLayer | undefined;
     const hasVideoOrAudio = layers.some(l => l.type === 'video') || audioTracks.length > 0;
+    const initialState = { layers: [], audioTracks: [] };
 
     const commitToHistory = useCallback((newLayers: Layer[], newAudioTracks: AudioTrack[]) => {
         const newHistory = history.slice(0, historyIndex + 1);
@@ -373,26 +366,28 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
         img.onerror = () => reject(new Error(`Failed to load image resource. It may be an invalid format, a broken link, or a CORS issue. Src: ${src.substring(0, 100)}...`));
         img.src = src;
     });
-    const loadVideo = (src: string): Promise<HTMLVideoElement> => new Promise((resolve, reject) => { const video = document.createElement('video'); video.crossOrigin = 'anonymous'; video.onloadedmetadata = () => resolve(video); video.onerror = reject; video.src = src; video.playsInline = true; video.muted = false; return video; });
-    const loadAudio = (src: string): Promise<HTMLAudioElement> => new Promise((resolve, reject) => { const audio = new Audio(src); audio.crossOrigin = 'anonymous'; audio.oncanplaythrough = () => resolve(audio); audio.onerror = reject; });
+    const loadVideo = (src: string): Promise<HTMLVideoElement> => new Promise((resolve, reject) => { const video = document.createElement('video'); video.crossOrigin = 'anonymous'; video.onloadedmetadata = () => resolve(video); video.onerror = () => reject(new Error('Failed to load video')); video.src = src; video.playsInline = true; video.muted = false; });
+    // FIX: Updated the 'onerror' handler for 'loadAudio' to accept the event parameter, resolving the "Expected 1 arguments, but got 0" error.
+    const loadAudio = (src: string): Promise<HTMLAudioElement> => new Promise((resolve, reject) => { const audio = new Audio(src); audio.crossOrigin = 'anonymous'; audio.oncanplaythrough = () => resolve(audio); audio.onerror = (e) => reject(new Error('Failed to load audio')); });
     
     const calculateScale = useCallback(() => {
         if (!canvasContainerRef.current) return 1;
         const { clientWidth, clientHeight } = canvasContainerRef.current;
-        const scale = Math.min((clientWidth - 32) / canvasSize.w, (clientHeight - 32) / canvasSize.h) * 0.98;
+        const padding = 64; // Corresponds to p-8
+        const scale = Math.min(
+            (clientWidth - padding) / canvasSize.w, 
+            (clientHeight - padding) / canvasSize.h
+        );
         return scale > 0.1 ? scale : 0.1;
     }, [canvasSize]);
 
-    useLayoutEffect(() => { const update = () => setScale(calculateScale()); update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, [calculateScale]);
+    useLayoutEffect(() => { const update = () => setFitScale(calculateScale()); update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, [calculateScale]);
 
-    const draw = useCallback(() => {
-        const canvas = canvasRef.current; if (!canvas) return;
-        const ctx = canvas.getContext('2d'); if (!ctx) return;
+    const drawSceneToContext = useCallback((ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, currentLayers: Layer[], currentBgColor: string) => {
+        ctx.fillStyle = currentBgColor;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-        ctx.fillStyle = backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        layers.forEach(layer => {
+        currentLayers.forEach(layer => {
             if (layer.id === editingTextLayerId) return;
             ctx.save();
             ctx.globalAlpha = layer.opacity;
@@ -407,124 +402,162 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             if (layer.isLoading) {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
                 ctx.fillRect(drawX, drawY, layer.width, layer.height);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([6, 4]);
-                ctx.strokeRect(drawX, drawY, layer.width, layer.height);
-                ctx.setLineDash([]);
-                
-                ctx.font = `24px sans-serif`; ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                ctx.fillText('Loading...', 0, 0);
-
             } else {
-                const renderContent = (contentLayer: Layer) => {
-                    if (contentLayer.type === 'image') {
-                        const imgLayer = contentLayer as ImageLayer;
-                        const getCoverSourceRect = (frameW: number, frameH: number, imageW: number, imageH: number) => {
-                            if (!imageW || !imageH) return { sx: 0, sy: 0, sWidth: 0, sHeight: 0 };
-                            const frameRatio = frameW / frameH; const imageRatio = imageW / imageH;
-                            let sx = 0, sy = 0, sWidth = imageW, sHeight = imageH;
-                            if (imageRatio > frameRatio) { sWidth = sHeight * frameRatio; sx = (imageW - sWidth) / 2; } 
-                            else { sHeight = sWidth / frameRatio; sy = (imageH - sHeight) / 2; }
-                            return { sx, sy, sWidth, sHeight };
-                        };
-                        const imageToDraw = (imgLayer.id === selectedLayerId && imgLayer.originalImage && comparisonMode === 'before') ? imgLayer.originalImage : imgLayer.image;
-                        if (imgLayer.id === selectedLayerId && imgLayer.originalImage && comparisonMode === 'split' && imgLayer.image?.complete) {
-                            const clipWidth = contentLayer.width * (splitPosition / 100);
-                            ctx.save(); ctx.beginPath(); ctx.rect(drawX, drawY, clipWidth, contentLayer.height); ctx.clip();
-                            const { sx: sxOrig, sy: syOrig, sWidth: sWidthOrig, sHeight: sHeightOrig } = getCoverSourceRect(contentLayer.width, contentLayer.height, imgLayer.originalImage.naturalWidth, imgLayer.originalImage.naturalHeight);
-                            ctx.drawImage(imgLayer.originalImage, sxOrig, syOrig, sWidthOrig, sHeightOrig, drawX, drawY, contentLayer.width, contentLayer.height);
-                            ctx.restore();
-                            ctx.save(); ctx.beginPath(); ctx.rect(drawX + clipWidth, drawY, contentLayer.width - clipWidth, contentLayer.height); ctx.clip();
-                            const { sx, sy, sWidth, sHeight } = getCoverSourceRect(contentLayer.width, contentLayer.height, imgLayer.image.naturalWidth, imgLayer.image.naturalHeight);
-                            ctx.drawImage(imgLayer.image, sx, sy, sWidth, sHeight, drawX, drawY, contentLayer.width, contentLayer.height);
-                            ctx.restore();
-                        } else if (imageToDraw?.complete) {
-                            const { sx, sy, sWidth, sHeight } = getCoverSourceRect(contentLayer.width, contentLayer.height, imageToDraw.naturalWidth, imageToDraw.naturalHeight);
-                            ctx.drawImage(imageToDraw, sx, sy, sWidth, sHeight, drawX, drawY, contentLayer.width, contentLayer.height);
-                        }
-                    } else if (contentLayer.type === 'video') {
-                        const videoLayer = contentLayer as VideoLayer;
-                        if (videoLayer.videoElement) {
-                            const frameW = contentLayer.width, frameH = contentLayer.height;
-                            const videoW = videoLayer.videoElement.videoWidth, videoH = videoLayer.videoElement.videoHeight;
-                            const frameRatio = frameW / frameH; const videoRatio = videoW / videoH;
-                            let sx = 0, sy = 0, sWidth = videoW, sHeight = videoH;
-                            if(videoRatio > frameRatio) { sWidth = sHeight * frameRatio; sx = (videoW - sWidth) / 2;}
-                            else { sHeight = sWidth / frameRatio; sy = (videoH - sHeight) / 2;}
-                            ctx.drawImage(videoLayer.videoElement, sx, sy, sWidth, sHeight, drawX, drawY, frameW, frameH);
-                        }
-                    } else if (contentLayer.type === 'text') {
-                        const textLayer = contentLayer as TextLayer;
-                        ctx.font = `${textLayer.fontStyle} ${textLayer.fontWeight} ${textLayer.fontSize}px "${textLayer.fontFamily}"`; ctx.fillStyle = textLayer.color; ctx.textAlign = textLayer.textAlign; ctx.textBaseline = 'top';
-                        let textX = drawX; if (textLayer.textAlign === 'center') textX += contentLayer.width / 2; if (textLayer.textAlign === 'right') textX += contentLayer.width;
-                        let textToDraw = textLayer.text; if (textLayer.letterCase === 'uppercase') textToDraw = textToDraw.toUpperCase(); else if (textLayer.letterCase === 'lowercase') textToDraw = textToDraw.toLowerCase();
-                        const lines = textToDraw.split('\n');
-                        const lineHeight = textLayer.fontSize * 1.2;
-                        lines.forEach((line, i) => {
-                            ctx.fillText(line, textX, drawY + (i * lineHeight));
-                        });
-                    } else if (contentLayer.type === 'shape') {
-                        const shapeLayer = contentLayer as ShapeLayer;
-                        ctx.fillStyle = shapeLayer.fill; ctx.strokeStyle = shapeLayer.fill; ctx.lineWidth = shapeLayer.strokeWidth;
-                        if (shapeLayer.shape === 'rectangle') { ctx.fillRect(drawX, drawY, contentLayer.width, contentLayer.height); if (shapeLayer.strokeWidth > 0) ctx.strokeRect(drawX, drawY, contentLayer.width, contentLayer.height); } 
-                        else if (shapeLayer.shape === 'ellipse') { ctx.beginPath(); ctx.ellipse(0, 0, contentLayer.width / 2, contentLayer.height / 2, 0, 0, 2 * Math.PI); ctx.fill(); if (shapeLayer.strokeWidth > 0) ctx.stroke(); }
-                        else if (shapeLayer.shape === 'line' || shapeLayer.shape === 'arrow') {
-                            ctx.beginPath();
-                            ctx.moveTo(drawX, drawY + contentLayer.height);
-                            ctx.lineTo(drawX + contentLayer.width, drawY);
-                            ctx.stroke();
-                            if(shapeLayer.shape === 'arrow') {
-                                const angle = Math.atan2(-contentLayer.height, contentLayer.width);
-                                const headlen = Math.min(contentLayer.width, contentLayer.height) * 0.2;
-                                ctx.beginPath();
-                                ctx.moveTo(drawX + contentLayer.width, drawY);
-                                ctx.lineTo(drawX + contentLayer.width - headlen * Math.cos(angle - Math.PI / 6), drawY - headlen * Math.sin(angle - Math.PI / 6));
-                                ctx.moveTo(drawX + contentLayer.width, drawY);
-                                ctx.lineTo(drawX + contentLayer.width - headlen * Math.cos(angle + Math.PI / 6), drawY - headlen * Math.sin(angle + Math.PI / 6));
-                                ctx.stroke();
-                            }
-                        }
-                    } else if (contentLayer.type === 'frame') {
-                        const frameLayer = contentLayer as FrameLayer;
-                        ctx.beginPath();
-                        if(frameLayer.shape === 'ellipse') ctx.ellipse(0, 0, frameLayer.width / 2, frameLayer.height / 2, 0, 0, 2 * Math.PI);
-                        else ctx.rect(drawX, drawY, frameLayer.width, frameLayer.height);
-                        ctx.save();
-                        ctx.clip();
-                        if(frameLayer.fill) {
-                            const { fill } = frameLayer;
-                            const element = fill.type === 'image' ? fill.image : fill.videoElement;
-                            const elementW = fill.type === 'image' ? fill.image.naturalWidth : fill.videoElement.videoWidth;
-                            const elementH = fill.type === 'image' ? fill.image.naturalHeight : fill.videoElement.videoHeight;
-                            
-                            const frameW = frameLayer.width, frameH = frameLayer.height;
-                            const frameRatio = frameW / frameH; const elementRatio = elementW / elementH;
-                            
-                            let baseW, baseH;
-                            if (elementRatio > frameRatio) { baseH = frameH; baseW = frameH * elementRatio; } 
-                            else { baseW = frameW; baseH = frameW / elementRatio; }
-    
-                            const finalDrawW = baseW * fill.scale;
-                            const finalDrawH = baseH * fill.scale;
-                            const finalDrawX = drawX + (frameW - finalDrawW) / 2 + fill.offsetX;
-                            const finalDrawY = drawY + (frameH - finalDrawH) / 2 + fill.offsetY;
-    
-                            ctx.drawImage(element, finalDrawX, finalDrawY, finalDrawW, finalDrawH);
-                        } else {
-                            ctx.fillStyle = '#4b5563'; ctx.fill();
-                            ctx.font = `30px sans-serif`; ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-                            ctx.fillText('🖼️', 0, 0);
-                        }
+                 if (layer.type === 'image' || layer.type === 'video') {
+                    const mediaElement = layer.type === 'image' ? (layer as ImageLayer).image : (layer as VideoLayer).videoElement;
+                    if (!mediaElement) {
                         ctx.restore();
-                        ctx.strokeStyle = "rgba(150,150,150,0.5)"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke();
+                        return;
                     }
-                };
-                renderContent(layer);
+            
+                    const mediaWidth = layer.type === 'image' ? (mediaElement as HTMLImageElement).naturalWidth : (mediaElement as HTMLVideoElement).videoWidth;
+                    const mediaHeight = layer.type === 'image' ? (mediaElement as HTMLImageElement).naturalHeight : (mediaElement as HTMLVideoElement).videoHeight;
+                    
+                    const isReady = layer.type === 'image' ? (mediaElement as HTMLImageElement).complete : (mediaElement as HTMLVideoElement).readyState >= 2;
+                    
+                    if (isReady && mediaWidth > 0 && mediaHeight > 0) {
+                        const destX = -layer.width / 2;
+                        const destY = -layer.height / 2;
+                        const destWidth = layer.width;
+                        const destHeight = layer.height;
+
+                        const mediaRatio = mediaWidth / mediaHeight;
+                        const destRatio = destWidth / destHeight;
+
+                        let sx = 0, sy = 0, sWidth = mediaWidth, sHeight = mediaHeight;
+                        
+                        if (mediaRatio > destRatio) {
+                            sWidth = sHeight * destRatio;
+                            sx = (mediaWidth - sWidth) / 2;
+                        } else {
+                            sHeight = sWidth / destRatio;
+                            sy = (mediaHeight - sHeight) / 2;
+                        }
+                        
+                        ctx.drawImage(mediaElement, sx, sy, sWidth, sHeight, destX, destY, destWidth, destHeight);
+                    }
+                } else if (layer.type === 'text') {
+                    const textLayer = layer as TextLayer;
+                    ctx.font = `${textLayer.fontStyle} ${textLayer.fontWeight} ${textLayer.fontSize}px "${textLayer.fontFamily}"`; ctx.fillStyle = textLayer.color; ctx.textAlign = textLayer.textAlign; ctx.textBaseline = 'top';
+                    let textX = drawX; if (textLayer.textAlign === 'center') textX += layer.width / 2; if (textLayer.textAlign === 'right') textX += layer.width;
+                    let textToDraw = textLayer.text; if (textLayer.letterCase === 'uppercase') textToDraw = textToDraw.toUpperCase(); else if (textLayer.letterCase === 'lowercase') textToDraw = textToDraw.toLowerCase();
+                    const lines = textToDraw.split('\n');
+                    const lineHeight = textLayer.fontSize * 1.2;
+                    lines.forEach((line, i) => ctx.fillText(line, textX, drawY + (i * lineHeight)));
+                } else if (layer.type === 'shape') {
+                    const shapeLayer = layer as ShapeLayer;
+                    ctx.fillStyle = shapeLayer.fill;
+                    ctx.strokeStyle = shapeLayer.stroke;
+                    ctx.lineWidth = shapeLayer.strokeWidth;
+                
+                    if (shapeLayer.shape === 'rectangle') {
+                        if (shapeLayer.fill && shapeLayer.fill !== 'transparent') {
+                            ctx.fillRect(drawX, drawY, shapeLayer.width, shapeLayer.height);
+                        }
+                        if (shapeLayer.stroke && shapeLayer.stroke !== 'transparent' && shapeLayer.strokeWidth > 0) {
+                            ctx.strokeRect(drawX, drawY, shapeLayer.width, shapeLayer.height);
+                        }
+                    } else if (shapeLayer.shape === 'ellipse') {
+                        ctx.beginPath();
+                        ctx.ellipse(drawX + shapeLayer.width / 2, drawY + shapeLayer.height / 2, shapeLayer.width / 2, shapeLayer.height / 2, 0, 0, 2 * Math.PI);
+                        if (shapeLayer.fill && shapeLayer.fill !== 'transparent') {
+                            ctx.fill();
+                        }
+                        if (shapeLayer.stroke && shapeLayer.stroke !== 'transparent' && shapeLayer.strokeWidth > 0) {
+                            ctx.stroke();
+                        }
+                    } else if (shapeLayer.shape === 'line' || shapeLayer.shape === 'arrow') {
+                        const lineY = drawY + layer.height / 2;
+                        
+                        ctx.strokeStyle = shapeLayer.fill;
+                        ctx.lineWidth = layer.height;
+                        ctx.lineCap = 'round';
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(drawX, lineY);
+                        ctx.lineTo(drawX + layer.width, lineY);
+                        ctx.stroke();
+                
+                        if (shapeLayer.shape === 'arrow') {
+                            const headlen = Math.max(10, layer.height * 3);
+                            ctx.beginPath();
+                            ctx.moveTo(drawX + layer.width, lineY);
+                            ctx.lineTo(drawX + layer.width - headlen, lineY - headlen / 2);
+                            ctx.lineTo(drawX + layer.width - headlen, lineY + headlen / 2);
+                            ctx.closePath();
+                            ctx.fillStyle = shapeLayer.fill;
+                            ctx.fill();
+                        }
+                    }
+                } else if (layer.type === 'frame') {
+                    const frameLayer = layer as FrameLayer;
+                    
+                    ctx.save();
+                    ctx.beginPath();
+                    if (frameLayer.shape === 'rectangle') {
+                        ctx.rect(drawX, drawY, frameLayer.width, frameLayer.height);
+                    } else {
+                        ctx.ellipse(drawX + frameLayer.width / 2, drawY + frameLayer.height / 2, frameLayer.width / 2, frameLayer.height / 2, 0, 0, 2 * Math.PI);
+                    }
+                    (ctx as any).clip();
+                
+                    if (frameLayer.fill) {
+                        const fill = frameLayer.fill;
+                        const element = fill.type === 'image' ? fill.image : fill.videoElement;
+                        const elementW = (fill.type === 'image' ? (element as HTMLImageElement).naturalWidth : (element as HTMLVideoElement).videoWidth) || 0;
+                        const elementH = (fill.type === 'image' ? (element as HTMLImageElement).naturalHeight : (element as HTMLVideoElement).videoHeight) || 0;
+                
+                        if (elementW > 0 && elementH > 0) {
+                            const frameRatio = frameLayer.width / frameLayer.height;
+                            const elementRatio = elementW / elementH;
+                            let baseW, baseH;
+                            if (elementRatio > frameRatio) {
+                                baseH = frameLayer.height;
+                                baseW = baseH * elementRatio;
+                            } else {
+                                baseW = frameLayer.width;
+                                baseH = baseW / elementRatio;
+                            }
+                
+                            const drawW = baseW * fill.scale;
+                            const drawH = baseH * fill.scale;
+                            const dX = drawX + (frameLayer.width - drawW) / 2 + fill.offsetX;
+                            const dY = drawY + (frameLayer.height - drawH) / 2 + fill.offsetY;
+                            ctx.drawImage(element, dX, dY, drawW, drawH);
+                        }
+                    } else {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                        if (frameLayer.shape === 'rectangle') {
+                            ctx.fillRect(drawX, drawY, frameLayer.width, frameLayer.height);
+                        } else {
+                            ctx.beginPath();
+                            ctx.ellipse(drawX + frameLayer.width / 2, drawY + frameLayer.height / 2, frameLayer.width / 2, frameLayer.height / 2, 0, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([10, 10]);
+                        if (frameLayer.shape === 'rectangle') {
+                            ctx.strokeRect(drawX, drawY, frameLayer.width, frameLayer.height);
+                        } else {
+                            ctx.beginPath();
+                            ctx.ellipse(drawX + frameLayer.width / 2, drawY + frameLayer.height / 2, frameLayer.width / 2, frameLayer.height / 2, 0, 0, 2 * Math.PI);
+                            ctx.stroke();
+                        }
+                        ctx.setLineDash([]);
+                    }
+                    ctx.restore();
+                }
             }
             ctx.restore();
         });
-    }, [layers, editingTextLayerId, selectedLayerId, comparisonMode, splitPosition, backgroundColor]);
+    }, [editingTextLayerId]);
+
+    const draw = useCallback(() => {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const ctx = canvas.getContext('2d'); if (!ctx) return;
+        drawSceneToContext(ctx, layers, backgroundColor);
+    }, [layers, backgroundColor, drawSceneToContext]);
 
     useEffect(() => {
         let animationFrameId: number;
@@ -582,14 +615,14 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             width: 200, height: 200, rotation: 0, opacity: 1, flipH: false, flipV: false, isLoading: false 
         };
         let newLayer: Layer | null = null;
-        if (type === 'text') newLayer = { ...baseLayer, name: 'Texto', type: 'text', text: options.text || 'Digite seu texto', fontFamily: 'Inter', fontSize: 48, color: '#FFFFFF', fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', textAlign: 'left', width: 400, height: 60, letterCase: 'normal' } as TextLayer;
+        if (type === 'text') newLayer = { ...baseLayer, name: 'Texto', type: 'text', text: options.text || 'Digite seu texto', fontFamily: 'Inter', fontSize: 48, color: '#000000', fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', textAlign: 'left', width: 400, height: 60, letterCase: 'normal' } as TextLayer;
         else if (type === 'shape') {
             const shapeType = options.shape || 'rectangle';
             const shapeDefaults = {
                 'rectangle': { width: 150, height: 150, fill: '#CCCCCC' },
                 'ellipse': { width: 150, height: 150, fill: '#CCCCCC' },
-                'line': { width: 200, height: 5, fill: '#FFFFFF', rotation: -45 },
-                'arrow': { width: 200, height: 5, fill: '#FFFFFF', rotation: -45 },
+                'line': { width: 200, height: 5, fill: '#000000', rotation: -45 },
+                'arrow': { width: 200, height: 5, fill: '#000000', rotation: -45 },
             };
             const defaults = shapeDefaults[shapeType as keyof typeof shapeDefaults] || {};
             newLayer = { ...baseLayer, name: `Forma ${shapeType}`, ...defaults, type: 'shape', shape: shapeType, stroke: 'transparent', strokeWidth: shapeType === 'line' || shapeType === 'arrow' ? 5 : 0 } as ShapeLayer;
@@ -631,7 +664,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
 
     useEffect(() => {
         if (isOpen && imageUrl) {
-            const size = SIZES[0]; setCanvasSize(size); setBackgroundColor('#111827');
+            const size = SIZES[0]; setCanvasSize(size); setBackgroundColor('#FFFFFF');
             loadImage(imageUrl).then(image => {
                 const canvasRatio = size.w / size.h; const imageRatio = image.naturalWidth / image.naturalHeight;
                 let width, height, x, y;
@@ -676,29 +709,53 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     const bringForward = () => { if (!selectedLayerId) return; setLayersAndCommit(ls => { const i = ls.findIndex(l => l.id === selectedLayerId); if (i < ls.length - 1) { const n = [...ls]; [n[i], n[i + 1]] = [n[i + 1], n[i]]; return n; } return ls; }); };
     const sendBackward = () => { if (!selectedLayerId) return; setLayersAndCommit(ls => { const i = ls.findIndex(l => l.id === selectedLayerId); if (i > 0) { const n = [...ls]; [n[i], n[i - 1]] = [n[i - 1], n[i]]; return n; } return ls; }); };
 
-    const handleReplaceLayerImage = async (layerId: string, newSrc: string) => {
+    const handleReplaceLayerMedia = async (layerId: string, newSrc: string, type: 'image' | 'video') => {
         try {
-            const image = await loadImage(newSrc);
-            const updater = (prev: Layer[]) => prev.map(l => {
-                if (l.id === layerId) {
-                    if (l.type === 'image') {
-                        const imgLayer = l as ImageLayer;
-                        const aspectRatio = image.width / image.height;
-                        const originalSrc = imgLayer.originalSrc || imgLayer.src;
-                        const originalImage = imgLayer.originalImage || imgLayer.image;
-                        return {...imgLayer, src: newSrc, image, height: imgLayer.width / aspectRatio, originalSrc, originalImage };
-                    } else if (l.type === 'frame') {
-                         const frameLayer = l as FrameLayer;
-                         const newFill: FrameFill = { type: 'image' as const, src: newSrc, image, scale: 1, offsetX: 0, offsetY: 0 };
-                         return { ...frameLayer, fill: newFill };
-                    }
+            const targetLayer = layers.find(l => l.id === layerId);
+            if (!targetLayer) return;
+    
+            let updatedLayer: Layer | null = null;
+    
+            if (targetLayer.type === 'image' && type === 'image') {
+                const image = await loadImage(newSrc);
+                const imgLayer = targetLayer as ImageLayer;
+                const aspectRatio = image.naturalWidth / image.naturalHeight;
+                const originalSrc = imgLayer.originalSrc || imgLayer.src;
+                const originalImage = imgLayer.originalImage || imgLayer.image;
+                const newImageLayer: ImageLayer = { ...imgLayer, src: newSrc, image, height: imgLayer.width / aspectRatio, originalSrc, originalImage };
+                updatedLayer = newImageLayer;
+            } else if (targetLayer.type === 'frame') {
+                const frameLayer = targetLayer as FrameLayer;
+                let newFill: FrameFill | null = null;
+                if (type === 'image') {
+                    const image = await loadImage(newSrc);
+                    newFill = { type: 'image' as const, src: newSrc, image, scale: 1, offsetX: 0, offsetY: 0 };
+                } else if (type === 'video') {
+                    const videoElement = await loadVideo(newSrc);
+                    videoElement.loop = true;
+                    videoElement.muted = true;
+                    newFill = { type: 'video' as const, src: newSrc, videoElement, scale: 1, offsetX: 0, offsetY: 0 };
                 }
-                return l;
-            });
-            setLayersAndCommit(updater);
-            setComparisonMode('after');
-        } catch(e) { console.error("Failed to replace layer image", e); }
-        finally { if (replaceImageInputRef.current) replaceImageInputRef.current.value = ''; }
+                if (newFill) {
+                    const newFrameLayer: FrameLayer = { ...frameLayer, fill: newFill };
+                    updatedLayer = newFrameLayer;
+                }
+            }
+    
+            if (updatedLayer) {
+                const finalUpdatedLayer = updatedLayer; // for closure
+                setLayersAndCommit(layers.map(l => l.id === layerId ? finalUpdatedLayer : l));
+                if (type === 'image') {
+                    setComparisonMode('after');
+                }
+            }
+        } catch (e) {
+            console.error("Failed to replace layer media", e);
+        } finally {
+            if (replaceImageInputRef.current) {
+                replaceImageInputRef.current.value = '';
+            }
+        }
     };
     
     const handleAITool = async (tool: 'bg' | 'expand') => {
@@ -712,8 +769,18 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 const imageForRemoval = imageLayer.originalImage || imageLayer.image;
                 if (!imageForRemoval) { throw new Error("A imagem da camada não está carregada."); }
                 const blob = await removeBackground(imageForRemoval.src);
-                const url = URL.createObjectURL(blob);
-                await handleReplaceLayerImage(selectedLayer.id, url);
+                const dataUrl = await blobToBase64(blob);
+                const image = await loadImage(dataUrl);
+                const updater = (prev: Layer[]) => prev.map(l => {
+                    if (l.id === selectedLayer.id) {
+                        const imgLayer = l as ImageLayer;
+                        const aspectRatio = image.naturalWidth / image.naturalHeight;
+                        return {...imgLayer, src: dataUrl, image, height: imgLayer.width / aspectRatio, originalSrc: imgLayer.src, originalImage: imgLayer.image };
+                    }
+                    return l;
+                });
+                setLayersAndCommit(updater);
+                setComparisonMode('after');
             } else if (tool === 'expand') {
                 const originalImageForTool = imageLayer.originalImage || imageLayer.image;
                 if (!originalImageForTool || !originalImageForTool.complete) { throw new Error("A imagem da camada não está totalmente carregada."); }
@@ -730,21 +797,20 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     };
     
     const handleOpenBgRemover = () => { const layer = selectedLayer as ImageLayer; if (layer && layer.type === 'image' && layer.originalSrc) { setImageForBgRefinement({ current: layer.src, original: layer.originalSrc, layerId: layer.id }); setIsBgRemoverOpen(true); } };
-    const handleApplyBgRefinement = (newImageUrl: string) => {
+    const handleApplyBgRefinement = async (newImageUrl: string) => {
         if (imageForBgRefinement) {
-            loadImage(newImageUrl).then(image => {
-                 setLayersAndCommit(prev => prev.map(l => {
-                    if (l.id === imageForBgRefinement.layerId && l.type === 'image') {
-                        const imgLayer = l as ImageLayer; const aspectRatio = image.width / image.height;
-                        return { ...imgLayer, src: newImageUrl, image, height: imgLayer.width / aspectRatio };
-                    } return l;
-                }));
-            });
+            const image = await loadImage(newImageUrl);
+            setLayersAndCommit(prev => prev.map(l => {
+                if (l.id === imageForBgRefinement.layerId && l.type === 'image') {
+                    const imgLayer = l as ImageLayer; const aspectRatio = image.naturalWidth / image.naturalHeight;
+                    return { ...imgLayer, src: newImageUrl, image, height: imgLayer.width / aspectRatio };
+                } return l;
+            }));
         }
         setIsBgRemoverOpen(false); setImageForBgRefinement(null);
     };
     const handleGenerateAIImage = async (prompt: string) => { if(!prompt) return; setIsLoadingAI('generate'); try { const newImageSrc = await generateImageFromPrompt(prompt); addLayer('image', { src: newImageSrc }); } catch(err) { console.error(`AI image generation failed:`, err); alert(`Ocorreu um erro.`); } finally { setIsLoadingAI(null); } };
-    const getCoords = useCallback((e: React.MouseEvent | MouseEvent | React.DragEvent): { x: number, y: number } => { if (!canvasRef.current) return {x: 0, y: 0}; const rect = canvasRef.current.getBoundingClientRect(); return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale }; }, [scale]);
+    const getCoords = useCallback((e: React.MouseEvent | MouseEvent | React.DragEvent): { x: number, y: number } => { if (!canvasRef.current) return {x: 0, y: 0}; const rect = canvasRef.current.getBoundingClientRect(); return { x: (e.clientX - rect.left) / finalScale, y: (e.clientY - rect.top) / finalScale }; }, [finalScale]);
     
     const getLayerAtPoint = useCallback((x: number, y: number, layersToScan: Layer[], ignoreId?: string): Layer | undefined => {
         return [...layersToScan].reverse().find(layer => {
@@ -825,7 +891,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             let newY = y - startY;
             
             const activeGuides: AlignmentGuide[] = [];
-            const snapThreshold = 5 / scale;
+            const snapThreshold = 5 / finalScale;
             const movingLayer = originalLayer;
 
             const movingBounds = {
@@ -876,7 +942,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 }
             }
 
-            // Horizontal Snapping - must re-calculate movingBounds with potentially snapped X
+            // Horizontal Snapping
             const finalMovingBounds = { ...movingBounds, left: newX, right: newX + movingLayer.width, centerX: newX + movingLayer.width / 2 };
             let snappedY = false;
             const movingPointsH = [finalMovingBounds.top, finalMovingBounds.centerY, finalMovingBounds.bottom];
@@ -928,8 +994,8 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
         } 
         else if (type === 'rotate') { const currentAngle = Math.atan2(y - originalCenter.y, x - originalCenter.x) * (180 / Math.PI); updateLayerProps(originalLayer.id, { rotation: currentAngle - startAngle }, false) } 
         else if (type === 'panFrame' && originalFill) {
-            const dx = (e.clientX - startX) / scale;
-            const dy = (e.clientY - startY) / scale;
+            const dx = (e.clientX - startX) / finalScale;
+            const dy = (e.clientY - startY) / finalScale;
             const element = originalFill.type === 'image' ? originalFill.image : originalFill.videoElement;
             const elementW = 'naturalWidth' in element ? element.naturalWidth : (element as HTMLVideoElement).videoWidth;
             const elementH = 'naturalHeight' in element ? element.naturalHeight : (element as HTMLVideoElement).videoHeight;
@@ -951,21 +1017,35 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             const constrainedOffsetX = Math.max(-maxPanX, Math.min(newOffsetX, maxPanX));
             const constrainedOffsetY = Math.max(-maxPanY, Math.min(newOffsetY, maxPanY));
             
-            // FIX: Replaced ternary with an if/else block to help TypeScript correctly narrow the
-            // discriminated union type of `originalFill` and prevent incorrect type widening.
             let newFill: FrameFill;
             if (originalFill.type === 'image') {
-                newFill = { ...originalFill, offsetX: constrainedOffsetX, offsetY: constrainedOffsetY };
+                newFill = {
+                    type: 'image',
+                    src: originalFill.src,
+                    assetId: originalFill.assetId,
+                    image: originalFill.image,
+                    scale: originalFill.scale,
+                    offsetX: constrainedOffsetX,
+                    offsetY: constrainedOffsetY,
+                };
             } else {
-                newFill = { ...originalFill, offsetX: constrainedOffsetX, offsetY: constrainedOffsetY };
+                newFill = {
+                    type: 'video',
+                    src: originalFill.src,
+                    assetId: originalFill.assetId,
+                    videoElement: originalFill.videoElement,
+                    scale: originalFill.scale,
+                    offsetX: constrainedOffsetX,
+                    offsetY: constrainedOffsetY,
+                };
             }
             updateLayerProps(originalLayer.id, { fill: newFill }, false);
         } else if (type === 'resize' && handle) {
             const { originalLayer } = interaction;
             const { x: originalX, y: originalY, width: originalW, height: originalH, rotation } = originalLayer;
 
-            const dx = (e.clientX - interaction.startX) / scale;
-            const dy = (e.clientY - interaction.startY) / scale;
+            const dx = (e.clientX - interaction.startX) / finalScale;
+            const dy = (e.clientY - interaction.startY) / finalScale;
             const rad = rotation * Math.PI / 180;
             const cos = Math.cos(rad);
             const sin = Math.sin(rad);
@@ -1003,56 +1083,10 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 newX = originalCenter.x - newW / 2;
                 newY = originalCenter.y - newH / 2;
             }
-            
-            // --- Resizing Snap Logic ---
-            const snapThreshold = 5 / scale;
-            const targetLayers = layers.filter(l => l.id !== originalLayer.id);
-            const vTargets: SnapTarget[] = [{ value: canvasSize.w / 2, start: 0, end: canvasSize.h }];
-            const hTargets: SnapTarget[] = [{ value: canvasSize.h / 2, start: 0, end: canvasSize.w }];
-            targetLayers.forEach(target => {
-                vTargets.push(
-                    { value: target.x, start: target.y, end: target.y + target.height },
-                    { value: target.x + target.width / 2, start: target.y, end: target.y + target.height },
-                    { value: target.x + target.width, start: target.y, end: target.y + target.height }
-                );
-                hTargets.push(
-                    { value: target.y, start: target.x, end: target.x + target.width },
-                    { value: target.y + target.height / 2, start: target.x, end: target.x + target.width },
-                    { value: target.y + target.height, start: target.x, end: target.x + target.width }
-                );
-            });
 
-            let finalX = newX, finalY = newY, finalW = newW, finalH = newH;
-            const activeGuides: AlignmentGuide[] = [];
-            
-            if (handle.includes('r')) {
-                const snap = findSnap(newX + newW, vTargets, snapThreshold);
-                if (snap) { finalW = snap.value - newX; activeGuides.push({ type: 'vertical', position: snap.value, start: Math.min(newY, snap.start), end: Math.max(newY + newH, snap.end) }); }
-            } else if (handle.includes('l')) {
-                const snap = findSnap(newX, vTargets, snapThreshold);
-                if (snap) { const rightEdge = originalX + originalW; finalX = snap.value; finalW = rightEdge - finalX; activeGuides.push({ type: 'vertical', position: snap.value, start: Math.min(newY, snap.start), end: Math.max(newY + newH, snap.end) }); }
-            }
-
-            if (handle.includes('b')) {
-                const snap = findSnap(newY + newH, hTargets, snapThreshold);
-                if (snap) { finalH = snap.value - newY; activeGuides.push({ type: 'horizontal', position: snap.value, start: Math.min(finalX, snap.start), end: Math.max(finalX + finalW, snap.end) }); }
-            } else if (handle.includes('t')) {
-                const snap = findSnap(newY, hTargets, snapThreshold);
-                if (snap) { const bottomEdge = originalY + originalH; finalY = snap.value; finalH = bottomEdge - finalY; activeGuides.push({ type: 'horizontal', position: snap.value, start: Math.min(finalX, snap.start), end: Math.max(finalX + finalW, snap.end) }); }
-            }
-            
-            if (handle.length === 2) {
-                const ratio = originalW / originalH;
-                if (isFinite(ratio) && ratio !== 0) {
-                     if (Math.abs(finalW - newW) > 0.1) { const oldH = finalH; finalH = finalW / ratio; if (handle.includes('t')) { finalY += oldH - finalH; } } 
-                     else if (Math.abs(finalH - newH) > 0.1) { const oldW = finalW; finalW = finalH * ratio; if (handle.includes('l')) { finalX += oldW - finalW; } }
-                }
-            }
-            
-            setAlignmentGuides(activeGuides);
-            updateLayerProps(originalLayer.id, { x: finalX, y: finalY, width: finalW, height: finalH }, false);
+            updateLayerProps(originalLayer.id, { x: newX, y: newY, width: newW, height: newH }, false);
         }
-    }, [interaction, scale, getCoords, layers, updateLayerProps, canvasSize]);
+    }, [interaction, finalScale, getCoords, layers, updateLayerProps, canvasSize]);
 
     const addPastedLayer = useCallback(async (layer: Layer) => {
         try {
@@ -1067,9 +1101,9 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 const frameLayer = layer as FrameLayer;
                 if (frameLayer.fill) {
                     if (frameLayer.fill.type === 'image') {
-                        frameLayer.fill.image = await loadImage(frameLayer.fill.src);
+                        (frameLayer.fill as any).image = await loadImage(frameLayer.fill.src);
                     } else if (frameLayer.fill.type === 'video') {
-                        frameLayer.fill.videoElement = await loadVideo(frameLayer.fill.src);
+                        (frameLayer.fill as any).videoElement = await loadVideo(frameLayer.fill.src);
                     }
                 }
             }
@@ -1157,28 +1191,26 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 };
         
                 if (mediaLayer.type === 'image' && mediaLayer.image) {
-                    const fillContent: Extract<FrameFillContent, { type: 'image' }> = {
-                        type: 'image',
-                        src: mediaLayer.src,
-                        assetId: mediaLayer.assetId,
-                        image: mediaLayer.image,
-                    };
+                    const imageLayer = mediaLayer;
+                    // FIX: Type error on FrameFill assignment. Explicitly creating an object that matches the 'image' part of the FrameFill union type.
                     const newFill: FrameFill = {
-                        ...fillContent,
+                        type: 'image' as const,
+                        src: imageLayer.src,
+                        assetId: imageLayer.assetId,
+                        image: imageLayer.image,
                         scale: 1,
                         offsetX: 0,
                         offsetY: 0,
                     };
                     updateFrameWithFill(newFill);
                 } else if (mediaLayer.type === 'video' && mediaLayer.videoElement) {
-                    const fillContent: Extract<FrameFillContent, { type: 'video' }> = {
-                        type: 'video',
-                        src: mediaLayer.src,
-                        assetId: mediaLayer.assetId,
-                        videoElement: mediaLayer.videoElement,
-                    };
+                    const videoLayer = mediaLayer;
+                    // FIX: Corrected a complex type inference issue by explicitly creating an object that matches the 'video' part of the FrameFill union type. This helps the TypeScript compiler correctly discriminate the type.
                     const newFill: FrameFill = {
-                        ...fillContent,
+                        type: 'video' as const,
+                        src: videoLayer.src,
+                        assetId: videoLayer.assetId,
+                        videoElement: videoLayer.videoElement,
                         scale: 1,
                         offsetX: 0,
                         offsetY: 0,
@@ -1246,128 +1278,167 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             videoLayer.videoElement.currentTime = time;
         }
     };
+    
+const handleDownload = async (options: DownloadOptions) => {
+    setIsDownloadModalOpen(false);
 
-    const getBestSupportedMimeType = () => {
-        const commonMimeTypes = [
-            'video/mp4; codecs="avc1.42E01E, mp4a.40.2"', // H.264 Main + AAC LC for max compatibility (WhatsApp, iOS)
-            'video/mp4; codecs="avc1.42E01E"',          // H.264 Main
-            'video/mp4',
-            'video/webm; codecs=vp9,opus',
-            'video/webm; codecs=vp8,opus',
-            'video/webm',
-        ];
-        for (const type of commonMimeTypes) {
-            if (MediaRecorder.isTypeSupported(type)) {
-                return type;
-            }
-        }
-        alert("O seu navegador não suporta a exportação de MP4. O ficheiro gerado será WebM, que pode não ser compatível com todas as plataformas. Tente usar o Chrome para obter os melhores resultados.")
-        return 'video/webm'; // Fallback
+    const jobId = `download-${Date.now()}`;
+    const tempThumbCanvas = document.createElement('canvas');
+    tempThumbCanvas.width = 128;
+    tempThumbCanvas.height = 128 * (canvasSize.h / canvasSize.w);
+    const thumbCtx = tempThumbCanvas.getContext('2d');
+    if (thumbCtx) {
+       drawSceneToContext(thumbCtx, layers, backgroundColor);
+    }
+    const job: DownloadJob = {
+        id: jobId,
+        fileName: `design-${Date.now()}.${options.format}`,
+        status: 'preparing',
+        progress: 0,
+        thumbnail: tempThumbCanvas.toDataURL('image/jpeg', 0.5),
     };
-    
-    const handleDownload = async (options: { format: 'png' | 'jpg' | 'mp4'; transparent: boolean }, onProgress: (p: number) => void) => {
-        setSelectedLayerId(null);
-        setEditingTextLayerId(null);
-        setEditingFrameId(null);
-        setComparisonMode('after');
-        setContextMenu(null);
-        onProgress(0);
-        await new Promise(resolve => setTimeout(resolve, 100));
-    
+    setDownloads(prev => [...prev, job]);
+
+    if (options.format === 'mp4' && (typeof (window as any).VideoEncoder === 'undefined' || typeof (window as any).VideoFrame === 'undefined')) {
+        setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: 'Seu navegador não suporta a exportação de vídeo. Tente o Chrome ou Edge.' } : j));
+        return;
+    }
+
+    try {
         if (options.format !== 'mp4') {
-            const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = canvasSize.w;
-            exportCanvas.height = canvasSize.h;
-            const ctx = exportCanvas.getContext('2d');
-            if (!ctx) { onProgress(1); return; }
-    
-            if (!options.transparent) {
-                ctx.fillStyle = backgroundColor;
-                ctx.fillRect(0, 0, canvasSize.w, canvasSize.h);
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvasSize.w;
+            tempCanvas.height = canvasSize.h;
+            const tempCtx = tempCanvas.getContext('2d');
+            if(tempCtx) {
+                drawSceneToContext(tempCtx, layers, options.transparent ? 'transparent' : backgroundColor);
             }
-    
-            const originalCanvas = canvasRef.current;
-            (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = exportCanvas;
-            draw();
-            (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = originalCanvas;
-    
-            const finalImage = exportCanvas.toDataURL(options.format === 'jpg' ? 'image/jpeg' : 'image/png');
-            const a = document.createElement('a'); a.href = finalImage; a.download = `design.${options.format}`; a.click();
-            onProgress(1);
-        } else {
-            try {
-                const mediaElements = allMediaElementsRef.current;
-                if (mediaElements.length === 0) throw new Error("Não há conteúdo de vídeo/áudio para exportar.");
-    
-                const playbackStates = mediaElements.map(el => ({ paused: el.paused, time: el.currentTime }));
-
-                mediaElements.forEach(el => { el.pause(); el.currentTime = 0; });
-                await new Promise(resolve => setTimeout(resolve, 50));
-    
-                const maxDuration = Math.max(0, ...mediaElements.map(el => el.duration).filter(d => isFinite(d)));
-                if (maxDuration <= 0 || !isFinite(maxDuration)) throw new Error("Duração do conteúdo inválida.");
-    
-                const stream = canvasRef.current!.captureStream(30);
-                const audioContext = new AudioContext(); // Create a fresh context for export
-                const destination = audioContext.createMediaStreamDestination();
-                
-                mediaElements.forEach(el => {
-                    if (el instanceof HTMLVideoElement || el instanceof HTMLAudioElement) {
-                         try {
-                            el.muted = false; el.volume = 1;
-                            const sourceNode = audioContext.createMediaElementSource(el);
-                            sourceNode.connect(destination);
-                        } catch (e) { console.warn("Could not add audio track to context. This can happen if the element has already been used as an audio source in a previous export.", e); }
-                    }
-                });
-    
-                destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
-    
-                const mimeType = getBestSupportedMimeType();
-                const fileExtension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
-                const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5000000, audioBitsPerSecond: 192000 });
-                const chunks: Blob[] = [];
-                recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    
-                recorder.onstop = () => {
-                    const blob = new Blob(chunks, { type: mimeType });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = `design.${fileExtension}`; a.click();
-                    URL.revokeObjectURL(url);
-                    
-                    // Restore state instead of resetting
-                    mediaElements.forEach((el, i) => {
-                        el.currentTime = playbackStates[i].time;
-                        if (!playbackStates[i].paused) el.play();
-                    });
-                    if (!isTimelinePlaying) { setIsTimelinePlaying(false); }
-
-
-                    audioContext.close();
-                    onProgress(1);
-                };
-    
-                const renderLoop = (startTime: number) => {
-                    const elapsed = (performance.now() - startTime) / 1000;
-                    if (elapsed >= maxDuration) {
-                        if (recorder.state === 'recording') recorder.stop();
-                        return;
-                    }
-                    onProgress(elapsed / maxDuration);
-                    requestAnimationFrame(() => renderLoop(startTime));
-                };
-
-                recorder.start();
-                mediaElements.forEach(el => el.play().catch(e => console.warn("Playback for recording failed:", e)));
-                requestAnimationFrame(() => renderLoop(performance.now()));
-    
-            } catch (err) {
-                console.error("MP4 export failed:", err);
-                alert(`MP4 export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                onProgress(1);
+            const blob = await new Promise<Blob | null>(resolve => tempCanvas.toBlob(resolve, `image/${options.format}`));
+            if(blob) {
+                const url = URL.createObjectURL(blob);
+                setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, status: 'done', resultUrl: url } : j));
+            } else {
+                throw new Error('Failed to create image blob.');
             }
+            return;
         }
-    };
+        
+        const worker = new Worker('/services/videoRenderer.worker.ts', { type: 'module' });
+        
+        let audioStreams: ReadableStream[] = [];
+        let firstAudioTrackSettings: MediaTrackSettings | null = null;
+
+        if (typeof (window as any).MediaStreamTrackProcessor === 'function') {
+            const audioTracksFromMedia = allMediaElementsRef.current
+                .flatMap(mediaElement => {
+                    const stream = (mediaElement as any).captureStream ? (mediaElement as any).captureStream() : new MediaStream();
+                    return stream.getAudioTracks();
+                }).filter(track => track.readyState === 'live');
+            
+            audioStreams = audioTracksFromMedia.map(track => {
+                const processor = new (window as any).MediaStreamTrackProcessor({ track });
+                return processor.readable;
+            });
+            firstAudioTrackSettings = audioTracksFromMedia.length > 0 ? audioTracksFromMedia[0].getSettings() : null;
+        } else {
+            console.warn("MediaStreamTrackProcessor API not supported. Video will be exported without audio.");
+        }
+    
+        worker.postMessage({
+            type: 'start',
+            payload: { canvasSize, options, audioStreams, firstAudioTrackSettings }
+        }, audioStreams);
+    
+        let renderLoopCancelled = false;
+        let totalFrames = 0;
+        let recordedChunks: BlobPart[] = [];
+        
+        const startRenderLoop = async () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvasSize.w;
+            tempCanvas.height = canvasSize.h;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            if(!tempCtx) return;
+    
+            const maxDuration = Math.max(0, ...allMediaElementsRef.current.map(el => el.duration).filter(d => isFinite(d)));
+            if (maxDuration === 0) {
+                 setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: 'Sem duração de vídeo/áudio.' } : j));
+                 worker.terminate();
+                 return;
+            }
+    
+            const frameRate = options.frameRate;
+            totalFrames = Math.ceil(maxDuration * frameRate);
+            let frameCount = 0;
+    
+            allMediaElementsRef.current.forEach(el => { el.muted = true; el.pause(); });
+    
+            const renderFrame = async () => {
+                if (frameCount > totalFrames || renderLoopCancelled) {
+                    worker.postMessage({ type: 'finish' });
+                    allMediaElementsRef.current.forEach(el => { el.muted = false; });
+                    if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+                    return;
+                }
+    
+                const currentTime = frameCount / frameRate;
+    
+                const seekPromises = allMediaElementsRef.current.map(el => new Promise<void>(res => {
+                    const onSeeked = () => { el.onseeked = null; res(); };
+                    if (el.readyState >= 2) {
+                        if(el.seekable.length > 0 && Math.abs(el.currentTime - Math.min(currentTime, el.duration)) > 0.01) {
+                            el.onseeked = onSeeked;
+                            el.currentTime = Math.min(currentTime, el.duration);
+                        } else {
+                            res();
+                        }
+                    } else {
+                        el.onloadeddata = () => {
+                            el.onseeked = onSeeked;
+                            el.currentTime = Math.min(currentTime, el.duration);
+                        };
+                    }
+                }));
+    
+                await Promise.all(seekPromises);
+    
+                drawSceneToContext(tempCtx, layers, backgroundColor);
+                const frame = new VideoFrame(tempCanvas, { timestamp: currentTime * 1_000_000 });
+                worker.postMessage({ type: 'frame', payload: { frame } }, [frame]);
+                frameCount++;
+                animationFrameId.current = requestAnimationFrame(renderFrame);
+            };
+            animationFrameId.current = requestAnimationFrame(renderFrame);
+        };
+    
+        worker.onmessage = (e) => {
+            const { type, payload } = e.data;
+            if (type === 'ready') {
+                startRenderLoop();
+            } else if (type === 'chunk') {
+                recordedChunks.push(payload.chunk);
+            } else if (type === 'progress') {
+                 const progress = (payload.frames / totalFrames) * 100;
+                 setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, progress, status: 'rendering' } : j));
+            } else if (type === 'done') {
+                const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+                const url = URL.createObjectURL(blob);
+                setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, progress: 100, status: 'done', resultUrl: url } : j));
+                worker.terminate();
+                recordedChunks = [];
+            } else if (type === 'error') {
+                renderLoopCancelled = true;
+                setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: payload.message } : j));
+                worker.terminate();
+            }
+        };
+    } catch (err) {
+        console.error("Video export failed:", err);
+        const errorMessage = err instanceof Error ? err.message : "Erro desconhecido ao iniciar exportação.";
+        setDownloads(prev => prev.map(j => j.id === jobId ? { ...j, status: 'error', error: errorMessage } : j));
+    }
+};
+
     
     const handleSplitterMouseDown = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); const move = (me: MouseEvent) => { const p = canvasRef.current?.parentElement; if (!p) return; const r = p.getBoundingClientRect(); const x = me.clientX - r.left; let n = (x / r.width) * 100; setSplitPosition(Math.max(0, Math.min(100, n))); }; const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); };
 
@@ -1390,6 +1461,8 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                     updateLayerProps(target.id, { fill: newFill }, true);
                 } else if (type === 'video') {
                     const element = await loadVideo(src);
+                    element.loop = true;
+                    element.muted = true;
                     const newFill: FrameFill = { type: 'video' as const, src, videoElement: element, scale: 1, offsetX: 0, offsetY: 0 };
                     updateLayerProps(target.id, { fill: newFill }, true);
                 }
@@ -1410,7 +1483,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     
         const file = e.dataTransfer.files?.[0]; // External file drag
         if (file) {
-            const mediaSrc = await toBase64(file);
+            const mediaSrc = await blobToBase64(new Blob([file], {type: file.type}));
             const type = file.type.startsWith('video') ? 'video' : 'image';
             await processMedia(type, mediaSrc, targetLayer);
         }
@@ -1443,6 +1516,8 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             };
         } else if (fill.type === 'video') {
              const videoElement = fill.videoElement;
+             videoElement.loop = false;
+             videoElement.muted = false;
             newMediaLayer = {
                 id: Date.now().toString(), name: 'Vídeo Desanexado', type: 'video', src: fill.src, videoElement, duration: videoElement.duration,
                 x: frameLayer.x + (frameLayer.width - newMediaWidth) / 2, y: frameLayer.y + (frameLayer.height - newMediaHeight) / 2,
@@ -1453,13 +1528,13 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             return;
         }
 
-        setLayersAndCommit(prev => [ ...prev.map(l => l.id === frameLayer.id ? { ...l, fill: null } : l), newMediaLayer ]);
+        setLayersAndCommit(prev => [ ...prev.map(l => l.id === frameLayer.id ? { ...(l as FrameLayer), fill: null } : l), newMediaLayer ]);
         setSelectedLayerId(newMediaLayer.id);
         setContextMenu(null);
     };
     
     const handleAssetUpload = async (type: 'image' | 'video' | 'audio', file: File) => {
-        const src = await toBase64(file);
+        const src = await blobToBase64(new Blob([file], {type: file.type}));
         const id = Date.now().toString();
         let thumbnail = '';
         if (type === 'image') { thumbnail = src; }
@@ -1475,7 +1550,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             thumbCanvas.getContext('2d')?.drawImage(videoThumb, 0, 0, thumbCanvas.width, thumbCanvas.height);
             thumbnail = thumbCanvas.toDataURL();
         } else {
-            thumbnail = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZHRoPSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCAxMXYyYTUgNSAwIDAgMCAxMCAwdi0yTTggM2g4YTUtMi41IDAgMCAxIDUgMi41VjhhNS0yLjUgMCAwIDEgLTUgMi41SDhBNS0yLjUgMCAwIDEgMyA4VjUuNUE1LTIuNSAwIDAgMSA4IDN6Ii8+PC9zdmc+';
+            thumbnail = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZHRoPSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCAxMXYyYTUgNSAwIDAgMCAxMCAwdi0yTTggM2g4YTUtMi45IDAgMCAxIDUgMi41VjhhNS0yLjUgMCAwIDEgLTUgMi41SDhBNS0yLjUgMCAwIDEgMyA4VjUuNUE1LTIuNSAwIDAgMSA4IDN6Ii8+PC9zdmc+';
         }
         const newAsset: UploadedAsset = { id, projectId: 'default-project', type, src, thumbnail, name: file.name };
         setUploadedAssets(prev => [...prev, newAsset]);
@@ -1500,11 +1575,15 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
         else if (type === 'audio') audioUploadRef.current?.click();
     };
 
-    // --- Project Save/Load and Playback Logic ---
-
     useEffect(() => {
+        const videoElementsFromLayers = (layers.filter(l => l.type === 'video') as VideoLayer[]).map(l => l.videoElement!);
+        const videoElementsFromFrames = (layers.filter(l => l.type === 'frame') as FrameLayer[])
+            .filter(l => l.fill && l.fill.type === 'video')
+            .map(l => (l.fill as FrameFillContent & {type: 'video'}).videoElement);
+
         allMediaElementsRef.current = [
-            ...(layers.filter(l => l.type === 'video') as VideoLayer[]).map(l => l.videoElement!),
+            ...videoElementsFromLayers,
+            ...videoElementsFromFrames,
             ...audioTracks.map(t => t.audioElement)
         ].filter(Boolean);
     }, [layers, audioTracks]);
@@ -1524,41 +1603,23 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
         if (interaction || editingFrameId || editingTextLayerId || (e.target as HTMLElement).dataset.handle) return;
         if(hasVideoOrAudio) toggleTimelinePlayback();
     };
-
-    const handleSaveProject = useCallback(async (isAutoSave = false) => {
-        if (isAutoSave && autoSaveInProgress.current) {
-            return;
-        }
-        if (isAutoSave) {
-            autoSaveInProgress.current = true;
-        }
+    
+    const handleSaveProjectToFile = async () => {
         setIsLoadingAI('project');
         try {
             const serialize = async (item: { src: string }) => {
-                if (item.src.startsWith('blob:')) {
-                    return { ...item, src: await blobUrlToDataUrl(item.src) };
-                }
+                if (item.src.startsWith('blob:')) return { ...item, src: await blobUrlToDataUrl(item.src) };
                 return item;
             };
 
             const serializableLayers = await Promise.all(layers.map(async (layer) => {
                 const cleanLayer = { ...layer, image: undefined, videoElement: undefined, originalImage: undefined } as Layer;
-
-                if (cleanLayer.type === 'image') {
-                    const imgLayer = cleanLayer as ImageLayer;
-                    if (imgLayer.src.startsWith('blob:')) imgLayer.src = await blobUrlToDataUrl(imgLayer.src);
-                }
-                else if (cleanLayer.type === 'video') {
-                    const vidLayer = cleanLayer as VideoLayer;
-                    if (vidLayer.src.startsWith('blob:')) vidLayer.src = await blobUrlToDataUrl(vidLayer.src);
-                }
+                if (cleanLayer.type === 'image' && (cleanLayer as ImageLayer).src.startsWith('blob:')) (cleanLayer as ImageLayer).src = await blobUrlToDataUrl((cleanLayer as ImageLayer).src);
+                else if (cleanLayer.type === 'video' && (cleanLayer as VideoLayer).src.startsWith('blob:')) (cleanLayer as VideoLayer).src = await blobUrlToDataUrl((cleanLayer as VideoLayer).src);
                 else if (cleanLayer.type === 'frame') {
                     const frameLayer = cleanLayer as FrameLayer;
-                    if (frameLayer.fill) {
-                        const newFill: any = { ...frameLayer.fill };
-                        if (newFill.src.startsWith('blob:')) newFill.src = await blobUrlToDataUrl(newFill.src);
-                        delete newFill.image; delete newFill.videoElement; frameLayer.fill = newFill;
-                    }
+                    if (frameLayer.fill?.src.startsWith('blob:')) (frameLayer.fill as any).src = await blobUrlToDataUrl(frameLayer.fill.src);
+                    delete (frameLayer.fill as any)?.image; delete (frameLayer.fill as any)?.videoElement;
                 }
                 return cleanLayer;
             }));
@@ -1568,110 +1629,87 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 if (cleanTrack.src.startsWith('blob:')) cleanTrack.src = await blobUrlToDataUrl(cleanTrack.src);
                 return cleanTrack;
             }));
-
             const serializableAssets = await Promise.all(uploadedAssets.map(asset => serialize(asset)));
-            
-            const projectState = { layers: serializableLayers, audioTracks: serializableAudio, canvasSize, backgroundColor, uploadedAssets: serializableAssets };
-            
-            await setItem('viralCreativeProject', projectState);
-
-            if (!isAutoSave) {
-                 alert('Projeto salvo com sucesso!');
-            }
-           
+            const projectState = { version: 1, layers: serializableLayers, audioTracks: serializableAudio, canvasSize, backgroundColor, uploadedAssets: serializableAssets };
+            const projectJson = JSON.stringify(projectState, null, 2);
+            const blob = new Blob([projectJson], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'projeto-criativo.brmp';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         } catch (err) {
             console.error("Failed to save project:", err);
-            if (!isAutoSave) {
-                 alert("Falha ao salvar o projeto. O armazenamento do navegador pode estar cheio.");
-            }
+            alert("Falha ao salvar o projeto.");
         } finally {
             setIsLoadingAI(null);
-            if (isAutoSave) {
-                autoSaveInProgress.current = false;
-            }
         }
-    }, [layers, audioTracks, canvasSize, backgroundColor, uploadedAssets]);
+    };
 
-    const handleLoadProject = useCallback(async () => {
-        const savedState = await getItem<any>('viralCreativeProject');
-        if (!savedState) { alert('Nenhum projeto salvo foi encontrado.'); return; }
+    const triggerLoadProjectFromFile = () => {
+        projectLoadInputRef.current?.click();
+    };
+
+    const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
         setIsLoadingAI('project');
         try {
+            const text = await file.text();
+            const savedState = JSON.parse(text);
+            
+            if (savedState.version !== 1 || !Array.isArray(savedState.layers)) {
+                throw new Error("Formato de ficheiro de projeto inválido ou incompatível.");
+            }
+
             setBackgroundColor(savedState.backgroundColor);
             setCanvasSize(savedState.canvasSize);
             setUploadedAssets(savedState.uploadedAssets || []);
 
             const loadedLayers = await Promise.all(savedState.layers.map(async (layer: Layer): Promise<Layer> => {
-                if (layer.type === 'image') {
+                 if (layer.type === 'image') {
                     const imageLayer = layer as ImageLayer;
-                    const image = await loadImage(imageLayer.src);
-                    // FIX: Assign to a typed variable to avoid excess property checks on the return statement.
-                    const newLayer: ImageLayer = { ...imageLayer, image };
-                    return newLayer;
+                    imageLayer.image = await loadImage(imageLayer.src);
+                    if (imageLayer.originalSrc) imageLayer.originalImage = await loadImage(imageLayer.originalSrc);
                 } else if (layer.type === 'video') {
                     const videoLayer = layer as VideoLayer;
-                    const videoElement = await loadVideo(videoLayer.src);
-                    // FIX: Assign to a typed variable to avoid excess property checks on the return statement.
-                    const newLayer: VideoLayer = { ...videoLayer, videoElement };
-                    return newLayer;
-                } else if (layer.type === 'frame') {
+                    videoLayer.videoElement = await loadVideo(videoLayer.src);
+                } else if (layer.type === 'frame' && (layer as FrameLayer).fill) {
                     const frameLayer = layer as FrameLayer;
-                    if (frameLayer.fill) {
-                        if (frameLayer.fill.type === 'image') {
-                            const image = await loadImage(frameLayer.fill.src);
-                            const newFill: FrameFill = { ...frameLayer.fill, image };
-                            // FIX: Assign to a typed variable to avoid excess property checks on the return statement.
-                            const newLayer: FrameLayer = { ...frameLayer, fill: newFill };
-                            return newLayer;
-                        }
-                        if (frameLayer.fill.type === 'video') {
-                            const videoElement = await loadVideo(frameLayer.fill.src);
-                            const newFill: FrameFill = { ...frameLayer.fill, videoElement };
-                            // FIX: Assign to a typed variable to avoid excess property checks on the return statement.
-                            const newLayer: FrameLayer = { ...frameLayer, fill: newFill };
-                            return newLayer;
-                        }
-                    }
+                    if (frameLayer.fill!.type === 'image') (frameLayer.fill as any).image = await loadImage(frameLayer.fill!.src);
+                    else if (frameLayer.fill!.type === 'video') (frameLayer.fill as any).videoElement = await loadVideo(frameLayer.fill!.src);
                 }
                 return layer;
             }));
 
-            const loadedAudio = await Promise.all(savedState.audioTracks.map(async (track: AudioTrack) => {
-                const audioElement = await loadAudio(track.src);
-                return { ...track, audioElement };
+            const loadedAudio = await Promise.all((savedState.audioTracks || []).map(async (track: AudioTrack) => {
+                track.audioElement = await loadAudio(track.src);
+                return track;
             }));
 
             setLayers(loadedLayers);
             setAudioTracks(loadedAudio);
             setHistory([[[...initialState.layers], [...initialState.audioTracks]], [loadedLayers, loadedAudio]]);
             setHistoryIndex(1);
-            alert('Projeto carregado com sucesso!');
+            
         } catch (err) {
             console.error("Failed to load project:", err);
-            alert("Falha ao carregar o projeto. O ficheiro guardado pode estar corrompido.");
+            alert(`Falha ao carregar o projeto: ${err instanceof Error ? err.message : 'Erro desconhecido.'}`);
         } finally {
             setIsLoadingAI(null);
+            if (e.target) e.target.value = '';
         }
-    }, []);
+    };
 
-    const initialState = { layers: [], audioTracks: [] }; // Used for history reset on load
-    useEffect(() => {
-        if (!isViralMode) return;
-        const autoSave = setInterval(() => handleSaveProject(true), 30000); // Auto-save every 30 seconds
-        return () => clearInterval(autoSave);
-    }, [isViralMode, handleSaveProject]);
+    const handleReplaceFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        const layerId = contextMenu?.targetLayer?.id;
+    
+        if (file && layerId) {
+            const type = file.type.startsWith('video') ? 'video' : 'image';
+            blobToBase64(file).then(src => handleReplaceLayerMedia(layerId, src, type));
+        }
+    };
 
-    useEffect(() => {
-      if (isOpen && isViralMode) {
-        (async () => {
-             const projectExists = await keyExists('viralCreativeProject');
-             if (projectExists && confirm('Foi encontrado um projeto guardado. Deseja carregá-lo?')) {
-                await handleLoadProject();
-             }
-        })();
-      }
-    }, [isOpen, isViralMode, handleLoadProject]);
-
+    
     if (!isOpen) return null;
 
     const DropTargetHighlight: React.FC<{ layer: Layer; scale: number }> = ({ layer, scale }) => {
@@ -1699,7 +1737,7 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
                 <span className="font-semibold text-sm ml-2">Zoom</span>
                 <div ref={sliderRef} onMouseDown={handleSliderMouseDown} className="flex-grow h-2 rounded-full relative cursor-pointer py-2 group">
                     <div className="absolute top-1/2 -translate-y-1/2 left-0 h-1 bg-gray-500 rounded-full w-full"><div className="h-full rounded-full bg-white" style={{ width: `${percentage}%` }} /></div>
-                    <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-red-500 rounded-full shadow border-2 border-white pointer-events-none" style={{ left: `calc(${percentage}% - 8px)` }} />
+                    <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-yellow-400 rounded-full shadow border-2 border-white pointer-events-none" style={{ left: `calc(${percentage}% - 8px)` }} />
                 </div>
                 <Button onClick={onDone} primary className="py-2 px-5 text-sm !rounded-full !font-bold">CONCLUÍDO</Button>
             </div>
@@ -1713,9 +1751,9 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
             <div style={{ top: y, left: x }} className="absolute z-50 bg-gray-800/80 backdrop-blur-md rounded-lg shadow-2xl text-white text-sm flex flex-col p-1 w-48 border border-gray-700">
                 {isFilledFrame && (
                      <>
-                        <button onClick={() => { setEditingFrameId(targetLayer.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Ajustar Imagem</button>
-                        <button onClick={() => { handleDetachImage(targetLayer as FrameLayer); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Desanexar Imagem</button>
-                        <button onClick={() => { replaceImageInputRef.current?.click(); setContextMenu(null); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Substituir Imagem</button>
+                        <button onClick={() => { setEditingFrameId(targetLayer.id); setContextMenu(null); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Ajustar Mídia</button>
+                        <button onClick={() => { handleDetachImage(targetLayer as FrameLayer); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Desanexar Mídia</button>
+                        <button onClick={() => { replaceImageInputRef.current?.click(); setContextMenu(null); }} className="w-full text-left px-3 py-2 hover:bg-yellow-400/20 rounded-md">Substituir Mídia</button>
                         <div className="my-1 h-px bg-white/10"></div>
                      </>
                 )}
@@ -1730,82 +1768,124 @@ const CreativeEditorModal: React.FC<CreativeEditorModalProps> = ({ isOpen, onClo
     };
 
     return (
-         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4" onClick={(e) => { if(e.target === e.currentTarget) setContextMenu(null); }}>
+         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-0" onClick={(e) => { if(e.target === e.currentTarget) setContextMenu(null); }}>
             {contextMenu && <ContextMenuComponent menuState={contextMenu} />}
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} hasVideoOrAudio={hasVideoOrAudio} />
             <BackgroundRemoverModal isOpen={isBgRemoverOpen} onClose={() => setIsBgRemoverOpen(false)} imageWithTransparency={imageForBgRefinement?.current ?? null} originalImage={imageForBgRefinement?.original ?? null} onApply={handleApplyBgRefinement}/>
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-gray-900 rounded-2xl p-2 sm:p-6 border border-gray-700 shadow-2xl w-full h-full relative flex flex-col md:flex-row gap-4 sm:gap-6 overflow-hidden">
-                <div className="w-full md:w-80 lg:w-96 flex-shrink-0"><CreativeEditorSidebar onAddLayer={addLayer} onUpdateSelectedLayer={updateSelectedLayer} selectedLayer={selectedLayer} onAITool={handleAITool} onGenerateAIImage={handleGenerateAIImage} isLoadingAI={isLoadingAI} onToggleLayersPanel={() => setIsLayersPanelOpen(p => !p)} onUpdateBackgroundColor={setBackgroundColor} backgroundColor={backgroundColor} onOpenBgRemover={handleOpenBgRemover} isViralMode={isViralMode} onTriggerUpload={handleTriggerUpload} uploadedAssets={uploadedAssets} onAssetClick={handleAssetClick} onSaveProject={() => handleSaveProject(false)} onLoadProject={handleLoadProject} /></div>
-                <div className="flex-grow flex flex-col items-center justify-center bg-black rounded-lg overflow-hidden relative min-w-0 min-h-0 md:flex-shrink-0" onDragOver={handleDragOver} onDrop={handleDrop} onDragLeave={() => setDropTargetId(null)}>
-                    <CreativeEditorHeader 
-                        selectedLayer={selectedLayer}
-                        customFonts={customFonts}
-                        onUpdateSelectedLayer={updateSelectedLayer}
-                        onTriggerFontUpload={() => fontInputRef.current?.click()}
-                        onUndo={handleUndo}
-                        onRedo={handleRedo}
-                        canUndo={historyIndex > 1}
-                        canRedo={historyIndex < history.length - 1}
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-gray-900 w-full h-full relative flex flex-row overflow-hidden">
+                <div className="w-full md:w-80 lg:w-96 flex-shrink-0 h-full">
+                    <CreativeEditorSidebar 
+                        onAddLayer={addLayer} 
+                        onUpdateSelectedLayer={updateSelectedLayer} 
+                        selectedLayer={selectedLayer} 
+                        onAITool={handleAITool} 
+                        onGenerateAIImage={handleGenerateAIImage} 
+                        isLoadingAI={isLoadingAI}
+                        onToggleLayersPanel={() => setIsLayersPanelOpen(p => !p)}
+                        onUpdateBackgroundColor={setBackgroundColor} 
+                        backgroundColor={backgroundColor}
+                        onOpenBgRemover={handleOpenBgRemover}
+                        onTriggerUpload={handleTriggerUpload}
+                        uploadedAssets={uploadedAssets}
+                        onAssetClick={handleAssetClick}
+                        onSaveProject={handleSaveProjectToFile}
+                        onLoadProject={triggerLoadProjectFromFile}
+                        canvasSize={canvasSize}
+                        onSetCanvasSize={setCanvasSize}
                     />
-                    <div ref={canvasContainerRef} className="relative flex-grow w-full flex items-center justify-center group" onClick={handleCanvasClick}>
+                </div>
+                <div className="flex-grow flex flex-col items-stretch bg-gray-800 relative min-w-0 h-full" onDragOver={handleDragOver} onDrop={handleDrop} onDragLeave={() => setDropTargetId(null)}>
+                    <div className="flex-shrink-0 z-10 p-4">
+                         <CreativeEditorHeader 
+                            selectedLayer={selectedLayer}
+                            customFonts={customFonts}
+                            onUpdateSelectedLayer={updateSelectedLayer}
+                            onTriggerFontUpload={() => fontInputRef.current?.click()}
+                            onUndo={handleUndo}
+                            onRedo={handleRedo}
+                            canUndo={historyIndex > 1}
+                            canRedo={historyIndex < history.length - 1}
+                        />
+                    </div>
+                    <div ref={canvasContainerRef} className="flex-grow relative flex items-center justify-center p-8 overflow-auto group" onClick={handleCanvasClick}>
                         {isLoadingAI === 'project' && <div className="absolute inset-0 bg-black/70 z-40 flex flex-col items-center justify-center text-white"><div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-yellow-400 mb-4"></div><p>A processar o projeto...</p></div>}
                         {editingFrame && <FrameEditToolbar frame={editingFrame} onUpdate={updateSelectedLayer} onDone={() => { setEditingFrameId(null); commitToHistory(layers, audioTracks); }} />}
-                        <div className="relative" style={{ width: canvasSize.w * scale, height: canvasSize.h * scale, cursor: editingFrameId ? 'move' : (interaction?.type === 'move' ? 'grabbing' : 'default') }} onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick} onContextMenu={(e) => e.preventDefault()}>
-                            <canvas ref={canvasRef} width={canvasSize.w} height={canvasSize.h} style={{ width: '100%', height: '100%' }}></canvas>
-                             <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                                {alignmentGuides.map((guide, index) => {
-                                    const style: React.CSSProperties = {
-                                        position: 'absolute',
-                                        backgroundColor: '#f472b6',
-                                        zIndex: 999,
-                                    };
-                                    if (guide.type === 'vertical') {
-                                        style.left = `${guide.position * scale}px`;
-                                        style.top = `${guide.start * scale}px`;
-                                        style.width = '1px';
-                                        style.height = `${(guide.end - guide.start) * scale}px`;
-                                    } else {
-                                        style.top = `${guide.position * scale}px`;
-                                        style.left = `${guide.start * scale}px`;
-                                        style.height = '1px';
-                                        style.width = `${(guide.end - guide.start) * scale}px`;
-                                    }
-                                    return <div key={index} style={style} />;
-                                })}
-                                <BoundingBox selectedLayer={selectedLayer} scale={scale} isFrameEditing={!!editingFrameId && selectedLayerId === editingFrameId} />
-                                {selectedLayer?.type === 'video' && !selectedLayer.isLoading && (
-                                    <VideoControls
-                                        layer={selectedLayer as VideoLayer}
-                                        scale={scale}
-                                        playbackState={playbackState}
-                                        onPlayPause={handleVideoPlayPause}
-                                        onSeek={handleVideoSeek}
-                                    />
-                                )}
+                        
+                        <div 
+                            className="relative shadow-lg"
+                             style={{
+                                width: canvasSize.w,
+                                height: canvasSize.h,
+                                transform: `scale(${finalScale})`,
+                                transformOrigin: 'center center',
+                                backgroundColor: backgroundColor,
+                             }}
+                        >
+                            <div className="absolute inset-0"
+                                onMouseDown={handleMouseDown}
+                                onDoubleClick={handleDoubleClick}
+                                onContextMenu={(e) => e.preventDefault()}
+                                style={{
+                                    cursor: editingFrameId ? 'move' : (interaction?.type === 'move' ? 'grabbing' : 'default')
+                                }}
+                            >
+                                <canvas ref={canvasRef} width={canvasSize.w} height={canvasSize.h} className="w-full h-full"></canvas>
+                                <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                                    {alignmentGuides.map((guide, index) => {
+                                        const style: React.CSSProperties = {
+                                            position: 'absolute',
+                                            backgroundColor: '#f472b6',
+                                            zIndex: 999,
+                                        };
+                                        if (guide.type === 'vertical') {
+                                            style.left = `${guide.position}px`;
+                                            style.top = `${guide.start}px`;
+                                            style.width = '1px';
+                                            style.height = `${(guide.end - guide.start)}px`;
+                                        } else {
+                                            style.top = `${guide.position}px`;
+                                            style.left = `${guide.start}px`;
+                                            style.height = '1px';
+                                            style.width = `${(guide.end - guide.start)}px`;
+                                        }
+                                        return <div key={index} style={style} />;
+                                    })}
+                                    <BoundingBox selectedLayer={selectedLayer} scale={1} isFrameEditing={!!editingFrameId && selectedLayerId === editingFrameId} />
+                                    {selectedLayer?.type === 'video' && !selectedLayer.isLoading && (
+                                        <VideoControls
+                                            layer={selectedLayer as VideoLayer}
+                                            scale={1}
+                                            playbackState={playbackState}
+                                            onPlayPause={handleVideoPlayPause}
+                                            onSeek={handleVideoSeek}
+                                        />
+                                    )}
+                                </div>
+                                {dropTargetId && <DropTargetHighlight layer={layers.find(l => l.id === dropTargetId)!} scale={1} />}
+                                {editingTextLayerId && <EditableTextArea ref={textInputRef} layer={layers.find(l => l.id === editingTextLayerId) as TextLayer} scale={1} value={editingTextValue} onChange={e => setEditingTextValue(e.target.value)} onBlur={handleTextEditBlur} />}
+                                {comparisonMode === 'split' && selectedLayer?.type === 'image' && (selectedLayer as ImageLayer).originalSrc && (
+                                    <><div className="absolute top-2 left-2 z-20 bg-black/60 text-white px-2 py-1 rounded text-xs pointer-events-none" style={{transform: `scale(${1/finalScale})`, transformOrigin: 'top left'}}>Antes</div><div className="absolute top-2 right-2 z-20 bg-black/60 text-white px-2 py-1 rounded text-xs pointer-events-none" style={{transform: `scale(${1/finalScale})`, transformOrigin: 'top right'}}>Depois</div><div onMouseDown={handleSplitterMouseDown} className="absolute top-0 bottom-0 z-20 w-2.5 cursor-ew-resize" style={{ left: `${splitPosition}%`, transform: 'translateX(-50%)' }}><div className="w-0.5 h-full bg-white mx-auto shadow-2xl"></div><div className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg text-gray-800"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg></div></div></>
+                                 )}
                             </div>
-                            {dropTargetId && <DropTargetHighlight layer={layers.find(l => l.id === dropTargetId)!} scale={scale} />}
-                            {editingTextLayerId && <EditableTextArea ref={textInputRef} layer={layers.find(l => l.id === editingTextLayerId) as TextLayer} scale={scale} value={editingTextValue} onChange={e => setEditingTextValue(e.target.value)} onBlur={handleTextEditBlur} />}
-                             {comparisonMode === 'split' && selectedLayer?.type === 'image' && (selectedLayer as ImageLayer).originalSrc && (
-                                <><div className="absolute top-2 left-2 z-20 bg-black/60 text-white px-2 py-1 rounded text-xs pointer-events-none" style={{transform: `scale(${1/scale})`, transformOrigin: 'top left'}}>Antes</div><div className="absolute top-2 right-2 z-20 bg-black/60 text-white px-2 py-1 rounded text-xs pointer-events-none" style={{transform: `scale(${1/scale})`, transformOrigin: 'top right'}}>Depois</div><div onMouseDown={handleSplitterMouseDown} className="absolute top-0 bottom-0 z-20 w-2.5 cursor-ew-resize" style={{ left: `${splitPosition}%`, transform: 'translateX(-50%)' }}><div className="w-0.5 h-full bg-white mx-auto shadow-2xl"></div><div className="absolute top-1/2 -translate-y-1/2 -left-1.5 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-lg text-gray-800"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4m0 6l-4 4-4-4" /></svg></div></div></>
-                             )}
                         </div>
                     </div>
-                </div>
-                <div className="w-full md:w-auto flex md:flex-col justify-center items-center md:items-start gap-4 md:flex-shrink-0">
-                     <div className="flex flex-row md:flex-col gap-4 bg-gray-800/50 p-4 rounded-lg">
-                        <h4 className="font-semibold text-gray-300 hidden md:block">Tamanho da Tela</h4>
-                        <div className="flex flex-row md:flex-col gap-2">{SIZES.map(s => (<button key={s.name} onClick={() => setCanvasSize({w: s.w, h: s.h})} className={`text-xs p-2 rounded-md transition-colors ${canvasSize.w === s.w && canvasSize.h === s.h ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600'}`}>{s.name}</button>))}</div>
-                     </div>
-                     <div className="flex flex-row md:flex-col gap-4">
-                        <Button onClick={onClose} className="w-full">Cancelar</Button>
-                        <Button onClick={() => setIsDownloadModalOpen(true)} primary className="w-full">Baixar</Button>
+                    <div className="flex-shrink-0 z-10 p-2 bg-gray-900/50 flex items-center justify-between">
+                        <Button onClick={onClose}>Sair</Button>
+                         <div className="flex items-center gap-2 bg-gray-800/80 p-1 rounded-lg text-gray-200">
+                            <button onClick={() => setUserZoom(z => Math.max(0.25, z - 0.25))} className="px-3 py-1 text-lg font-bold rounded-md hover:bg-gray-700">-</button>
+                            <span className="w-16 text-center text-sm font-semibold">{Math.round(userZoom * 100)}%</span>
+                            <button onClick={() => setUserZoom(z => Math.min(4, z + 0.25))} className="px-3 py-1 text-lg font-bold rounded-md hover:bg-gray-700">+</button>
+                        </div>
+                        <Button onClick={() => setIsDownloadModalOpen(true)} primary>Baixar</Button>
                     </div>
                 </div>
+
                 <input type="file" ref={fontInputRef} onChange={handleFontUpload} accept=".otf, .ttf" className="hidden" />
-                <input type="file" ref={replaceImageInputRef} onChange={(e) => { if(e.target.files?.[0] && contextMenu?.targetLayer) { toBase64(e.target.files[0]).then(src => handleReplaceLayerImage(contextMenu.targetLayer.id, src)); } }} accept="image/*" className="hidden" />
+                <input type="file" ref={replaceImageInputRef} onChange={handleReplaceFileInputChange} accept="image/*,video/*" className="hidden" />
                 <input type="file" ref={imageUploadRef} onChange={(e) => { if (e.target.files?.[0]) handleAssetUpload('image', e.target.files[0]); e.target.value = ''; }} accept="image/*" className="hidden" />
                 <input type="file" ref={videoUploadRef} onChange={(e) => { if (e.target.files?.[0]) handleAssetUpload('video', e.target.files[0]); e.target.value = ''; }} accept="video/*" className="hidden" />
                 <input type="file" ref={audioUploadRef} onChange={(e) => { if (e.target.files?.[0]) handleAssetUpload('audio', e.target.files[0]); e.target.value = ''; }} accept="audio/*" className="hidden" />
+                <input type="file" ref={projectLoadInputRef} onChange={handleProjectFileChange} accept=".brmp,application/json" className="hidden" />
                 <AnimatePresence><LayersPanel isOpen={isLayersPanelOpen} onClose={() => setIsLayersPanelOpen(false)} layers={layers} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId} onReorderLayers={(reordered) => setLayersAndCommit(reordered)} /></AnimatePresence>
             </motion.div>
         </div>

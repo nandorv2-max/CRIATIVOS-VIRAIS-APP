@@ -18,13 +18,19 @@ const PhotoDisplay: React.FC<PhotoDisplayProps> = ({ era, imageUrl, onDownload, 
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // FIX: Cast event.target to `any` to use the 'contains' method, and to resolve 'Cannot find name 'Node'' error.
+        // FIX: Property 'contains' does not exist on type 'HTMLDivElement'.
         const handleClickOutside = (event: MouseEvent) => { 
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+            if (menuRef.current && !menuRef.current.contains(event.target as any)) {
                 setIsMenuOpen(false);
             }
         };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => { document.removeEventListener("mousedown", handleClickOutside); };
+        // FIX: Prefix document with window. to ensure availability.
+        // FIX: Property 'document' does not exist on type 'Window'.
+        window.document.addEventListener("mousedown", handleClickOutside);
+        // FIX: Prefix document with window. to ensure availability.
+        // FIX: Property 'document' does not exist on type 'Window'.
+        return () => { window.document.removeEventListener("mousedown", handleClickOutside); };
     }, []);
 
     const rotation = useMemo(() => {

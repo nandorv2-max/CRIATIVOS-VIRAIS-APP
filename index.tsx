@@ -1,7 +1,6 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import App from './App.tsx';
 
 // FIX: Use `(window as any).document` to access the DOM when the `Window` type definition is incomplete and causes a "Property 'document' does not exist on type 'Window'" error.
 const rootElement = (window as any).document.getElementById('root');

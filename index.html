@@ -3,59 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bee Retrate-Me: AI Photo Transformer</title>
+    <title>GenIA</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client" async></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-primary': '#4CAF50', // A vibrant green
+              'brand-secondary': '#81C784', // A lighter green
+              'brand-dark': '#121212',
+              'brand-light': '#1E1E1E',
+              'brand-accent': '#2A2A2A',
+            },
+          }
+        }
+      }
+    </script>
     <style>
       body { 
         font-family: 'Inter', sans-serif; 
-        background-color: #000000;
         color: #e5e7eb;
         overflow: hidden;
       }
+      .bg-gradient-main {
+        background-color: #121212;
+        background-image: radial-gradient(circle at top left, rgba(76, 175, 80, 0.2), transparent 40%),
+                          radial-gradient(circle at bottom right, rgba(76, 175, 80, 0.2), transparent 40%);
+      }
       .font-caveat { 
         font-family: 'Caveat', cursive; 
-      }
-      .futuristic-background {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100vh;
-        background: linear-gradient(315deg, #0f0c29, #302b63, #24243e);
-        background-size: 400% 400%;
-        animation: gradientAnimation 15s ease infinite;
-        z-index: -1;
-      }
-      @keyframes gradientAnimation {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-      }
-      @keyframes fade-in-down { 
-        0% { opacity: 0; transform: translateY(-20px) translateX(-50%); } 
-        100% { opacity: 1; transform: translateY(0) translateX(-50%); } 
-      }
-      .animate-fade-in-down { 
-        animation: fade-in-down 0.5s ease-out forwards;
       }
       /* Custom scrollbar for webkit browsers */
       ::-webkit-scrollbar {
         width: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #1f2937; /* gray-800 */
+        background: #1E1E1E;
       }
       ::-webkit-scrollbar-thumb {
-        background: #4b5563; /* gray-600 */
+        background: #4CAF50;
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #6b7280; /* gray-500 */
+        background: #81C784;
       }
       /* Custom styles for the hue slider thumb in the color picker */
       .hue-range::-webkit-slider-thumb {
@@ -94,13 +90,17 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
     "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.12",
     "@imgly/background-removal": "https://esm.sh/@imgly/background-removal@1.0.4",
-    "mp4-muxer": "https://unpkg.com/mp4-muxer@2.0.2/build/mp4-muxer.mjs"
+    "mp4-muxer": "https://unpkg.com/mp4-muxer@2.0.2/build/mp4-muxer.mjs",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "@supabase/gotrue-js": "https://aistudiocdn.com/@supabase/gotrue-js@^2.71.1",
+    "jszip": "https://aistudiocdn.com/jszip@^3.10.1",
+    "nanoid": "https://aistudiocdn.com/nanoid@^5.1.5",
+    "react-hotkeys-hook": "https://aistudiocdn.com/react-hotkeys-hook@^5.1.0"
   }
 }
 </script>
 </head>
-  <body>
-    <div class="futuristic-background"></div>
+  <body class="bg-gradient-main">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

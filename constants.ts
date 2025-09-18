@@ -1,7 +1,31 @@
-import type { Templates } from './types';
-import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine } from './components/Icons';
+import type { Templates } from './types.ts';
+import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine, IconImageIcon, IconTshirt, IconPackage } from './components/Icons.tsx';
 
 export const TEMPLATES: Templates = {
+    imageGenerator: {
+        name: 'Gerador de Imagem',
+        description: 'Crie imagens a partir de descrições de texto.',
+        icon: '🖼️',
+        sidebarIcon: IconImageIcon,
+        isPolaroid: false,
+        prompts: []
+    },
+    mockupGenerator: {
+        name: 'Gerador de Mockups',
+        description: 'Crie mockups de produtos com a sua arte.',
+        icon: '👕',
+        sidebarIcon: IconTshirt,
+        isPolaroid: false,
+        prompts: []
+    },
+    productStudio: {
+        name: 'Estúdio de Produto',
+        description: 'Crie cenas de produtos com um clique.',
+        icon: '📦',
+        sidebarIcon: IconPackage,
+        isPolaroid: false,
+        prompts: []
+    },
     criativoViral: {
         name: 'Criativo Viral',
         description: 'Crie designs com fotos, vídeos e áudio.',
@@ -26,8 +50,9 @@ export const TEMPLATES: Templates = {
         isPolaroid: false,
         prompts: []
     },
-    worldTour: {
-        name: 'Viagem pelo Mundo', description: 'Escolha um destino e veja-se lá.', icon: '🌍', sidebarIcon: IconWorld, isPolaroid: true,
+    worldTour: { name: 'Viagem pelo Mundo', description: 'Escolha um destino e veja-se lá.', icon: '🌍', sidebarIcon: IconWorld, isPolaroid: true,
+        // FIX: Added missing 'prompts' property to satisfy the 'Template' interface.
+        prompts: [],
         destinations: [
             { id: 'Paris', prompts: [ { id: 'Torre Eiffel', base: 'a posar em frente à Torre Eiffel ao pôr do sol, com roupa de turista estilosa' }, { id: 'Museu do Louvre', base: 'a caminhar casualmente em frente à pirâmide do Museu do Louvre, segurando um café' }, { id: 'Rio Sena', base: 'num cruzeiro de barco no Rio Sena, com a Catedral de Notre-Dame ao fundo' }, { id: 'Montmartre', base: 'sentado num café pitoresco em Montmartre, com a Basílica de Sacré-Cœur visível na colina' }, { id: 'Arco do Trifo', base: 'uma foto espontânea atravessando a rua na Champs-Élysées com o Arco do Trifo ao fundo' }, { id: 'Jardim de Luxemburgo', base: 'a relaxar numa cadeira verde no Jardim de Luxemburgo, com o palácio ao fundo' } ] },
             { id: 'Roma', prompts: [ { id: 'Coliseu', base: 'a posar perto do Coliseu, com roupas leves de verão e óculos de sol' }, { id: 'Fonte de Trevi', base: 'a atirar uma moeda sobre o ombro na Fonte de Trevi, com uma multidão desfocada' }, { id: 'Vaticano', base: 'de pé na Praça de São Pedro no Vaticano, com a Basílica ao fundo' }, { id: 'Panteão', base: 'a olhar para o óculo do Panteão, com um raio de luz a iluminar' }, { id: 'Trastevere', base: 'a comer um gelado numa rua de paralelepípedos em Trastevere' }, { id: 'Fórum Romano', base: 'a caminhar por entre as ruínas antigas do Fórum Romano' } ] },

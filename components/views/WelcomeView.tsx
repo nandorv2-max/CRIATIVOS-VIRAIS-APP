@@ -9,13 +9,13 @@ const WelcomeView: React.FC = () => {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
             >
-                <h1 className="text-5xl md:text-6xl font-caveat text-white tracking-tight">
-                    Bem-vindo ao <span className="text-yellow-400">Bee Retrate-Me</span>
+                <h1 className="text-5xl md:text-6xl font-bold text-white tracking-tight">
+                    Bem-vindo ao <span className="text-brand-primary">GenIA</span>
                 </h1>
-                <p className="mt-4 text-xl text-gray-400 max-w-2xl mx-auto">
+                <p className="mt-4 text-xl text-gray-300 max-w-2xl mx-auto">
                     O seu estúdio criativo de IA.
                 </p>
-                <p className="mt-8 text-lg text-gray-300">
+                <p className="mt-8 text-lg text-gray-200">
                     &larr; Selecione uma ferramenta na barra lateral para começar a transformar as suas ideias em realidade.
                 </p>
             </motion.div>

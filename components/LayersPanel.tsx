@@ -1,45 +1,58 @@
 import React from 'react';
 import { motion, Reorder } from 'framer-motion';
-import { Layer, ImageLayer, TextLayer, ShapeLayer } from '../types';
-import { IconImage, IconType, IconShapes } from './Icons';
+import { AnyLayer, ImageLayer, TextLayer, ShapeLayer, VideoLayer } from '../types.ts';
+import { IconImage, IconType, IconShapes, IconMovie, IconFrame, IconLock, IconUnlock, IconX } from './Icons.tsx';
 
 interface LayersPanelProps {
     isOpen: boolean;
     onClose: () => void;
-    layers: Layer[];
-    selectedLayerId: string | null;
-    onSelectLayer: (id: string) => void;
-    onReorderLayers: (layers: Layer[]) => void;
+    layers: AnyLayer[];
+    selectedLayerIds: string[];
+    onSelectLayer: (id: string, shiftKey: boolean) => void;
+    onReorderLayers: (layers: AnyLayer[]) => void;
+    onToggleLayerLock: (id: string) => void;
 }
 
-const LayerPreview: React.FC<{ layer: Layer }> = ({ layer }) => {
-    if (layer.type === 'image') {
-        return <img src={(layer as ImageLayer).src} className="w-8 h-8 object-cover rounded-sm bg-gray-600" alt="Layer preview"/>;
+const LayerIcon: React.FC<{ layer: AnyLayer }> = ({ layer }) => {
+    const className = "w-5 h-5 text-gray-300";
+    switch (layer.type) {
+        case 'image': return <IconImage />;
+        case 'text': return <IconType className={className}/>;
+        case 'shape': return <IconShapes className={className}/>;
+        case 'video': return <IconMovie />;
+        default: return <IconImage />;
+    }
+};
+
+const LayerPreview: React.FC<{ layer: AnyLayer }> = ({ layer }) => {
+    const baseClasses = "w-10 h-10 object-cover rounded-sm bg-brand-light flex-shrink-0";
+    if (layer.type === 'image') return <img src={(layer as ImageLayer).src} className={baseClasses} alt={layer.name}/>;
+    if (layer.type === 'video') {
+        // We can't easily show a video thumbnail here without more complex logic,
+        // so we use an icon as a reliable fallback.
+        return <div className={`${baseClasses} flex items-center justify-center`}><IconMovie /></div>
     }
     if (layer.type === 'text') {
         const textLayer = layer as TextLayer;
-        const shortText = textLayer.text.length > 10 ? textLayer.text.substring(0, 10) + '...' : textLayer.text;
-        return <div className="w-8 h-8 flex items-center justify-center bg-gray-600 rounded-sm text-xs truncate" style={{color: textLayer.color}}>{shortText}</div>
+        return <div className={`${baseClasses} flex items-center justify-center p-1`}><span className="text-xs truncate" style={{color: textLayer.color, fontFamily: textLayer.fontFamily, fontWeight: textLayer.fontWeight}}>{textLayer.text}</span></div>
     }
      if (layer.type === 'shape') {
         const shapeLayer = layer as ShapeLayer;
-        return <div className="w-8 h-8 flex items-center justify-center bg-gray-600 rounded-sm">
-            <div className={`w-5 h-5 ${shapeLayer.shape === 'ellipse' ? 'rounded-full' : ''}`} style={{backgroundColor: shapeLayer.fill}}></div>
-        </div>
+        return <div className={`${baseClasses} flex items-center justify-center`}><div className={`w-6 h-6 ${shapeLayer.shape === 'ellipse' ? 'rounded-full' : ''}`} style={{backgroundColor: shapeLayer.fill}}></div></div>
     }
-    return <div className="w-8 h-8 bg-gray-600 rounded-sm"></div>;
+    return <div className="w-10 h-10 bg-brand-light rounded-sm"></div>;
 };
 
-
-const LayersPanel: React.FC<LayersPanelProps> = ({ isOpen, onClose, layers, selectedLayerId, onSelectLayer, onReorderLayers }) => {
+const LayersPanel: React.FC<LayersPanelProps> = ({ isOpen, onClose, layers, selectedLayerIds, onSelectLayer, onReorderLayers, onToggleLayerLock }) => {
     if (!isOpen) return null;
 
-    const handleReorder = (newOrder: Layer[]) => {
-        // The list is reversed for display, so we reverse it back before updating state
+    // The canvas z-index is the array order (0 is back).
+    // The layers panel should show the top layer first (visually).
+    // So we reverse the array for display and reordering.
+    const handleReorder = (newOrder: AnyLayer[]) => {
         onReorderLayers([...newOrder].reverse());
     };
     
-    // Reverse layers for intuitive display (top layer at the top of the list)
     const reversedLayers = [...layers].reverse();
 
     return (
@@ -48,30 +61,36 @@ const LayersPanel: React.FC<LayersPanelProps> = ({ isOpen, onClose, layers, sele
             animate={{ x: 0 }}
             exit={{ x: 320 }}
             transition={{ type: 'spring', stiffness: 400, damping: 40 }}
-            className="absolute top-0 right-0 h-full w-80 bg-gray-800/90 backdrop-blur-md shadow-2xl z-20 flex flex-col border-l border-gray-700"
+            className="absolute top-0 right-0 h-full w-80 bg-brand-dark/90 backdrop-blur-md shadow-2xl z-40 flex flex-col border-l border-brand-accent"
         >
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+            <div className="p-4 border-b border-brand-accent flex justify-between items-center flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Camadas</h3>
-                <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                <button onClick={onClose} className="p-1 rounded-full hover:bg-brand-light">
+                    <IconX className="w-5 h-5" />
                 </button>
             </div>
-            <Reorder.Group axis="y" values={reversedLayers} onReorder={handleReorder} className="overflow-y-auto p-2">
-                {reversedLayers.map(layer => (
-                    <Reorder.Item key={layer.id} value={layer}>
-                        <div 
-                            onClick={() => onSelectLayer(layer.id)}
-                            className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors mb-1 ${selectedLayerId === layer.id ? 'bg-yellow-400/20' : 'hover:bg-gray-700/50'}`}
-                        >
-                            <div className="cursor-grab text-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+            {layers.length > 0 ? (
+                <Reorder.Group axis="y" values={reversedLayers} onReorder={handleReorder} className="overflow-y-auto p-2">
+                    {reversedLayers.map(layer => (
+                        <Reorder.Item key={layer.id} value={layer} className="bg-brand-accent/30 rounded-md mb-1">
+                            <div 
+                                onClick={(e) => onSelectLayer(layer.id, e.shiftKey)}
+                                className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${selectedLayerIds.includes(layer.id) ? 'bg-brand-primary/30 ring-1 ring-brand-primary' : 'hover:bg-brand-light/50'}`}
+                            >
+                                <LayerPreview layer={layer} />
+                                <span className="text-sm truncate flex-grow">{layer.name}</span>
+                                <button onClick={(e) => { e.stopPropagation(); onToggleLayerLock(layer.id); }} className="p-1 text-gray-400 hover:text-white flex-shrink-0">
+                                    {layer.isLocked ? <IconLock className="w-4 h-4" /> : <IconUnlock className="w-4 h-4" />}
+                                </button>
                             </div>
-                            <LayerPreview layer={layer} />
-                            <span className="text-sm truncate">Camada {layer.type}</span>
-                        </div>
-                    </Reorder.Item>
-                ))}
-            </Reorder.Group>
+                        </Reorder.Item>
+                    ))}
+                </Reorder.Group>
+            ) : (
+                <div className="flex-1 flex items-center justify-center text-center text-gray-500 text-sm p-4">
+                    <p>Adicione elementos da barra lateral para começar.</p>
+                </div>
+            )}
         </motion.div>
     );
 };

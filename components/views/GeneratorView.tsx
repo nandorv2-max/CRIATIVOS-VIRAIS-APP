@@ -1,22 +1,23 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 
-import Button from '../Button';
-import PhotoDisplay from '../PhotoDisplay';
-import LoadingCard from '../LoadingCard';
-import ErrorCard from '../ErrorCard';
-import ErrorNotification from '../ErrorNotification';
-import CameraModal from '../CameraModal';
-import EditModal from '../EditModal';
-import RadioPill from '../RadioPill';
-import AlbumDownloadButton from '../AlbumDownloadButton';
-import UploadOptionsModal from '../UploadOptionsModal';
-import { IconUpload, IconSparkles, IconCamera } from '../Icons';
+import Button from '../../components/Button.tsx';
+import PhotoDisplay from '../../components/PhotoDisplay.tsx';
+import LoadingCard from '../../components/LoadingCard.tsx';
+import ErrorCard from '../../components/ErrorCard.tsx';
+import ErrorNotification from '../../components/ErrorNotification.tsx';
+import CameraModal from '../../components/CameraModal.tsx';
+// FIX: Changed to a default import for EditModal.
+import EditModal from '../../components/EditModal.tsx';
+import RadioPill from '../../components/RadioPill.tsx';
+import AlbumDownloadButton from '../../components/AlbumDownloadButton.tsx';
+import UploadOptionsModal from '../../components/UploadOptionsModal.tsx';
+import { IconUpload, IconSparkles, IconCamera } from '../../components/Icons.tsx';
 
-import { toBase64, cropImage, createSingleFramedImage } from '../../utils/imageUtils';
-import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService';
-import { TEMPLATES } from '../../constants';
-import type { GeneratedImage, Prompt, Template } from '../../types';
+import { toBase64, cropImage, createSingleFramedImage } from '../../utils/imageUtils.ts';
+import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService.ts';
+import { TEMPLATES } from '../../constants.ts';
+import type { GeneratedImage, Prompt, Template } from '../../types.ts';
 
 interface GeneratorViewProps {
     templateKey: string;
@@ -44,6 +45,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
     const [swapGender, setSwapGender] = useState<string>('Mulher');
     const [swapEthnicity, setSwapEthnicity] = useState<string>('Latina');
     const [swapHairColor, setSwapHairColor] = useState<string>('Castanho');
+    const [swapAge, setSwapAge] = useState<string>('Jovem (20-30)');
     
     const template = TEMPLATES[templateKey];
 
@@ -102,7 +104,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
         setTimeout(() => { (resultsRef.current as any)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
         
         // FIX: Corrected property name `customLookStyle` to `customLookbookStyle` to match the type definition.
-        const options = { hairColors: [], cameraAngle, swapGender, swapEthnicity, swapHairColor, lookbookStyle: '', customLookbookStyle: '' };
+        const options = { hairColors: [], cameraAngle, swapGender, swapEthnicity, swapHairColor, swapAge, lookbookStyle: '', customLookbookStyle: '' };
         
         const promptsForGeneration = getPromptsForTemplate();
         if (!promptsForGeneration || promptsForGeneration.length === 0) {
@@ -135,173 +137,254 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
         
         const promptsForGeneration = getPromptsForTemplate();
         const promptToRegenerate = promptsForGeneration[imageIndex];
-
+        
         if (!promptToRegenerate) {
-            setError("Não foi possível encontrar o prompt para regenerar esta imagem.");
+            setError("Não foi possível encontrar o prompt para regenerar.");
             return;
         }
 
-        setGeneratedImages(prev => prev.map((img, index) => 
-            index === imageIndex ? { ...img, status: 'pending', imageUrl: null } : img
-        ));
+        setGeneratedImages(prev => prev.map((img, index) => index === imageIndex ? { ...img, status: 'pending' } : img));
         
-        const options = { hairColors: [], cameraAngle, swapGender, swapEthnicity, swapHairColor, lookbookStyle: '', customLookbookStyle: '' };
-
         try {
+            const options = { hairColors: [], cameraAngle, swapGender, swapEthnicity, swapHairColor, swapAge, lookbookStyle: '', customLookbookStyle: '' };
             const aspectRatio = templateKey === 'cenasDoInstagram' ? instagramSceneAspectRatio : undefined;
             const modelInstruction = getModelInstruction(templateKey, promptToRegenerate, options, aspectRatio);
+
             const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage });
+            
             setGeneratedImages(prev => prev.map((img, index) => 
-                index === imageIndex ? { ...img, status: 'success', imageUrl } : img
+                index === imageIndex 
+                    ? { ...img, status: 'success', imageUrl } 
+                    : img
             ));
         } catch (err) {
             console.error(`Falha ao regenerar imagem para ${promptToRegenerate.id}:`, err);
             setGeneratedImages(prev => prev.map((img, index) => 
-                index === imageIndex ? { ...img, status: 'failed' } : img
+                index === imageIndex 
+                    ? { ...img, status: 'failed' } 
+                    : img
             ));
         }
     };
-    
-    const handleDownloadRequest = async (imageUrl: string, era: string, ratio: string) => {
-        try {
-            const finalImage = await createSingleFramedImage(imageUrl, ratio, era);
-            const a = document.createElement('a');
-            a.href = finalImage;
-            a.download = `be-retrate-me-${era.toLowerCase().replace(/\s/g, '-')}.png`;
-            a.click();
-        } catch (e) {
-            console.error("Download failed", e);
-            setError("Falha ao preparar a imagem para download.");
-        }
-    };
-    
-    const handleAlbumDownloadRequest = async (ratio: '1:1' | '9:16') => {
-        setIsDownloadingAlbum(true);
-        setError(null);
-        const successfulImages = generatedImages.filter(img => img.status === 'success' && img.imageUrl);
 
-        if (successfulImages.length === 0) {
-            setError("Nenhuma imagem bem-sucedida para baixar.");
-            setIsDownloadingAlbum(false);
-            return;
-        }
-        
-        for (const img of successfulImages) {
-            try {
-                await handleDownloadRequest(img.imageUrl!, img.id, ratio);
-                await new Promise(res => setTimeout(res, 300)); // Pequeno atraso entre os downloads
-            } catch (e) {
-                console.error(`Falha ao baixar ${img.id}`, e);
-            }
-        }
-        setIsDownloadingAlbum(false);
-    };
-    
-    const handleOpenEditModal = (imageUrl: string, index: number) => {
-        setEditingImageInfo({ imageUrl, index });
+    const handleEditImage = (imageUrl: string, index: number) => {
+        setEditingImageInfo({imageUrl, index});
         setIsEditModalOpen(true);
     };
-    
-    const handleCloseEditModal = () => {
-        setIsEditModalOpen(false);
-        setEditingImageInfo(null);
-    };
-    
+
     const handleApplyEdit = (newImageUrl: string) => {
         if (editingImageInfo) {
             setGeneratedImages(prev => prev.map((img, index) => 
-                index === editingImageInfo.index ? { ...img, imageUrl: newImageUrl } : img
+                index === editingImageInfo.index
+                    ? { ...img, status: 'success', imageUrl: newImageUrl }
+                    : img
             ));
         }
-        handleCloseEditModal();
+        setIsEditModalOpen(false);
+        setEditingImageInfo(null);
     };
 
-    const handleStartOver = () => {
-        setUploadedImage(null);
-        setGeneratedImages([]); 
-        setError(null); 
+    const handleDownload = async (imageUrl: string, era: string, ratio: string) => {
+        const framedImage = await createSingleFramedImage(imageUrl, ratio, era);
+        const link = document.createElement('a');
+        link.href = framedImage;
+        link.download = `GenIA-${era.replace(/\s/g, '_')}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
-
-    const progress = generatedImages.length > 0 ? (generatedImages.filter(img => img.status !== 'pending').length / generatedImages.length) * 100 : 0;
     
-    if (!template) return <div>Template não encontrado.</div>;
+    const downloadAlbum = async (ratio: '1:1' | '9:16') => {
+        const successfulImages = generatedImages.filter(img => img.status === 'success' && img.imageUrl);
+        if (successfulImages.length === 0) {
+            setError("Nenhuma imagem para descarregar.");
+            return;
+        }
+        setIsDownloadingAlbum(true);
+        setError(null);
 
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        
+        for (const image of successfulImages) {
+            try {
+                const framedImageB64 = await createSingleFramedImage(image.imageUrl!, ratio, image.id);
+                const fileData = framedImageB64.split(',')[1];
+                zip.file(`GenIA-${image.id.replace(/\s/g, '_')}.png`, fileData, { base64: true });
+            } catch (err) {
+                 console.error(`Falha ao processar a imagem ${image.id} para o álbum:`, err);
+            }
+        }
+
+        try {
+            const content = await zip.generateAsync({ type: "blob" });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `GenIA_Album_${template?.name.replace(/\s/g, '_')}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (err) {
+            setError("Falha ao criar o arquivo zip.");
+            console.error("Erro ao gerar zip:", err);
+        } finally {
+            setIsDownloadingAlbum(false);
+        }
+    };
+    
+    // FIX: A component must return a ReactNode. Added a return statement to the component function.
     return (
-        <div className="h-full flex flex-col">
+        <>
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
-            <CameraModal isOpen={isCameraOpen} onClose={() => setIsCameraOpen(false)} onCapture={handleCaptureConfirm} />
-            <EditModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} imageUrl={editingImageInfo?.imageUrl ?? null} onApplyEdit={handleApplyEdit} />
-            {/* FIX: Prefix 'alert' with 'window.' to ensure availability and prevent 'Cannot find name' errors. */}
-            <UploadOptionsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onLocalUpload={() => { (fileInputRef.current as any)?.click(); setIsUploadModalOpen(false); }} onGoogleDriveUpload={() => { window.alert('Ainda não implementado'); }} />
+            <CameraModal isOpen={isCameraOpen} onCapture={handleCaptureConfirm} onClose={() => setIsCameraOpen(false)} />
+            <EditModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} imageUrl={editingImageInfo?.imageUrl ?? null} onApplyEdit={handleApplyEdit} />
+            <UploadOptionsModal 
+                isOpen={isUploadModalOpen} 
+                onClose={() => setIsUploadModalOpen(false)} 
+                onLocalUpload={() => { (fileInputRef.current as any)?.click(); setIsUploadModalOpen(false); }}
+                onGoogleDriveUpload={() => {
+                    setError("Google Drive ainda não implementado.");
+                    setIsUploadModalOpen(false);
+                }}
+            />
 
-            <header className="flex-shrink-0">
-                <h1 className="text-3xl font-bold text-white">{template.name}</h1>
-                <p className="text-gray-400 mt-1">{template.description}</p>
-            </header>
-            
-            <div className="flex-grow mt-6 bg-gray-900/50 p-6 rounded-2xl border border-gray-700/50 flex flex-col lg:flex-row gap-8 overflow-y-auto">
-                {/* Coluna da Esquerda: Upload e Opções */}
-                <div className="lg:w-1/3 flex flex-col gap-6">
-                    <div>
-                        <h2 className="text-xl font-semibold mb-4 text-white">1. A Sua Foto</h2>
-                         <div className="w-full aspect-square border-4 border-dashed border-gray-700 rounded-xl flex items-center justify-center cursor-pointer hover:border-yellow-400 transition-colors bg-gray-800 overflow-hidden shadow-inner" onClick={() => !uploadedImage && setIsUploadModalOpen(true)}>
-                            {isUploading ? <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-yellow-400"></div> : uploadedImage ? <img src={uploadedImage} alt="Pré-visualização" className="w-full h-full object-cover" /> : <div className="text-center text-gray-500"><IconUpload className="w-12 h-12 mx-auto" /><p className="mt-2">Carregar Foto</p></div>}
+            <div className="h-full flex flex-col">
+                <div className="flex-grow overflow-y-auto pr-4">
+                    <header className="text-center py-8">
+                        <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">{template?.name}</h1>
+                        <p className="mt-3 text-lg text-gray-300 max-w-2xl mx-auto">{template?.description}</p>
+                    </header>
+
+                    <motion.section 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="max-w-5xl mx-auto bg-brand-dark/50 p-8 rounded-2xl border border-brand-accent/50"
+                    >
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                            <div className="flex flex-col items-center">
+                                <h2 className="text-xl font-semibold text-center text-white mb-4">1. A Sua Foto</h2>
+                                <div className="w-full max-w-sm aspect-square bg-brand-light rounded-xl border-2 border-dashed border-brand-accent flex items-center justify-center overflow-hidden">
+                                    {isUploading ? (
+                                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>
+                                    ) : uploadedImage ? (
+                                        <img src={uploadedImage} alt="Carregado pelo utilizador" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="text-center text-gray-400 p-4">
+                                            <IconUpload className="mx-auto" />
+                                            <p className="mt-2 text-sm">Arraste e solte uma imagem ou clique para carregar</p>
+                                        </div>
+                                    )}
+                                </div>
+                                 <div className="flex gap-4 mt-4">
+                                    <Button onClick={() => setIsUploadModalOpen(true)}>{uploadedImage ? 'Mudar Foto' : 'Carregar Foto'}</Button>
+                                    <Button onClick={() => setIsCameraOpen(true)}><div className="flex items-center gap-2"><IconCamera/><span>Usar Câmara</span></div></Button>
+                                </div>
+                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                            </div>
+
+                            <div className="space-y-6">
+                                <h2 className="text-xl font-semibold text-center text-white">2. Personalize</h2>
+                                
+                                {templateKey === 'worldTour' && (
+                                    <div className="space-y-2">
+                                        <label className="block font-medium text-gray-300">Destino</label>
+                                        <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-primary">
+                                            <option value="">Selecione um destino</option>
+                                            {(template as any).destinations?.map((d: any) => <option key={d.id} value={d.id}>{d.id}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {templateKey === 'cenasDoInstagram' && (
+                                    <div className="space-y-4">
+                                        <textarea value={instagramScenePrompt} onChange={(e) => setInstagramScenePrompt(e.target.value)} placeholder="Descreva a cena para as 6 fotos. Ex: 'a trabalhar num café moderno e elegante...'" className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 h-24 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white resize-y" />
+                                        <div className="flex items-center justify-center gap-4">
+                                            <span className="font-medium text-gray-300">Proporção:</span>
+                                            <div className="flex gap-2">
+                                                <RadioPill name="ig-ratio" value="9:16" label="Stories (9:16)" checked={instagramSceneAspectRatio === '9:16'} onChange={e => setInstagramSceneAspectRatio(e.target.value)} />
+                                                <RadioPill name="ig-ratio" value="1:1" label="Feed (1:1)" checked={instagramSceneAspectRatio === '1:1'} onChange={e => setInstagramSceneAspectRatio(e.target.value)} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {templateKey === 'cleanAndSwap' && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                         <select value={swapGender} onChange={(e) => setSwapGender(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
+                                             <option>Mulher</option><option>Homem</option>
+                                         </select>
+                                         <select value={swapEthnicity} onChange={(e) => setSwapEthnicity(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
+                                            <option>Latina</option><option>Asiática</option><option>Negra</option><option>Caucasiana</option><option>Indiana</option>
+                                         </select>
+                                          <select value={swapHairColor} onChange={(e) => setSwapHairColor(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
+                                            <option>Castanho</option><option>Preto</option><option>Loiro</option><option>Ruivo</option><option>Colorido</option>
+                                         </select>
+                                          <select value={swapAge} onChange={(e) => setSwapAge(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
+                                            <option>Jovem (20-30)</option><option>Adulto (30-45)</option><option>Maduro (45-60)</option>
+                                         </select>
+                                    </div>
+                                )}
+                                
+                                { (templateKey === 'worldTour' || templateKey === 'cenasDoInstagram') && (
+                                    <div className="space-y-2">
+                                        <label className="block font-medium text-gray-300">Ângulo da Câmara (Opcional)</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            <RadioPill name="camera-angle" value="Padrão" label="Padrão" checked={cameraAngle === 'Padrão'} onChange={e => setCameraAngle(e.target.value)} />
+                                            <RadioPill name="camera-angle" value="Low Angle" label="Ângulo Baixo" checked={cameraAngle === 'Low Angle'} onChange={e => setCameraAngle(e.target.value)} />
+                                            <RadioPill name="camera-angle" value="High Angle" label="Ângulo Alto" checked={cameraAngle === 'High Angle'} onChange={e => setCameraAngle(e.target.value)} />
+                                            <RadioPill name="camera-angle" value="Extreme Close-up" label="Close-up Extremo" checked={cameraAngle === 'Extreme Close-up'} onChange={e => setCameraAngle(e.target.value)} />
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <Button onClick={handleGenerateClick} primary disabled={isLoading} className="w-full !py-3 !text-lg">
+                                    {isLoading ? (
+                                        <div className="flex items-center justify-center gap-2"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-brand-dark"></div><span>A gerar...</span></div>
+                                    ) : (
+                                        <div className="flex items-center justify-center gap-2"><IconSparkles /><span>Gerar Imagens</span></div>
+                                    )}
+                                </Button>
+                            </div>
                         </div>
-                        <div className="flex justify-center gap-2 mt-4">
-                            <Button onClick={() => setIsCameraOpen(true)}><div className="flex items-center gap-2"><IconCamera /><span>Câmara</span></div></Button>
-                            {uploadedImage && <Button onClick={() => setIsUploadModalOpen(true)}>Mudar</Button>}
-                        </div>
-                        <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                    </div>
-                    
-                     <div className="space-y-4">
-                        <h2 className="text-xl font-semibold text-white">2. Opções</h2>
-                        {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                        {templateKey === 'worldTour' && (<div className="flex flex-wrap gap-2">{ (template as any).destinations?.map((loc: any) => (<RadioPill key={loc.id} name="location" value={loc.id} label={loc.id} checked={selectedLocation === loc.id} onChange={(e) => setSelectedLocation((e.target as any).value)} />))}</div>)}
-                        {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                        {templateKey === 'cenasDoInstagram' && ( <> <textarea value={instagramScenePrompt} onChange={(e) => setInstagramScenePrompt((e.target as any).value)} placeholder="Ex: a relaxar numa praia em Florianópolis..." className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 h-24 focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white resize-y" /> <div className="flex flex-wrap gap-2"><RadioPill key="9:16" name="ig_format" value="9:16" label="Story (9:16)" checked={instagramSceneAspectRatio === '9:16'} onChange={(e) => setInstagramSceneAspectRatio((e.target as any).value)} /><RadioPill key="3:4" name="ig_format" value="3:4" label="Feed (3:4)" checked={instagramSceneAspectRatio === '3:4'} onChange={(e) => setInstagramSceneAspectRatio((e.target as any).value)} /></div></>)}
-                        {templateKey === 'cleanAndSwap' && (<div>...Opções de troca aqui...</div>)}
-                        
-                        <div className="space-y-2 pt-2 border-t border-gray-700">
-                             <h3 className='text-md font-semibold text-gray-300'>Ângulo da Câmara</h3>
-                             {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                             <div className="flex flex-wrap gap-2"><RadioPill name="cameraAngle" value="Padrão" label="Padrão" checked={cameraAngle === 'Padrão'} onChange={e => setCameraAngle((e.target as any).value)} /> <RadioPill name="cameraAngle" value="Frontal" label="Frontal" checked={cameraAngle === 'Frontal'} onChange={e => setCameraAngle((e.target as any).value)} /> <RadioPill name="cameraAngle" value="Low Angle" label="De baixo" checked={cameraAngle === 'Low Angle'} onChange={e => setCameraAngle((e.target as any).value)} /> <RadioPill name="cameraAngle" value="High Angle" label="De cima" checked={cameraAngle === 'High Angle'} onChange={e => setCameraAngle((e.target as any).value)} /></div>
-                        </div>
-                    </div>
-                    
-                    <div className="mt-auto">
-                        <Button onClick={handleGenerateClick} disabled={!uploadedImage || isLoading} primary className="w-full text-lg py-3">
-                            {isLoading ? <div className="flex items-center justify-center gap-2"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-black"></div>A Gerar...</div> : <div className="flex items-center justify-center gap-2"><IconSparkles /><span>Gerar Fotos</span></div>}
-                        </Button>
-                    </div>
-                </div>
-                
-                {/* Coluna da Direita: Resultados */}
-                <div ref={resultsRef} className="lg:w-2/3 flex-grow flex flex-col">
-                    <h2 className="text-xl font-semibold mb-4 text-white">3. Resultados</h2>
-                    <div className="flex-grow bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 overflow-y-auto">
-                         {isLoading && (<div className="w-full max-w-xl mx-auto my-4 text-center"><div className="bg-gray-700 rounded-full h-2.5 overflow-hidden"><motion.div className="bg-yellow-400 h-2.5 rounded-full" initial={{ width: 0 }} animate={{ width: `${progress}%` }} /></div><p className="text-gray-400 mt-2 text-xs">A gerar... mantenha esta janela aberta.</p></div>)}
-                        {generatedImages.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    </motion.section>
+
+                    {(isLoading || generatedImages.length > 0) && (
+                        <section ref={resultsRef} className="max-w-7xl mx-auto py-12">
+                            <h2 className="text-3xl font-bold text-center text-white mb-8">Os Seus Resultados</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {generatedImages.map((img, index) => {
-                                    switch (img.status) {
-                                        case 'success': return <PhotoDisplay key={`${img.id}-${index}`} era={img.id} imageUrl={img.imageUrl!} onDownload={handleDownloadRequest} onRegenerate={() => regenerateImageAtIndex(index)} onEdit={handleOpenEditModal} isPolaroid={template.isPolaroid} index={index} />;
-                                        case 'failed': return <ErrorCard key={`${img.id}-${index}`} era={img.id} isPolaroid={template.isPolaroid} onRegenerate={() => regenerateImageAtIndex(index)} />;
-                                        default: return <LoadingCard key={`${img.id}-${index}`} era={img.id} isPolaroid={template.isPolaroid} />;
+                                    if (img.status === 'pending') return <LoadingCard key={img.id} era={img.id} isPolaroid={template?.isPolaroid} />;
+                                    if (img.status === 'failed') return <ErrorCard key={img.id} era={img.id} isPolaroid={template?.isPolaroid} onRegenerate={() => regenerateImageAtIndex(index)} />;
+                                    if (img.status === 'success' && img.imageUrl) {
+                                        return (
+                                            <PhotoDisplay 
+                                                key={img.id} 
+                                                era={img.id} 
+                                                imageUrl={img.imageUrl} 
+                                                onDownload={handleDownload}
+                                                onRegenerate={() => regenerateImageAtIndex(index)}
+                                                onEdit={handleEditImage}
+                                                isPolaroid={template?.isPolaroid}
+                                                index={index}
+                                            />
+                                        );
                                     }
+                                    return null;
                                 })}
                             </div>
-                        ) : (
-                            <div className="h-full flex items-center justify-center text-gray-500">
-                                <p>Os seus resultados aparecerão aqui.</p>
-                            </div>
-                        )}
-                    </div>
-                     {!isLoading && generatedImages.length > 0 && (<div className="text-center mt-6 flex justify-center gap-4"><Button onClick={handleStartOver}>Começar de Novo</Button><AlbumDownloadButton isDownloading={isDownloadingAlbum} onDownload={handleAlbumDownloadRequest} /></div>)}
+                            
+                            {generatedImages.some(img => img.status === 'success') && (
+                                <div className="mt-12 flex justify-center">
+                                    <AlbumDownloadButton isDownloading={isDownloadingAlbum} onDownload={downloadAlbum} />
+                                </div>
+                            )}
+                        </section>
+                    )}
                 </div>
             </div>
-        </div>
+        </>
     );
 };
-
 export default GeneratorView;

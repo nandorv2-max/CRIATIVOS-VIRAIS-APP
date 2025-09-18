@@ -1,5 +1,5 @@
 // A service to interact with the Google Drive Picker API using modern Google Identity Services.
-import { toBase64 } from "../utils/imageUtils";
+import { toBase64 } from "../utils/imageUtils.ts";
 
 declare var gapi: any;
 declare var google: any;

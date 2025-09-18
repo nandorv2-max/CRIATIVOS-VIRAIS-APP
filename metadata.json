@@ -1,6 +1,6 @@
 {
-  "name": "CRIATIVOS VIRAIS APP",
-  "description": "An AI-powered photo editing application that transforms your pictures into various creative styles, from professional headshots to world tours, using the Gemini API.",
+  "name": "GenIA",
+  "description": "An AI-powered creative studio that transforms your pictures into various creative styles, creates videos, and provides professional editing tools using the Gemini API.",
   "requestFramePermissions": [
     "camera"
   ]

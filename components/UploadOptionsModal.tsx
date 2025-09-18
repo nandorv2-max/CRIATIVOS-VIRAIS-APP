@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { IconX, IconFolder, IconGoogleDrive, IconInstagram, IconFacebook } from './Icons';
+import { IconX, IconFolder, IconGoogleDrive, IconInstagram, IconFacebook } from './Icons.tsx';
 
 interface UploadOptionsModalProps {
     isOpen: boolean;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import Button from './Button';
-import { IconX } from './Icons';
+import Button from './Button.tsx';
+import { IconX } from './Icons.tsx';
 
 export type AdjustmentGroup = 'Luz' | 'Cor' | 'Efeitos';
 

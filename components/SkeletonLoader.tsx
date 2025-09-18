@@ -6,7 +6,7 @@ interface SkeletonLoaderProps {
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ className }) => {
-    return <div className={`animate-pulse bg-gray-800 ${className}`}></div>;
+    return <div className={`animate-pulse bg-brand-light ${className}`}></div>;
 };
 
 export default SkeletonLoader;

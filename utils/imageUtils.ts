@@ -88,7 +88,7 @@ export const createSingleFramedImage = (imageUrl: string, cropRatio: string, lab
             canvas.width = img.width + sidePadding * 2;
             canvas.height = img.height + topPadding + bottomPadding;
 
-            ctx.fillStyle = '#111827';
+            ctx.fillStyle = '#FAFAFA'; // Light off-white for frame
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             ctx.drawImage(img, sidePadding, topPadding);
@@ -96,7 +96,7 @@ export const createSingleFramedImage = (imageUrl: string, cropRatio: string, lab
             if (hasLabel) {
                   const labelFontSize = Math.max(24, Math.floor(img.width * 0.08));
                   ctx.font = `700 ${labelFontSize}px Caveat, cursive`;
-                  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+                  ctx.fillStyle = "rgba(18, 18, 18, 0.9)"; // brand-dark
                   ctx.textAlign = 'center';
                   ctx.textBaseline = 'middle';
                   ctx.fillText(labelText, canvas.width / 2, img.height + topPadding + (bottomPadding - img.width * 0.1) / 2);
@@ -104,10 +104,10 @@ export const createSingleFramedImage = (imageUrl: string, cropRatio: string, lab
 
             const fontSize = Math.max(12, Math.floor(img.width * 0.05));
             ctx.font = `600 ${fontSize}px Inter, sans-serif`;
-            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+            ctx.fillStyle = "rgba(18, 18, 18, 0.4)"; // brand-dark
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText("Feito com Gemini", canvas.width / 2, canvas.height - (img.width * 0.11));
+            ctx.fillText("Feito com GenIA", canvas.width / 2, canvas.height - (img.width * 0.11));
 
             const nanoFontSize = Math.max(8, Math.floor(img.width * 0.035));
             ctx.font = `600 ${nanoFontSize}px Inter, sans-serif`;

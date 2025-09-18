@@ -1,7 +1,9 @@
 // FIX: Implemented the full geminiService module to resolve multiple "Cannot find name" and "is not a module" errors across the application.
 import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
-import type { Prompt, ModelInstructionOptions } from '../types.ts';
-import { delay } from '../utils/imageUtils.ts';
+// FIX: Corrected import path for a root-level file.
+import type { Prompt, ModelInstructionOptions } from './types.ts';
+// FIX: Corrected import path for a root-level file.
+import { delay } from './utils/imageUtils.ts';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
@@ -169,40 +171,19 @@ export const generateVideo = async (
     return videoBlob;
 };
 
-// FIX: Exported the `removeBackground` function to make it accessible to other modules.
 export const removeBackground = async (base64ImageData: string): Promise<string> => {
     const prompt = "CRITICAL TASK: Your only function is to remove the background from the provided image. Identify the primary subject(s) and perfectly isolate them. The output MUST be a high-resolution PNG of ONLY the subject(s) on a fully transparent background. Do not add shadows, reflections, or any other elements. Do not alter the subject in any way.";
     return generateImageWithRetry({ prompt, base64ImageData });
 };
 
-// FIX: Exported the `magicExpand` function to make it accessible to other modules.
 export const magicExpand = async (base64ImageData: string, prompt: string): Promise<string> => {
     const fullPrompt = `CRITICAL TASK: You are a professional photo editor. The user has provided an image and wants to expand it. Your task is to intelligently fill the new, empty areas around the original image content. The generated areas must seamlessly blend with the original image in terms of style, lighting, texture, and content. The expansion should feel like a natural continuation of the scene. User's creative direction: "${prompt}"`;
     return generateImageWithRetry({ prompt: fullPrompt, base64ImageData });
 };
 
-// FIX: Exported the `magicCapture` function to make it accessible to other modules.
 export const magicCapture = async (base64ImageData: string, objectToCapture: string): Promise<string> => {
     const prompt = `CRITICAL TASK: From the provided image, precisely extract ONLY the object described as: "${objectToCapture}". The output MUST be a high-resolution PNG of the extracted object on a fully transparent background. Ensure the edges are clean and accurate. Do not include any part of the original background or other objects.`;
     return generateImageWithRetry({ prompt, base64ImageData });
-};
-
-export const translateText = async (text: string, targetLanguage: string = 'English'): Promise<string> => {
-    const client = getClient();
-    if (!text.trim()) return text;
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
-            config: {
-                temperature: 0.1,
-            }
-        });
-        return response.text.trim();
-    } catch (error) {
-        console.error("Translation failed:", error);
-        throw new Error("Failed to translate text.");
-    }
 };
 
 export const getModelInstruction = (
@@ -257,5 +238,5 @@ export const getModelInstruction = (
             break;
     }
     
-    return instruction.trim();
+    return instruction.trim().trim();
 };

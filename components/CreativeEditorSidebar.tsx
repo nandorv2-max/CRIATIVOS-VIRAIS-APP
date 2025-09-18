@@ -1,251 +1,168 @@
-import React, { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Layer, ImageLayer, ShapeLayer, LayerUpdateProps, UploadedAsset } from '../types';
-import { IconChevronDown, IconFlipHorizontal, IconFlipVertical, IconImage, IconLayers, IconShapes, IconSparkles, IconType, IconFrame, IconPlus, IconLine, IconArrow, IconFolder } from './Icons';
-import UploadOptionsModal from './UploadOptionsModal';
-import { toBase64 } from '../utils/imageUtils';
-import { showGoogleDrivePicker } from '../services/googleDriveService';
-import ColorPicker from './ColorPicker';
+import React, { useState, useEffect } from 'react';
+import {
+    IconFolder, IconType, IconShapes, IconUpload, IconMagicWand, IconLayers, IconPlus, IconAudio, IconImageIcon
+} from './Icons.tsx';
+import type { AnyLayer, UploadedAsset, PublicAsset } from '../types.ts';
+import Button from './Button.tsx';
+import { getPublicAssets } from '../services/databaseService.ts';
 
-type CreativeEditorSidebarProps = {
-    onAddLayer: (type: 'text' | 'shape' | 'image' | 'frame' | 'video', options?: any) => void;
-    onUpdateSelectedLayer: (props: LayerUpdateProps, commit?: boolean) => void;
-    selectedLayer: Layer | null;
-    onAITool: (tool: 'bg' | 'expand') => void;
-    onGenerateAIImage: (prompt: string) => void;
-    isLoadingAI: 'bg' | 'expand' | 'generate' | 'download' | 'project' | null;
-    onToggleLayersPanel: () => void;
-    onUpdateBackgroundColor: (color: string) => void;
-    backgroundColor: string;
-    onOpenBgRemover: () => void;
-    onTriggerUpload: (type: 'image' | 'video' | 'audio') => void;
+type SidebarTab = 'project' | 'uploads' | 'gallery' | 'text' | 'elements' | 'ai';
+type AITool = 'remove-bg' | 'magic-expand' | 'magic-capture';
+
+
+interface CreativeEditorSidebarProps {
+    onAddTextLayer: (preset: 'heading' | 'subheading' | 'body') => void;
+    onAddShapeLayer: (shape: 'rectangle' | 'ellipse') => void;
+    onTriggerUpload: (type: 'media' | 'font') => void;
     uploadedAssets: UploadedAsset[];
-    onAssetClick: (asset: UploadedAsset) => void;
+    onAddAssetToCanvas: (asset: UploadedAsset | PublicAsset) => void;
+    onToggleLayersPanel: () => void;
     onSaveProject: () => void;
     onLoadProject: () => void;
-    canvasSize: { w: number; h: number };
-    onSetCanvasSize: (size: { w: number; h: number }) => void;
-};
-
-interface AccordionProps {
-    title: string;
-    icon: React.ReactNode;
-    children: React.ReactNode;
-    defaultOpen?: boolean;
+    onAITool: (tool: AITool, options?: any) => void;
+    isLoadingAI: 'remove-bg' | 'magic-expand' | 'magic-capture' | 'download' | 'project' | false;
+    selectedLayers: AnyLayer[];
 }
 
-const SIZES = [
-    { name: 'Universal', w: 1080, h: 1080 },
-    { name: 'Feed', w: 1080, h: 1350 },
-    { name: 'Stories', w: 1080, h: 1920 }
-];
+const TabButton: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    isActive: boolean;
+    onClick: () => void;
+}> = ({ icon, label, isActive, onClick }) => (
+    <button
+        onClick={onClick}
+        className={`flex flex-col items-center justify-center gap-1 w-full py-2 px-1 rounded-lg transition-all duration-200 text-gray-200 ${
+            isActive ? 'bg-brand-primary text-white' : 'hover:bg-brand-light'
+        }`}
+    >
+        {icon}
+        <span className="text-[10px] font-semibold">{label}</span>
+    </button>
+);
 
-const Accordion: React.FC<AccordionProps> = ({ title, icon, children, defaultOpen = false }) => {
-    const [isOpen, setIsOpen] = useState(defaultOpen);
-    return (
-        <div className="border-b border-gray-700">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full flex justify-between items-center p-3 text-left font-semibold text-gray-300 hover:bg-gray-700/50">
-                <div className="flex items-center gap-3">
-                    {icon}
-                    <span>{title}</span>
-                </div>
-                <IconChevronDown className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isOpen && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="p-3 bg-gray-900/50">
-                    {children}
-                </motion.div>
-            )}
-        </div>
-    );
-};
-
-const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({ 
-    onAddLayer, 
-    onUpdateSelectedLayer, 
-    selectedLayer, 
-    onAITool, 
-    onGenerateAIImage, 
-    isLoadingAI,
-    onToggleLayersPanel,
-    onUpdateBackgroundColor,
-    backgroundColor,
-    onOpenBgRemover,
-    onTriggerUpload,
-    uploadedAssets,
-    onAssetClick,
-    onSaveProject,
-    onLoadProject,
-    canvasSize,
-    onSetCanvasSize
+const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
+    onAddTextLayer, onAddShapeLayer, onTriggerUpload, uploadedAssets, onAddAssetToCanvas,
+    onToggleLayersPanel, onSaveProject, onLoadProject, onAITool, isLoadingAI, selectedLayers
 }) => {
-    const [aiPrompt, setAiPrompt] = useState('');
-    
-    const handleOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if(selectedLayer) onUpdateSelectedLayer({ opacity: parseFloat(e.target.value) }, true);
-    };
+    const [activeTab, setActiveTab] = useState<SidebarTab>('uploads');
+    const [publicAssets, setPublicAssets] = useState<PublicAsset[]>([]);
+    const [isLoadingGallery, setIsLoadingGallery] = useState(false);
 
-    const handleFlip = (direction: 'h' | 'v') => {
-        if (!selectedLayer || (selectedLayer.type !== 'image' && selectedLayer.type !== 'shape' && selectedLayer.type !== 'frame' && selectedLayer.type !== 'video')) return;
-        if (direction === 'h') {
-            onUpdateSelectedLayer({ flipH: !selectedLayer.flipH }, true);
-        } else {
-            onUpdateSelectedLayer({ flipV: !selectedLayer.flipV }, true);
+    useEffect(() => {
+        if (activeTab === 'gallery') {
+            setIsLoadingGallery(true);
+            getPublicAssets()
+                .then(setPublicAssets)
+                .catch(err => console.error("Failed to fetch public assets", err))
+                .finally(() => setIsLoadingGallery(false));
         }
-    };
+    }, [activeTab]);
 
-    const handleBackgroundRemovalClick = () => {
-        if (!selectedLayer || selectedLayer.type !== 'image' || isLoadingAI) return;
-        
-        const imageLayer = selectedLayer as ImageLayer;
-
-        if (imageLayer.originalSrc) {
-            onOpenBgRemover();
-        } else {
-            onAITool('bg');
-        }
-    };
-    
-    return (
-        <div className="w-full h-full bg-gray-800/50 rounded-lg flex flex-col overflow-hidden relative">
-            <div className="p-3 border-b border-gray-700">
-                <button onClick={onToggleLayersPanel} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors flex items-center gap-3 font-semibold text-gray-300">
-                    <IconLayers />
-                    <span>Camadas (Alt+1)</span>
-                </button>
-            </div>
-            <div className="overflow-y-auto">
-                 <Accordion title="Projeto" icon={<IconFolder className="w-5 h-5" />}>
-                     <div className="space-y-2 p-2 text-sm">
-                         <button onClick={onSaveProject} disabled={isLoadingAI === 'project'} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50">
-                            {isLoadingAI === 'project' ? 'A salvar...' : 'Salvar Projeto'}
-                         </button>
-                         <button onClick={onLoadProject} disabled={isLoadingAI === 'project'} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50">
-                            {isLoadingAI === 'project' ? 'A carregar...' : 'Carregar Projeto'}
-                         </button>
-                         <p className="text-xs text-gray-500 pt-1">Salve e carregue os seus templates como ficheiros no seu computador.</p>
-                     </div>
-                 </Accordion>
-                 <Accordion title="Tamanho" icon={<IconFrame/>}>
-                     <div className="p-2 flex flex-col gap-2">
-                        {SIZES.map(s => (
-                            <button 
-                                key={s.name} 
-                                onClick={() => onSetCanvasSize({w: s.w, h: s.h})} 
-                                className={`text-sm p-2 rounded-md transition-colors font-semibold text-left ${canvasSize.w === s.w && canvasSize.h === s.h ? 'bg-yellow-400 text-black' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
-                            >
-                                {s.name} <span className="text-xs font-normal opacity-75">{s.w} x {s.h}px</span>
-                            </button>
-                        ))}
-                     </div>
-                 </Accordion>
-                 <Accordion title="Stúdio Mágico" icon={<IconSparkles />} defaultOpen>
-                    <div className="space-y-3 p-2 text-sm">
-                        <button onClick={handleBackgroundRemovalClick} disabled={!selectedLayer || selectedLayer.type !== 'image' || !!isLoadingAI} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{isLoadingAI === 'bg' ? 'A processar...' : 'Removedor de Fundo'}</button>
-                        <button onClick={() => onAITool('expand')} disabled={!selectedLayer || selectedLayer.type !== 'image' || !!isLoadingAI} className="w-full p-2 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{isLoadingAI === 'expand' ? 'A processar...' : 'Expansão Mágica'}</button>
-                         {selectedLayer && (
-                            <div className="pt-2 border-t border-gray-700/50 space-y-3">
-                                <label className="block text-gray-400">
-                                    Transparência
-                                    {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                                    <input type="range" min="0" max="1" step="0.01" value={selectedLayer.opacity} onChange={e => onUpdateSelectedLayer({ opacity: parseFloat((e.target as any).value) }, true)} className="w-full mt-1"/>
-                                </label>
-                                 <div className="flex gap-2">
-                                     <button onClick={() => handleFlip('h')} disabled={selectedLayer.type !== 'image' && selectedLayer.type !== 'shape' && selectedLayer.type !== 'frame' && selectedLayer.type !== 'video'} className="w-full p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><IconFlipHorizontal /> Inverter H</button>
-                                     <button onClick={() => handleFlip('v')} disabled={selectedLayer.type !== 'image' && selectedLayer.type !== 'shape' && selectedLayer.type !== 'frame' && selectedLayer.type !== 'video'} className="w-full p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"><IconFlipVertical /> Inverter V</button>
-                                 </div>
-                            </div>
-                         )}
+    const renderTabContent = () => {
+        switch (activeTab) {
+            case 'project':
+                return (
+                    <div className="p-4 space-y-4">
+                        <h3 className="text-lg font-bold text-white">Projeto</h3>
+                        <p className="text-xs text-gray-400">Salvar/Carregar projetos está disponível no menu da sua conta na barra lateral principal.</p>
                     </div>
-                 </Accordion>
-                 <Accordion title="Fundo" icon={<IconImage/>}>
-                    <div className="p-2">
-                        <label className="flex items-center justify-between text-gray-400">
-                            Cor de Fundo
-                            <ColorPicker
-                                color={backgroundColor}
-                                onChange={onUpdateBackgroundColor}
-                                onInteractionEnd={() => {}}
-                            />
-                        </label>
-                    </div>
-                 </Accordion>
-                <Accordion title="Molduras" icon={<IconFrame />}>
-                    <div className="p-2 space-y-2">
-                        <h4 className="text-gray-400 font-semibold text-sm">Adicionar Moldura</h4>
-                        <div className="grid grid-cols-4 gap-2">
-                            <button onClick={() => onAddLayer('frame', { shape: 'rectangle' })} className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center border-2 border-dashed border-gray-500">
-                                <div className="w-8 h-8 bg-gray-500/50"></div>
-                            </button>
-                            <button onClick={() => onAddLayer('frame', { shape: 'ellipse' })} className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center border-2 border-dashed border-gray-500">
-                                <div className="w-8 h-8 bg-gray-500/50 rounded-full"></div>
-                            </button>
-                        </div>
-                    </div>
-                </Accordion>
-                 <Accordion title="Elementos" icon={<IconShapes />}>
-                     <div className="space-y-4 p-2 text-sm">
-                        <div>
-                             <h4 className="text-gray-400 font-semibold mb-2">Texto</h4>
-                             <button onClick={() => onAddLayer('text')} className="w-full p-3 text-left rounded bg-gray-700 hover:bg-gray-600 transition-colors font-bold text-lg">Adicionar Texto</button>
-                        </div>
-                        <div>
-                             <h4 className="text-gray-400 font-semibold mb-2">Formas</h4>
-                             <div className="grid grid-cols-4 gap-2">
-                                 <button onClick={() => onAddLayer('shape', { shape: 'rectangle' })} className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center"><div className="w-8 h-8 bg-gray-400"></div></button>
-                                 <button onClick={() => onAddLayer('shape', { shape: 'ellipse' })} className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center"><div className="w-8 h-8 bg-gray-400 rounded-full"></div></button>
-                                 <button onClick={() => onAddLayer('shape', { shape: 'line' })} title="Line" className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center"><IconLine /></button>
-                                 <button onClick={() => onAddLayer('shape', { shape: 'arrow' })} title="Arrow" className="aspect-square bg-gray-700 hover:bg-gray-600 rounded flex items-center justify-center"><IconArrow /></button>
-                             </div>
-                             {selectedLayer?.type === 'shape' && (
-                                <div className="mt-3">
-                                    <label className="flex items-center gap-2 text-gray-400">
-                                        Cor:
-                                        <ColorPicker
-                                            color={(selectedLayer as ShapeLayer).fill}
-                                            onChange={newColor => onUpdateSelectedLayer({ fill: newColor }, false)}
-                                            onInteractionEnd={() => onUpdateSelectedLayer({}, true)}
-                                        />
-                                    </label>
+                );
+            case 'uploads':
+                const imageAssets = uploadedAssets.filter(a => a.type === 'image');
+                const videoAssets = uploadedAssets.filter(a => a.type === 'video');
+                const audioAssets = uploadedAssets.filter(a => a.type === 'audio');
+                return (
+                    <div className="p-4 space-y-4 h-full flex flex-col">
+                        <h3 className="text-lg font-bold text-white">Uploads</h3>
+                        <Button onClick={() => onTriggerUpload('media')} primary className="w-full">Fazer upload de mídia</Button>
+                         <div className="flex-grow overflow-y-auto space-y-4 pr-1">
+                             {imageAssets.length > 0 && <div>
+                                 <h4 className="font-semibold text-sm text-gray-300 mb-2">Imagens</h4>
+                                 <div className="grid grid-cols-2 gap-2">
+                                    {imageAssets.map(asset => (
+                                        <div key={asset.id} className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={() => onAddAssetToCanvas(asset)}>
+                                            <img src={asset.thumbnail} alt={asset.name} className="w-full h-full object-cover rounded-md" />
+                                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <IconPlus className="w-8 h-8 text-white"/>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                             )}
-                        </div>
-                     </div>
-                 </Accordion>
-                  <Accordion title="Uploads" icon={<IconImage />} defaultOpen>
-                     <div className="p-2 space-y-3">
-                        <div className="grid grid-cols-3 gap-2">
-                            <button onClick={() => onTriggerUpload('image')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Imagem</button>
-                            <button onClick={() => onTriggerUpload('video')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Vídeo</button>
-                            <button onClick={() => onTriggerUpload('audio')} className="p-2 text-center rounded bg-gray-700 hover:bg-gray-600 transition-colors font-semibold text-sm">Áudio</button>
-                        </div>
-                         <div className="space-y-2 pt-2 border-t border-gray-700/50">
-                            {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                            <input type="text" value={aiPrompt} onChange={e => setAiPrompt((e.target as any).value)} placeholder="Descreva uma imagem..." className="w-full bg-gray-900 border border-gray-600 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-yellow-400"/>
-                            <button onClick={() => onGenerateAIImage(aiPrompt)} disabled={!aiPrompt || !!isLoadingAI} className="w-full p-2 text-center rounded bg-yellow-400 text-black font-semibold hover:bg-yellow-300 transition-colors disabled:opacity-50">{isLoadingAI === 'generate' ? 'A gerar...' : 'Gerar com IA'}</button>
+                             </div>}
                          </div>
-                         {uploadedAssets.length > 0 && (
-                            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-700/50 max-h-64 overflow-y-auto">
-                                {uploadedAssets.map(asset => (
-                                    <div 
-                                        key={asset.id} 
-                                        onClick={() => onAssetClick(asset)} 
-                                        draggable="true" 
-                                        onDragStart={(e: React.DragEvent) => { 
-                                            (e as any).dataTransfer.setData('asset-src', asset.src);
-                                            (e as any).dataTransfer.setData('asset-type', asset.type);
-                                        }} 
-                                        className="aspect-square bg-gray-700 hover:opacity-80 rounded overflow-hidden cursor-pointer relative group">
-                                        <img src={asset.thumbnail} className="w-full h-full object-cover pointer-events-none" alt={asset.name} />
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    </div>
+                );
+            case 'gallery':
+                return (
+                     <div className="p-4 space-y-4 h-full flex flex-col">
+                        <h3 className="text-lg font-bold text-white">Galeria Pública</h3>
+                         {isLoadingGallery ? <p className="text-gray-400">Carregando...</p> : (
+                             <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1">
+                                {publicAssets.map(asset => (
+                                    <div key={asset.id} className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={() => onAddAssetToCanvas(asset)}>
+                                        <img src={asset.thumbnail_url || asset.asset_url} alt={asset.name} className="w-full h-full object-cover rounded-md" />
+                                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                             <IconPlus className="w-8 h-8 text-white"/>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                          )}
+                    </div>
+                );
+            case 'text':
+                return (
+                    <div className="p-4 space-y-3">
+                         <h3 className="text-lg font-bold text-white mb-2">Texto</h3>
+                        <button onClick={() => onAddTextLayer('heading')} className="w-full text-left p-3 hover:bg-brand-light rounded-md transition-colors">
+                            <span className="font-bold text-2xl">Adicionar Título</span>
+                        </button>
+                    </div>
+                );
+            case 'elements':
+                return (
+                     <div className="p-4 space-y-3">
+                         <h3 className="text-lg font-bold text-white mb-2">Elementos</h3>
+                         <div className="pt-2">
+                            <p className="text-sm font-semibold text-gray-300 mb-2">Formas</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => onAddShapeLayer('rectangle')} className="flex items-center justify-center aspect-square bg-brand-light hover:bg-brand-accent rounded-md transition-colors">
+                                    <div className="w-16 h-16 bg-gray-400"></div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'ai':
+                 const isImageSelected = selectedLayers.length === 1 && selectedLayers[0].type === 'image';
+                 return (
+                     <div className="p-4 space-y-4">
+                        <h3 className="text-lg font-bold text-white">IA Mágica</h3>
+                        <Button onClick={() => onAITool('remove-bg')} disabled={!isImageSelected || !!isLoadingAI} className="w-full">
+                            {isLoadingAI === 'remove-bg' ? "Processando..." : "Removedor de Fundo"}
+                        </Button>
                      </div>
-                 </Accordion>
+                 );
+            default:
+                return null;
+        }
+    };
+    
+    return (
+        <div className="w-96 h-full bg-brand-dark/90 backdrop-blur-md shadow-lg z-20 flex border-r border-brand-accent">
+            <div className="w-24 bg-brand-light/50 p-2 flex flex-col items-center gap-2 flex-shrink-0">
+                <TabButton icon={<IconUpload className="w-6 h-6"/>} label="Uploads" isActive={activeTab === 'uploads'} onClick={() => setActiveTab('uploads')} />
+                <TabButton icon={<IconImageIcon className="w-6 h-6"/>} label="Galeria" isActive={activeTab === 'gallery'} onClick={() => setActiveTab('gallery')} />
+                <TabButton icon={<IconType className="w-6 h-6"/>} label="Texto" isActive={activeTab === 'text'} onClick={() => setActiveTab('text')} />
+                <TabButton icon={<IconShapes className="w-6 h-6"/>} label="Elementos" isActive={activeTab === 'elements'} onClick={() => setActiveTab('elements')} />
+                <TabButton icon={<IconMagicWand className="w-6 h-6"/>} label="IA Mágica" isActive={activeTab === 'ai'} onClick={() => setActiveTab('ai')} />
+                <div className="mt-auto w-full">
+                    <TabButton icon={<IconLayers className="w-6 h-6"/>} label="Camadas" isActive={false} onClick={onToggleLayersPanel} />
+                </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+                {renderTabContent()}
             </div>
         </div>
     );

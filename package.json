@@ -1,5 +1,5 @@
 {
-  "name": "criativos-virais-app",
+  "name": "genia",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +14,12 @@
     "react-dom": "^19.1.1",
     "framer-motion": "^12.23.12",
     "@imgly/background-removal": "1.0.4",
-    "mp4-muxer": "2.0.2"
+    "mp4-muxer": "2.0.2",
+    "@supabase/supabase-js": "2",
+    "@supabase/gotrue-js": "^2.71.1",
+    "jszip": "^3.10.1",
+    "nanoid": "^5.1.5",
+    "react-hotkeys-hook": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

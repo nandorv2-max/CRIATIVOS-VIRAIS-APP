@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import Button from './Button';
-import { generateVideo } from '../services/geminiService';
-import { extractLastFrame, toBase64 } from '../utils/imageUtils';
-import { IconUpload, IconCamera } from './Icons';
-import CameraModal from './CameraModal';
+import Button from './Button.tsx';
+import { generateVideo } from '../services/geminiService.ts';
+import { extractLastFrame, toBase64 } from '../utils/imageUtils.ts';
+import { IconUpload, IconCamera } from './Icons.tsx';
+import CameraModal from './CameraModal.tsx';
 
 const VideoGenerator: React.FC = () => {
     const [prompt, setPrompt] = useState('Animate a imagem como um UGC de uma pessoa como se estivesse a falar para a câmara, a explicar algo, sem fazer alterações bruscas e mantendo o mesmo ambiente. Gerar um vídeo de alta definição, preservando a alta fidelidade e os detalhes nítidos da imagem original. A animação deve manter a qualidade fotorrealista e a textura da imagem de referência. Não deve haver alteração no zoom ou cortes para diferentes ângulos em nenhum momento do vídeo gerado. Nenhum elemento da imagem pode ser alterado, apenas a animação deve ser feita de forma natural, como se fosse um UGC real. A animação não deve alterar as cores da imagem original, mantendo o mesmo padrão de cores do início ao fim, sem quaisquer modificações.');

@@ -82,13 +82,33 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
                 },
             });
 
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            if (response?.candidates?.[0]?.content?.parts) {
+                let textResponse = '';
+                for (const part of response.candidates[0].content.parts) {
+                    if (part.inlineData && part.inlineData.data) {
+                        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    }
+                    if (part.text) {
+                        textResponse += part.text + ' ';
+                    }
+                }
+                // Se chegarmos aqui, nenhuma imagem foi encontrada. Se encontrarmos texto, inclua-o.
+                if (textResponse.trim()) {
+                     throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
                 }
             }
+            
+            let failureReason = "Nenhuma imagem foi gerada na resposta.";
+            if (response?.promptFeedback?.blockReason) {
+                failureReason = `A geração de imagem foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`;
+                if (response.promptFeedback.blockReasonMessage) {
+                    failureReason += ` Detalhes: ${response.promptFeedback.blockReasonMessage}`;
+                }
+            } else if (!response?.candidates || response.candidates.length === 0) {
+                 failureReason = "A geração de imagem falhou: Nenhum resultado válido foi retornado pelo modelo.";
+            }
 
-            throw new Error("No image was generated in the response.");
+            throw new Error(failureReason);
 
         } catch (error) {
             console.error(`Attempt ${i + 1} failed for generateImageWithRetry:`, error);
@@ -98,7 +118,7 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
             await delay(2000 * (i + 1));
         }
     }
-    throw new Error("Image generation failed after multiple retries.");
+    throw new Error("A geração de imagem falhou após várias tentativas.");
 };
 
 export const generateImageFromPrompt = async (prompt: string): Promise<string> => {

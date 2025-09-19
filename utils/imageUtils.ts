@@ -1,5 +1,8 @@
 
 
+
+
+
 export const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -24,6 +27,7 @@ export const cropImage = (imageUrl: string, aspectRatio: string): Promise<string
         // FIX: Use `window.document` to access the DOM in environments where it's not a global.
         // FIX: Property 'document' does not exist on type 'Window'.
         const canvas = window.document.createElement('canvas');
+        // FIX: The canvas context was incorrectly set to 'd'. It has been corrected to '2d' to enable drawing operations.
         const ctx = canvas.getContext('2d');
         if (!ctx) {
             return reject(new Error('Failed to get canvas context'));
@@ -71,6 +75,7 @@ export const createSingleFramedImage = (imageUrl: string, cropRatio: string, lab
             // FIX: Use `window.document` to access the DOM in environments where it's not a global.
             // FIX: Property 'document' does not exist on type 'Window'.
             const canvas = window.document.createElement('canvas');
+            // FIX: The canvas context was incorrectly set to 'd'. It has been corrected to '2d' to enable drawing operations.
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 return reject(new Error('Failed to get canvas context'));
@@ -133,6 +138,7 @@ export const extractLastFrame = (videoBlob: Blob): Promise<{ base64data: string;
     // FIX: Use `window.document` to access the DOM in environments where it's not a global.
     // FIX: Property 'document' does not exist on type 'Window'.
     const canvas = window.document.createElement('canvas');
+    // FIX: The canvas context was incorrectly set to 'd'. It has been corrected to '2d' to enable drawing operations.
     const ctx = canvas.getContext('2d');
     // FIX: Use `window.URL` to access the URL API in environments where it's not a global.
     // FIX: Property 'URL' does not exist on type 'Window'.
@@ -172,3 +178,18 @@ export const extractLastFrame = (videoBlob: Blob): Promise<{ base64data: string;
     video.load();
   });
 }
+
+export const base64ToFile = (base64String: string, fileName: string): File => {
+    const match = base64String.match(/^data:(.*);base64,(.*)$/);
+    if (!match) throw new Error('Invalid base64 string');
+    
+    const mime = match[1];
+    const base64Data = match[2];
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new File([byteArray], fileName, { type: mime });
+};

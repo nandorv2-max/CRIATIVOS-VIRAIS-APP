@@ -1,25 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { nanoid } from 'nanoid';
 import Button from './Button.tsx';
 import { generateVideo } from '../services/geminiService.ts';
-import { extractLastFrame, toBase64 } from '../utils/imageUtils.ts';
-import { IconUpload, IconCamera } from './Icons.tsx';
+import { extractLastFrame, toBase64, blobToBase64 } from '../utils/imageUtils.ts';
+import { IconUpload, IconCamera, IconImageIcon } from './Icons.tsx';
 import CameraModal from './CameraModal.tsx';
+import UploadOptionsModal from './UploadOptionsModal.tsx';
+import GalleryPickerModal from './GalleryPickerModal.tsx';
+import { uploadUserAsset } from '../services/databaseService.ts';
+import type { UploadedAsset, UserProfile } from '../types.ts';
 
-const VideoGenerator: React.FC = () => {
+interface VideoGeneratorProps {
+    userProfile: UserProfile;
+}
+
+const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
     const [prompt, setPrompt] = useState('Animate a imagem como um UGC de uma pessoa como se estivesse a falar para a câmara, a explicar algo, sem fazer alterações bruscas e mantendo o mesmo ambiente. Gerar um vídeo de alta definição, preservando a alta fidelidade e os detalhes nítidos da imagem original. A animação deve manter a qualidade fotorrealista e a textura da imagem de referência. Não deve haver alteração no zoom ou cortes para diferentes ângulos em nenhum momento do vídeo gerado. Nenhum elemento da imagem pode ser alterado, apenas a animação deve ser feita de forma natural, como se fosse um UGC real. A animação não deve alterar as cores da imagem original, mantendo o mesmo padrão de cores do início ao fim, sem quaisquer modificações.');
     const [status, setStatus] = useState('Pronto.');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<{ message: string, details: string } | null>(null);
     const [aspectRatio, setAspectRatio] = useState('9:16');
     const [sequenceLength, setSequenceLength] = useState(3);
-    const [videos, setVideos] = useState<string[]>([]);
+    const [videos, setVideos] = useState<{url: string, blob: Blob}[]>([]);
     
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
+    const [savingVideoIndex, setSavingVideoIndex] = useState<number | null>(null);
 
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
     
     const handleImageUpload = async (file: File | null) => {
@@ -35,7 +47,26 @@ const VideoGenerator: React.FC = () => {
             setIsUploading(false);
         }
     };
-
+    
+    const handleSelectFromGallery = async (asset: UploadedAsset) => {
+        setIsGalleryPickerModalOpen(false);
+        setIsUploading(true);
+        setError(null);
+        try {
+            const response = await fetch(asset.url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
+            }
+            const blob = await response.blob();
+            const base64Image = await blobToBase64(blob);
+            setUploadedImage(base64Image);
+        } catch (err) {
+            console.error("Error loading image from gallery:", err);
+            setError({ message: "Não foi possível carregar a imagem da galeria.", details: err instanceof Error ? err.message : '' });
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     const handleGenerate = async () => {
         if (!prompt) { setStatus('Por favor, introduza um prompt.'); return; }
@@ -64,10 +95,11 @@ const VideoGenerator: React.FC = () => {
                     currentImageBytes,
                     currentMimeType,
                     aspectRatio,
+                    userProfile.role
                 );
 
                 const videoUrl = URL.createObjectURL(videoBlob);
-                newVideos.push(videoUrl);
+                newVideos.push({ url: videoUrl, blob: videoBlob });
                 setVideos([...newVideos]);
 
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -92,10 +124,44 @@ const VideoGenerator: React.FC = () => {
             setIsLoading(false);
         }
     };
+    
+    const handleSaveToGallery = async (videoBlob: Blob, index: number) => {
+        setSavingVideoIndex(index);
+        setError(null);
+        try {
+            const videoFile = new File([videoBlob], `GenIA_Video_${nanoid(6)}.mp4`, { type: 'video/mp4' });
+            await uploadUserAsset(videoFile);
+            alert(`Vídeo ${index + 1} salvo na galeria com sucesso!`);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
+            setError({ message: "Falha ao salvar o vídeo.", details: errorMessage });
+        } finally {
+            setSavingVideoIndex(null);
+        }
+    };
+
 
     return (
         <>
             <CameraModal isOpen={isCameraOpen} onClose={() => setIsCameraOpen(false)} onCapture={setUploadedImage} />
+            <UploadOptionsModal
+                isOpen={isUploadModalOpen}
+                onClose={() => setIsUploadModalOpen(false)}
+                onLocalUpload={() => {
+                    setIsUploadModalOpen(false);
+                    fileInputRef.current?.click();
+                }}
+                onGalleryUpload={() => {
+                    setIsUploadModalOpen(false);
+                    setIsGalleryPickerModalOpen(true);
+                }}
+                galleryEnabled={true}
+            />
+            <GalleryPickerModal
+                isOpen={isGalleryPickerModalOpen}
+                onClose={() => setIsGalleryPickerModalOpen(false)}
+                onSelectAsset={handleSelectFromGallery}
+            />
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row gap-6 w-full h-full">
                 {/* Left Column: Controls */}
                 <div className="md:w-1/3 xl:w-1/4 flex flex-col gap-6 overflow-y-auto pr-4">
@@ -106,8 +172,7 @@ const VideoGenerator: React.FC = () => {
                         <h3 className='text-xl font-semibold text-white mb-4'>1. A Sua Foto</h3>
                         <div 
                             className="w-full aspect-square border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-yellow-400 bg-gray-900/50 overflow-hidden"
-                            // FIX: Use optional chaining and cast to `any` to safely call click on the ref.
-                            onClick={() => (fileInputRef.current as any)?.click()}
+                            onClick={() => setIsUploadModalOpen(true)}
                         >
                             {isUploading ? <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-yellow-400"></div> 
                             : uploadedImage ? <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover" /> 
@@ -115,8 +180,7 @@ const VideoGenerator: React.FC = () => {
                         </div>
                         <div className="flex justify-center gap-2 mt-4">
                             <Button onClick={() => setIsCameraOpen(true)}><div className="flex items-center gap-2 text-sm"><IconCamera /><span>Câmara</span></div></Button>
-                            {/* FIX: Use optional chaining and cast to `any` to safely call click on the ref. */}
-                            {uploadedImage && <Button onClick={() => (fileInputRef.current as any)?.click()}>Mudar</Button>}
+                            {uploadedImage && <Button onClick={() => setIsUploadModalOpen(true)}>Mudar</Button>}
                         </div>
                         {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
                         <input type="file" ref={fileInputRef} onChange={(e) => handleImageUpload((e.target as any).files?.[0] ?? null)} accept="image/*" className="hidden" />
@@ -177,13 +241,23 @@ const VideoGenerator: React.FC = () => {
                             </div>
                         )}
                         <div ref={videoContainerRef} className="flex flex-row items-center gap-10 overflow-x-auto p-4 w-full h-full">
-                            {videos.map((videoSrc, index) => (
+                            {videos.map((video, index) => (
                                 <div key={index} className="relative flex-shrink-0 w-64 h-full">
                                     <figure className="m-0 w-full h-full flex flex-col items-center justify-center">
-                                        <video src={videoSrc} controls autoPlay={index > 0} muted loop={false} className="max-w-full max-h-full rounded-lg bg-black" />
+                                        <video src={video.url} controls autoPlay={index > 0} muted loop={false} className="max-w-full max-h-full rounded-lg bg-black" />
                                         <figcaption className="mt-4 bg-gray-900 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
                                             Vídeo {index + 1}
                                         </figcaption>
+                                        <Button 
+                                            onClick={() => handleSaveToGallery(video.blob, index)} 
+                                            disabled={savingVideoIndex === index}
+                                            className="mt-2 text-xs !py-1 !px-3"
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                <IconImageIcon className="w-3 h-3" />
+                                                <span>{savingVideoIndex === index ? 'A salvar...' : 'Salvar na Galeria'}</span>
+                                            </div>
+                                        </Button>
                                     </figure>
                                     {index < videos.length - 1 && (
                                         <div className="absolute h-0.5 w-10 bg-gray-600 top-1/2 -right-10"></div>

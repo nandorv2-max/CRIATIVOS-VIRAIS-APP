@@ -1,17 +1,21 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from '../../components/Button.tsx';
-import { IconUpload, IconSparkles, IconTrash, IconImage, IconDownload, IconLayers, IconTranslate, IconX } from '../../components/Icons.tsx';
+import { IconUpload, IconSparkles, IconTrash, IconImage, IconDownload, IconLayers, IconTranslate, IconX, IconImageIcon } from '../../components/Icons.tsx';
 import ErrorNotification from '../../components/ErrorNotification.tsx';
 import { generateImageWithRetry, translateText } from '../../services/geminiService.ts';
-import { toBase64 } from '../../utils/imageUtils.ts';
+import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
 import { addCreation } from '../../utils/db.ts';
-import type { Creation } from '../../types.ts';
+import type { Creation, UploadedAsset } from '../../types.ts';
 import MyCreationsModal from '../MyCreationsModal.tsx';
+import UploadOptionsModal from '../UploadOptionsModal.tsx';
+import GalleryPickerModal from '../GalleryPickerModal.tsx';
+import { uploadUserAsset } from '../../services/databaseService.ts';
+
 
 // A self-contained image uploader component with drag-and-drop support
-const ImageUploader: React.FC<{ onUpload: (files: FileList) => void, children: React.ReactNode, className?: string, single?: boolean }> = ({ onUpload, children, className, single = false }) => {
+const ImageUploader: React.FC<{ onUpload?: (files: FileList) => void, onClick?: () => void, children: React.ReactNode, className?: string, single?: boolean }> = ({ onUpload, onClick, children, className, single = false }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -35,16 +39,22 @@ const ImageUploader: React.FC<{ onUpload: (files: FileList) => void, children: R
     const handleDrop = (e: React.DragEvent) => {
         handleDrag(e);
         setIsDragOver(false);
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0 && onUpload) {
             onUpload(e.dataTransfer.files);
             e.dataTransfer.clearData();
         }
     };
     
-    const handleClick = () => inputRef.current?.click();
+    const handleClick = () => {
+        if (onClick) {
+            onClick();
+        } else if (onUpload) {
+            inputRef.current?.click();
+        }
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
+        if (e.target.files && onUpload) {
             onUpload(e.target.files);
             e.target.value = ''; // Reset input
         }
@@ -59,7 +69,7 @@ const ImageUploader: React.FC<{ onUpload: (files: FileList) => void, children: R
             onDrop={handleDrop}
             className={`relative border-2 border-dashed rounded-lg transition-colors duration-200 ${className} ${isDragOver ? 'border-brand-primary bg-brand-primary/10' : 'border-brand-accent hover:border-brand-secondary'}`}
         >
-            <input ref={inputRef} type="file" multiple={!single} accept="image/*" onChange={handleFileChange} className="hidden" />
+            {onUpload && <input ref={inputRef} type="file" multiple={!single} accept="image/*" onChange={handleFileChange} className="hidden" />}
             {children}
         </div>
     );
@@ -73,11 +83,15 @@ const UnirView: React.FC = () => {
     const [settings, setSettings] = useState({ matchColor: true, strength: 50 });
     
     const [resultImage, setResultImage] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState<'generate' | 'translate' | 'gallery' | null>(null);
     const [isTranslating, setIsTranslating] = useState<'prompt' | 'negative' | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const [isCreationsModalOpen, setIsCreationsModalOpen] = useState(false);
+    const [isUploadOptionsModalOpen, setIsUploadOptionsModalOpen] = useState(false);
+    const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
+    const [uploadTarget, setUploadTarget] = useState<'base' | 'blend' | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFilesUpload = async (files: FileList, target: 'base' | 'blend') => {
         setError(null);
@@ -94,6 +108,45 @@ const UnirView: React.FC = () => {
         } catch (err) {
             console.error("Error loading images:", err);
             setError("Falha ao carregar uma ou mais imagens.");
+        }
+    };
+
+    const handleTriggerUpload = (target: 'base' | 'blend') => {
+        setUploadTarget(target);
+        setIsUploadOptionsModalOpen(true);
+    };
+
+    const handleLocalUpload = () => {
+        setIsUploadOptionsModalOpen(false);
+        fileInputRef.current?.click();
+    };
+    
+    const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && uploadTarget) {
+            handleFilesUpload(e.target.files, uploadTarget);
+            setUploadTarget(null);
+        }
+    };
+    
+    const handleSelectFromGallery = async (asset: UploadedAsset) => {
+        setIsGalleryPickerModalOpen(false);
+        setError(null);
+        try {
+            const response = await fetch(asset.url);
+            if (!response.ok) throw new Error(`Failed to fetch image`);
+            const blob = await response.blob();
+            const base64Image = await blobToBase64(blob);
+
+            if (uploadTarget === 'base') {
+                setBaseImage(base64Image);
+            } else if (uploadTarget === 'blend') {
+                setBlendImages(prev => [...prev, base64Image]);
+            }
+        } catch (err) {
+            console.error("Error loading image from gallery:", err);
+            setError("Não foi possível carregar a imagem da galeria.");
+        } finally {
+            setUploadTarget(null);
         }
     };
 
@@ -124,7 +177,7 @@ const UnirView: React.FC = () => {
             return;
         }
 
-        setIsLoading(true);
+        setIsLoading('generate');
         setError(null);
         setResultImage(null);
 
@@ -169,7 +222,7 @@ const UnirView: React.FC = () => {
             const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
             setError(`A geração falhou: ${errorMessage}`);
         } finally {
-            setIsLoading(false);
+            setIsLoading(null);
         }
     };
     
@@ -192,6 +245,23 @@ const UnirView: React.FC = () => {
         }
     };
     
+    const handleSaveToGallery = async () => {
+        if (!resultImage) return;
+        
+        setIsLoading('gallery');
+        setError(null);
+        try {
+            const file = base64ToFile(resultImage, `GenIA-Blend-${Date.now()}.png`);
+            await uploadUserAsset(file);
+            alert('Imagem salva na sua galeria com sucesso!');
+        } catch(err) {
+            console.error("Failed to save to gallery:", err);
+            setError('Falha ao salvar na galeria.');
+        } finally {
+            setIsLoading(null);
+        }
+    };
+    
     const handleReloadCreation = (creation: Creation) => {
         setBaseImage(creation.baseImage);
         setBlendImages(creation.blendImages);
@@ -206,8 +276,24 @@ const UnirView: React.FC = () => {
         <>
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
             <MyCreationsModal isOpen={isCreationsModalOpen} onClose={() => setIsCreationsModalOpen(false)} onReload={handleReloadCreation} />
+            <UploadOptionsModal
+                isOpen={isUploadOptionsModalOpen}
+                onClose={() => setIsUploadOptionsModalOpen(false)}
+                onLocalUpload={handleLocalUpload}
+                onGalleryUpload={() => {
+                    setIsUploadOptionsModalOpen(false);
+                    setIsGalleryPickerModalOpen(true);
+                }}
+                galleryEnabled={true}
+            />
+             <GalleryPickerModal
+                isOpen={isGalleryPickerModalOpen}
+                onClose={() => setIsGalleryPickerModalOpen(false)}
+                onSelectAsset={handleSelectFromGallery}
+            />
+            <input ref={fileInputRef} type="file" multiple={uploadTarget === 'blend'} accept="image/*" onChange={handleFileInputChange} className="hidden" />
             
-            <div className="h-full flex flex-col">
+            <div className="h-full flex flex-col p-6">
                 <header className="flex-shrink-0 mb-6 flex justify-between items-center">
                     <div>
                         <h1 className="text-3xl font-bold text-white">Image Blender</h1>
@@ -223,7 +309,7 @@ const UnirView: React.FC = () => {
                     <div className="lg:w-1/3 flex flex-col gap-4 bg-brand-dark/50 p-4 rounded-2xl border border-brand-accent/50 overflow-y-auto">
                          <div>
                             <label className="text-lg font-semibold text-white mb-2 block">Imagem Base</label>
-                            <ImageUploader onUpload={(files) => handleFilesUpload(files, 'base')} className="aspect-video w-full flex items-center justify-center text-gray-400 cursor-pointer" single>
+                            <ImageUploader onClick={() => handleTriggerUpload('base')} className="aspect-video w-full flex items-center justify-center text-gray-400 cursor-pointer" single>
                                 {baseImage ? <img src={baseImage} className="w-full h-full object-contain p-1" /> : <div className="text-center"><IconUpload className="mx-auto h-10 w-10"/><p>Clique ou arraste a imagem</p></div>}
                             </ImageUploader>
                         </div>
@@ -236,7 +322,7 @@ const UnirView: React.FC = () => {
                                         <button onClick={() => setBlendImages(prev => prev.filter((_, i) => i !== index))} className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><IconX className="w-3 h-3" /></button>
                                     </div>
                                 ))}
-                                <ImageUploader onUpload={(files) => handleFilesUpload(files, 'blend')} className="aspect-square flex items-center justify-center text-gray-400 cursor-pointer">
+                                <ImageUploader onClick={() => handleTriggerUpload('blend')} className="aspect-square flex items-center justify-center text-gray-400 cursor-pointer">
                                     <IconUpload className="h-8 w-8" />
                                 </ImageUploader>
                             </div>
@@ -256,7 +342,7 @@ const UnirView: React.FC = () => {
                          <div>
                             <label className="text-lg font-semibold text-white mb-2 block">Definições</label>
                             <div className="space-y-3 bg-brand-light/50 p-3 rounded-lg">
-                                 <label className="flex items-center justify-between cursor-pointer"><span className="text-sm text-gray-200">Corresponder Cor</span><input type="checkbox" checked={settings.matchColor} onChange={e => setSettings(s => ({...s, matchColor: e.target.checked}))} className="w-4 h-4 rounded bg-brand-dark border-brand-accent text-brand-primary" /></label>
+                                 <label className="flex items-center justify-between cursor-pointer"><span className="text-sm text-gray-200">Corresponder Cor</span><input type="checkbox" checked={settings.matchColor} onChange={e => setSettings(s => ({...s, matchColor: e.target.checked}))} className="w-4 h-4 rounded bg-brand-dark border-brand-accent text-brand-primary focus:ring-red-500 ring-offset-brand-dark" /></label>
                                  <div>
                                     <div className="flex justify-between items-center text-sm text-gray-200"><span>Força</span><span>{settings.strength}</span></div>
                                     <input type="range" min="0" max="100" value={settings.strength} onChange={e => setSettings(s => ({...s, strength: Number(e.target.value)}))} className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm" />
@@ -265,15 +351,15 @@ const UnirView: React.FC = () => {
                         </div>
 
                         <div className="mt-auto">
-                            <Button onClick={handleGenerate} primary disabled={isLoading} className="w-full text-lg py-3">
-                                {isLoading ? <div className="flex items-center justify-center gap-2"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-brand-dark"></div>A Gerar...</div> : <div className="flex items-center justify-center gap-2"><IconSparkles />Gerar</div>}
+                            <Button onClick={handleGenerate} primary disabled={!!isLoading} className="w-full text-lg py-3">
+                                {isLoading === 'generate' ? <div className="flex items-center justify-center gap-2"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-brand-dark"></div>A Gerar...</div> : <div className="flex items-center justify-center gap-2"><IconSparkles />Gerar</div>}
                             </Button>
                         </div>
                     </div>
 
                     {/* Right Panel: Result */}
                     <div className="lg:w-2/3 flex-grow flex items-center justify-center bg-black rounded-2xl p-4 border border-brand-accent/50 relative group">
-                        {isLoading ? (
+                        {isLoading === 'generate' ? (
                             <div className="flex flex-col items-center text-gray-300"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary mb-4"></div><p>A IA está a criar a sua imagem...</p></div>
                         ) : resultImage ? (
                             <motion.img initial={{opacity:0}} animate={{opacity:1}} src={resultImage} alt="Imagem gerada" className="max-w-full max-h-full object-contain rounded-lg" />
@@ -284,6 +370,9 @@ const UnirView: React.FC = () => {
                             <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Button onClick={handleDownload}><div className="flex items-center gap-2"><IconDownload/><span>Baixar</span></div></Button>
                                 <Button onClick={handleUseAsBase}><div className="flex items-center gap-2"><IconImage/><span>Usar como Base</span></div></Button>
+                                <Button onClick={handleSaveToGallery} disabled={isLoading === 'gallery'}>
+                                    <div className="flex items-center gap-2"><IconImageIcon className="w-5 h-5"/><span>{isLoading === 'gallery' ? 'A Salvar...' : 'Salvar na Galeria'}</span></div>
+                                </Button>
                             </div>
                         )}
                     </div>

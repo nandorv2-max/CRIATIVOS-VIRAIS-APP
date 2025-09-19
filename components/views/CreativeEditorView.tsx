@@ -14,7 +14,7 @@ import { removeBackground, magicCapture, magicExpand } from '../../services/gemi
 import { saveProject } from '../../utils/db.ts';
 import type { 
     AnyLayer, UploadedAsset, DownloadJob, ImageLayer, VideoLayer, TextLayer, ShapeLayer, UploadedAssetType,
-    Page, ProjectState, AudioTrack, Project 
+    Page, ProjectState, AudioTrack, Project, PublicAsset 
 } from '../../types.ts';
 
 
@@ -212,6 +212,73 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         };
     }, [zoom, panOffset]);
     
+    const onAddAssetToCanvas = async (asset: UploadedAsset | PublicAsset) => {
+        const assetUrl = 'asset_url' in asset ? asset.asset_url : asset.url;
+        const assetType = 'asset_type' in asset ? asset.asset_type : asset.type;
+    
+        try {
+            let newLayer: AnyLayer;
+            const mediaType = assetType === 'video' ? 'video' : 'image';
+            const { width: naturalWidth, height: naturalHeight } = await getMediaDimensions(assetUrl, mediaType);
+    
+            const canvasCenterX = activePage.width / 2;
+            const canvasCenterY = activePage.height / 2;
+    
+            const MAX_DIM = Math.min(activePage.width, activePage.height) * 0.5;
+            const scaleFactor = Math.min(MAX_DIM / naturalWidth, MAX_DIM / naturalHeight, 1);
+            const width = naturalWidth * scaleFactor;
+            const height = naturalHeight * scaleFactor;
+    
+            const baseLayerProps = {
+                id: `layer_${nanoid()}`,
+                name: asset.name,
+                x: canvasCenterX - width / 2,
+                y: canvasCenterY - height / 2,
+                width: width,
+                height: height,
+                rotation: 0,
+                opacity: 100,
+                isLocked: false,
+                isVisible: true,
+            };
+            
+            if (mediaType === 'image') {
+                newLayer = {
+                    ...baseLayerProps,
+                    type: 'image',
+                    src: assetUrl,
+                    mediaNaturalWidth: naturalWidth,
+                    mediaNaturalHeight: naturalHeight,
+                    scale: 1,
+                    crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight }
+                } as ImageLayer;
+            } else { // video
+// FIX: Check for the 'duration' property on the asset object before accessing it to prevent errors when handling 'PublicAsset' which does not have this property.
+                 const duration = 'duration' in asset && asset.duration ? asset.duration : 10;
+                 newLayer = {
+                    ...baseLayerProps,
+                    type: 'video',
+                    src: assetUrl,
+                    startTime: 0,
+                    endTime: duration,
+                    duration: duration,
+                    volume: 1,
+                    isMuted: false,
+                    mediaNaturalWidth: naturalWidth,
+                    mediaNaturalHeight: naturalHeight,
+                    scale: 1,
+                    crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight }
+                } as VideoLayer;
+            }
+            
+            addLayer(newLayer);
+    
+        } catch (error) {
+            console.error("Failed to add asset to canvas:", error);
+            alert("Não foi possível adicionar o recurso à tela.");
+        }
+    };
+
     const renderLayer = (layer: AnyLayer) => {
         const isSelected = selectedLayerIds.includes(layer.id);
     
@@ -270,7 +337,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 onAddShapeLayer={(shape) => {}}
                 onTriggerUpload={(type) => {}}
                 uploadedAssets={uploadedAssets}
-                onAddAssetToCanvas={(asset) => {}}
+                onAddAssetToCanvas={onAddAssetToCanvas}
                 onToggleLayersPanel={() => setIsLayersPanelOpen(!isLayersPanelOpen)}
                 onSaveProject={handleSave}
                 onLoadProject={() => {}}

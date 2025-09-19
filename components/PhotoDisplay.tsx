@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { IconOptions, IconEdit } from './Icons.tsx';
+import { IconOptions, IconEdit, IconImageIcon } from './Icons.tsx';
 
 interface PhotoDisplayProps {
     era: string;
@@ -11,9 +11,11 @@ interface PhotoDisplayProps {
     isPolaroid?: boolean;
     index?: number;
     showLabel?: boolean;
+    onSaveToGallery?: (imageUrl: string, era: string) => void;
+    canSaveToGallery?: boolean;
 }
 
-const PhotoDisplay: React.FC<PhotoDisplayProps> = ({ era, imageUrl, onDownload, onRegenerate, onEdit, isPolaroid = true, index = 0, showLabel = true }) => {
+const PhotoDisplay: React.FC<PhotoDisplayProps> = ({ era, imageUrl, onDownload, onRegenerate, onEdit, isPolaroid = true, index = 0, showLabel = true, onSaveToGallery, canSaveToGallery }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +58,11 @@ const PhotoDisplay: React.FC<PhotoDisplayProps> = ({ era, imageUrl, onDownload, 
                         <button onClick={() => { onEdit(imageUrl, index); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-brand-primary/20 rounded-md transition-colors flex items-center gap-2" aria-label={`Editar foto de ${era}`}>
                             <IconEdit /> Editar Foto
                         </button>
+                        {canSaveToGallery && onSaveToGallery && (
+                            <button onClick={() => { onSaveToGallery(imageUrl, era); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-brand-primary/20 rounded-md transition-colors flex items-center gap-2">
+                                <IconImageIcon className="w-4 h-4" /> Salvar na Galeria
+                            </button>
+                        )}
                         <div className="my-1 h-px bg-white/10"></div>
                         <span className="w-full text-left px-3 pt-1 pb-1 text-xs text-gray-400 uppercase tracking-wider">Descarregar</span>
                         <button onClick={() => { onDownload(imageUrl, era, '1:1'); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 hover:bg-brand-primary/20 rounded-md transition-colors">Quadrado (1:1)</button>

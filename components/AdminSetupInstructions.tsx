@@ -6,198 +6,157 @@ interface AdminSetupInstructionsProps {
     onRetry: () => void;
 }
 
-const CodeBlock: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <pre className="bg-gray-900 rounded-lg p-4 text-sm text-gray-200 overflow-x-auto my-2 border border-gray-700">
-        <code>{children}</code>
-    </pre>
-);
-
 const AdminSetupInstructions: React.FC<AdminSetupInstructionsProps> = ({ error, onRetry }) => {
 
-    const masterScript = `-- Este script é seguro para ser executado várias vezes.
+    const sqlScript = `-- SCRIPT DE CONFIGURAÇÃO MESTRE UNIFICADO v15.0 - CONTROLO DE PLANOS (STARTER, PREMIUM, PRO)
+-- Este script introduz o controlo de acesso baseado em funções para funcionalidades como a geração de vídeo.
+-- AVISO: Apaga e recria tabelas, o que limpará os dados existentes nelas.
 
--- ======= TABELA: public_assets =======
-CREATE TABLE IF NOT EXISTS public.public_assets (
-  id uuid default gen_random_uuid() not null primary key,
-  name text not null,
-  asset_type text not null,
-  asset_url text not null,
-  thumbnail_url text,
-  visibility text not null check (visibility in ('Public', 'Restricted')),
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  owner_id uuid references auth.users(id)
-);
-
--- ======= TABELA: user_profiles =======
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-  user_id uuid not null references auth.users(id) on delete cascade primary key,
-  role text not null default 'user',
-  credits integer not null default 100
-);
-
--- ======= ATIVAR SEGURANÇA (RLS) =======
-ALTER TABLE public.public_assets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-
--- ======= POLÍTICAS DE SEGURANÇA (serão ignoradas se já existirem) =======
--- Policies for public_assets
-DROP POLICY IF EXISTS "Os recursos públicos são visíveis para todos." ON public.public_assets;
-CREATE POLICY "Os recursos públicos são visíveis para todos."
-  ON public.public_assets FOR SELECT
-  USING ( visibility = 'Public' );
-
-DROP POLICY IF EXISTS "Os administradores podem ver todos os recursos." ON public.public_assets;
-CREATE POLICY "Os administradores podem ver todos os recursos."
-  ON public.public_assets FOR SELECT
-  USING ( (select role from public.user_profiles where user_id = auth.uid()) = 'admin' );
-
-DROP POLICY IF EXISTS "Os administradores podem inserir novos recursos." ON public.public_assets;
-CREATE POLICY "Os administradores podem inserir novos recursos."
-  ON public.public_assets FOR INSERT
-  WITH CHECK ( (select role from public.user_profiles where user_id = auth.uid()) = 'admin' );
-
--- Policies for user_profiles
-DROP POLICY IF EXISTS "Os utilizadores podem ver o seu próprio perfil." ON public.user_profiles;
-CREATE POLICY "Os utilizadores podem ver o seu próprio perfil."
-  ON public.user_profiles FOR SELECT
-  USING ( auth.uid() = user_id );
-
-DROP POLICY IF EXISTS "Os administradores podem ver todos os perfis." ON public.user_profiles;
-CREATE POLICY "Os administradores podem ver todos os perfis."
-  ON public.user_profiles FOR SELECT
-  USING ( (select role from public.user_profiles where user_id = auth.uid()) = 'admin' );
-
-
--- ======= GATILHO PARA NOVOS UTILIZADORES =======
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.user_profiles (user_id, role, credits)
-  VALUES (new.id, 'user', 100)
-  ON CONFLICT (user_id) DO NOTHING; -- Evita erros se o perfil já existir
-  RETURN new;
-END;
-$$;
-
+-- ======= PARTE 1: APAGAR CONFIGURAÇÃO ANTIGA (para garantir um estado limpo) =======
+DROP POLICY IF EXISTS "Permitir acesso público de leitura aos recursos públicos" ON storage.objects;
+DROP POLICY IF EXISTS "Admins podem gerir todos os ficheiros em public_assets" ON storage.objects;
+DROP POLICY IF EXISTS "Os utilizadores podem gerir os seus próprios ficheiros" ON storage.objects;
+DROP POLICY IF EXISTS "Acesso público de leitura para public_assets" ON storage.objects;
+DROP POLICY IF EXISTS "Acesso total de admin para public_assets" ON storage.objects;
+DROP POLICY IF EXISTS "Acesso total do utilizador aos seus próprios ficheiros" ON storage.objects;
+DROP TRIGGER IF EXISTS on_user_asset_created ON public.user_assets;
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+DROP FUNCTION IF EXISTS public.admin_get_all_users() CASCADE;
+DROP FUNCTION IF EXISTS public.admin_get_all_assets() CASCADE;
+DROP FUNCTION IF EXISTS public.admin_add_public_asset(text, text, text, text, text, text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.admin_update_user(uuid, text, integer) CASCADE;
+DROP FUNCTION IF EXISTS public.admin_delete_user(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.admin_delete_public_asset(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.user_delete_asset(uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+DROP FUNCTION IF EXISTS public.get_my_uid() CASCADE;
+DROP FUNCTION IF EXISTS public.set_user_id_on_asset() CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP TABLE IF EXISTS public.user_assets CASCADE;
+DROP TABLE IF EXISTS public.public_assets CASCADE;
+DROP TABLE IF EXISTS public.user_profiles CASCADE;
 
+-- ======= PARTE 2: CRIAR TABELAS DA BASE DE DADOS =======
+CREATE TABLE public.user_profiles ( id uuid NOT NULL PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, email text, role text DEFAULT 'starter'::text, credits integer DEFAULT 10 );
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.public_assets ( id uuid default gen_random_uuid() not null primary key, name text not null, asset_type text not null, storage_path text not null, asset_url text not null, thumbnail_url text, visibility text default 'Public'::text not null, owner_id uuid references auth.users(id) on delete set null, created_at timestamp with time zone default timezone('utc'::text, now()) not null );
+ALTER TABLE public.public_assets ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.user_assets ( id uuid default gen_random_uuid() not null primary key, user_id uuid not null references auth.users(id) on delete cascade, name text not null, asset_type text not null, storage_path text not null, url text not null, thumbnail_url text, thumbnail_storage_path text, is_favorite boolean default false not null, created_at timestamp with time zone default timezone('utc'::text, now()) not null );
+ALTER TABLE public.user_assets ENABLE ROW LEVEL SECURITY;
 
--- ======= FUNÇÕES RPC PARA O PAINEL DE ADMIN =======
-CREATE OR REPLACE FUNCTION admin_get_all_users()
-RETURNS TABLE (id uuid, email text, role text, credits int)
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT
-    u.id,
-    u.email,
-    up.role,
-    up.credits
-  FROM auth.users u
-  JOIN public.user_profiles up ON u.id = up.user_id
-  WHERE auth.role() = 'authenticated' AND EXISTS (
-    SELECT 1 FROM public.user_profiles WHERE user_id = auth.uid() AND role = 'admin'
-  );
-$$;
+-- ======= PARTE 3: CRIAR FUNÇÕES HELPER E GATILHOS =======
+CREATE OR REPLACE FUNCTION public.get_my_uid() RETURNS uuid LANGUAGE sql STABLE SECURITY INVOKER AS $$ select auth.uid(); $$;
+CREATE OR REPLACE FUNCTION public.set_user_id_on_asset() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN NEW.user_id := auth.uid(); RETURN NEW; END; $$;
+CREATE TRIGGER on_user_asset_created BEFORE INSERT ON public.user_assets FOR EACH ROW EXECUTE PROCEDURE public.set_user_id_on_asset();
+CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN INSERT INTO public.user_profiles (id, email, role) VALUES ( NEW.id, NEW.email, CASE WHEN NEW.email IN ('helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com', 'sadesginerperfeito@gmail.com') THEN 'admin' ELSE 'starter' END ); RETURN NEW; END; $$;
+CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-CREATE OR REPLACE FUNCTION admin_get_all_assets()
-RETURNS SETOF public.public_assets
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT * FROM public.public_assets
-  WHERE auth.role() = 'authenticated' AND EXISTS (
-    SELECT 1 FROM public.user_profiles WHERE user_id = auth.uid() AND role = 'admin'
-  );
-$$;
+-- ======= PARTE 4: SINCRONIZAR PERFIS DE UTILIZADORES EXISTENTES =======
+INSERT INTO public.user_profiles (id, email, role) SELECT id, email, CASE WHEN email IN ('helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com', 'sadesginerperfeito@gmail.com') THEN 'admin' ELSE 'starter' END FROM auth.users ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, email = EXCLUDED.email;
 
-CREATE OR REPLACE FUNCTION admin_add_public_asset(
-    p_name text,
-    p_asset_type text,
-    p_asset_url text,
-    p_thumbnail_url text,
-    p_visibility text,
-    p_owner_id uuid
-)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
+-- ======= PARTE 5: CRIAR POLÍTICAS DE SEGURANÇA (RLS) PARA TABELAS =======
+CREATE POLICY "Os utilizadores podem gerir o seu próprio perfil." ON public.user_profiles FOR ALL USING ( auth.uid() = id ) WITH CHECK ( auth.uid() = id );
+CREATE POLICY "Recursos públicos são visíveis por todos." ON public.public_assets FOR SELECT USING ( visibility = 'Public' );
+CREATE POLICY "Admins têm acesso total aos recursos públicos." ON public.public_assets FOR ALL USING ( (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' ) WITH CHECK ( (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' );
+CREATE POLICY "Os utilizadores podem gerir os seus próprios recursos." ON public.user_assets FOR ALL USING ( auth.uid() = user_id ) WITH CHECK ( auth.uid() = user_id );
+
+-- ======= PARTE 6: CRIAR FUNÇÕES RPC (CORRIGIDAS) =======
+CREATE OR REPLACE FUNCTION public.admin_get_all_users() RETURNS TABLE (id uuid, email text, role text, credits integer) LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$ SELECT id, email, role, credits FROM public.user_profiles; $$;
+CREATE OR REPLACE FUNCTION public.admin_get_all_assets() RETURNS SETOF public.public_assets LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$ SELECT * FROM public.public_assets ORDER BY created_at DESC; $$;
+CREATE OR REPLACE FUNCTION public.admin_add_public_asset(p_name text, p_asset_type text, p_storage_path text, p_asset_url text, p_thumbnail_url text, p_visibility text, p_owner_id uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; INSERT INTO public.public_assets (name, asset_type, storage_path, asset_url, thumbnail_url, visibility, owner_id) VALUES (p_name, p_asset_type, p_storage_path, p_asset_url, p_thumbnail_url, p_visibility, p_owner_id); END; $$;
+CREATE OR REPLACE FUNCTION public.admin_update_user(p_user_id uuid, p_role text, p_credits integer) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; UPDATE public.user_profiles SET role = COALESCE(p_role, role), credits = COALESCE(p_credits, credits) WHERE id = p_user_id; END; $$;
+
+CREATE OR REPLACE FUNCTION public.admin_delete_user(p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+DECLARE
+    v_invoker_uid uuid := auth.uid();
+    v_invoker_is_admin boolean;
+    asset_record RECORD;
 BEGIN
-  IF NOT (
-    (SELECT role FROM public.user_profiles WHERE user_id = auth.uid()) = 'admin'
-  ) THEN
-    RAISE EXCEPTION 'Apenas administradores podem adicionar recursos públicos';
-  END IF;
-
-  INSERT INTO public.public_assets(name, asset_type, asset_url, thumbnail_url, visibility, owner_id)
-  VALUES (p_name, p_asset_type, p_asset_url, p_thumbnail_url, p_visibility, p_owner_id);
+    SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid;
+    IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF;
+    FOR asset_record IN SELECT storage_path, thumbnail_storage_path FROM public.user_assets WHERE user_id = p_user_id LOOP
+        DELETE FROM storage.objects WHERE bucket_id = 'user_assets' AND name = asset_record.storage_path;
+        IF asset_record.thumbnail_storage_path IS NOT NULL THEN
+            DELETE FROM storage.objects WHERE bucket_id = 'user_assets' AND name = asset_record.thumbnail_storage_path;
+        END IF;
+    END LOOP;
+    DELETE FROM auth.users WHERE id = p_user_id;
 END;
 $$;
-`;
 
-    const storageScript = `-- Apagar políticas antigas para evitar conflitos
-DROP POLICY IF EXISTS "Public read access" ON storage.objects;
-DROP POLICY IF EXISTS "Admin full access" ON storage.objects;
+CREATE OR REPLACE FUNCTION public.admin_delete_public_asset(p_asset_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+DECLARE
+    v_invoker_uid uuid := auth.uid();
+    v_invoker_is_admin boolean;
+    v_storage_path text;
+BEGIN
+    SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid;
+    IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF;
+    SELECT storage_path INTO v_storage_path FROM public.public_assets WHERE id = p_asset_id;
+    IF v_storage_path IS NULL THEN RAISE EXCEPTION 'ASSET_NOT_FOUND: Recurso público com ID % não encontrado.', p_asset_id; END IF;
+    DELETE FROM storage.objects WHERE bucket_id = 'public_assets' AND name = v_storage_path;
+    DELETE FROM public.public_assets WHERE id = p_asset_id;
+END;
+$$;
 
--- Criar novas políticas de armazenamento
-CREATE POLICY "Public read access"
-ON storage.objects FOR SELECT
-USING ( bucket_id = 'public_assets' );
+CREATE OR REPLACE FUNCTION public.user_delete_asset(p_asset_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+DECLARE
+    v_asset_record RECORD;
+    v_invoker_uid uuid := auth.uid();
+BEGIN
+    SELECT * INTO v_asset_record FROM public.user_assets WHERE id = p_asset_id;
+    IF v_asset_record IS NULL THEN RAISE EXCEPTION 'ASSET_NOT_FOUND: Recurso de utilizador com ID % não encontrado.', p_asset_id; END IF;
+    IF v_asset_record.user_id != v_invoker_uid THEN RAISE EXCEPTION 'PERMISSION_DENIED: Você não é o proprietário deste recurso.'; END IF;
+    DELETE FROM storage.objects WHERE bucket_id = 'user_assets' AND name = v_asset_record.storage_path;
+    IF v_asset_record.thumbnail_storage_path IS NOT NULL THEN
+        DELETE FROM storage.objects WHERE bucket_id = 'user_assets' AND name = v_asset_record.thumbnail_storage_path;
+    END IF;
+    DELETE FROM public.user_assets WHERE id = p_asset_id;
+    RETURN;
+END;
+$$;
 
-CREATE POLICY "Admin full access"
-ON storage.objects FOR ALL
-USING (
-  bucket_id = 'public_assets' AND
-  (select role from public.user_profiles where user_id = auth.uid()) = 'admin'
-)
-WITH CHECK (
-  bucket_id = 'public_assets' AND
-  (select role from public.user_profiles where user_id = auth.uid()) = 'admin'
-);`;
+-- ======= PARTE 7: CRIAR POLÍTICAS DE ARMAZENAMENTO (STORAGE) =======
+CREATE POLICY "Acesso público de leitura para public_assets" ON storage.objects FOR SELECT USING ( bucket_id = 'public_assets' );
+CREATE POLICY "Acesso total de admin para public_assets" ON storage.objects FOR ALL USING ( bucket_id = 'public_assets' AND (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' ) WITH CHECK ( bucket_id = 'public_assets' AND (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' );
+CREATE POLICY "Acesso total do utilizador aos seus próprios ficheiros" ON storage.objects FOR ALL USING ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid ) WITH CHECK ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid );`;
+
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(sqlScript);
+        alert('Script copiado para a área de transferência!');
+    };
 
     return (
-        <div className="p-8 text-left max-w-4xl mx-auto text-gray-200">
-            <h1 className="text-3xl font-bold text-red-400 mb-4">Configuração do Backend Necessária</h1>
-            <p className="mb-2">A aplicação detetou que o seu backend Supabase não está totalmente configurado. Isto é normal na primeira utilização do painel de administração.</p>
-            {error && <p className="mb-6 bg-red-900/50 border border-red-500/50 p-3 rounded-lg text-sm"><strong>Erro Detetado:</strong> {error.replace('SETUP_REQUIRED:', '')}</p>}
-
-            <div className="space-y-6">
-                <div>
-                    <h2 className="text-xl font-semibold text-yellow-300 mb-2">Passo 1: Executar Script de Base de Dados Mestre</h2>
-                    <p>Copie e cole todo o seguinte script SQL no <strong>SQL Editor</strong> do seu projeto Supabase e clique em "RUN". Este script é seguro para ser executado várias vezes.</p>
-                    <CodeBlock>{masterScript}</CodeBlock>
+        <div className="h-full flex items-center justify-center p-8">
+            <div className="max-w-4xl w-full bg-brand-dark/50 p-8 rounded-2xl border border-yellow-500/50 text-center">
+                <h1 className="text-3xl font-bold text-yellow-400">Configuração de Admin Necessária</h1>
+                <p className="mt-4 text-lg text-gray-300">
+                    A sua base de dados Supabase precisa de ser configurada para que a funcionalidade de administração funcione. 
+                    Isto envolve a criação de tabelas e funções seguras. Por favor, execute o script SQL abaixo no seu editor SQL do Supabase.
+                </p>
+                 {error && (
+                    <div className="mt-4 p-3 bg-yellow-900/50 rounded-lg text-yellow-300 text-sm text-left font-mono">
+                        <strong>Erro Detetado:</strong> {error.replace('SETUP_REQUIRED:', '').trim()}
+                    </div>
+                )}
+                 <div className="mt-6 text-left">
+                    <div className="relative bg-black p-4 rounded-lg border border-brand-accent">
+                        <pre className="text-xs text-gray-200 whitespace-pre-wrap overflow-x-auto max-h-64">
+                            <code>{sqlScript}</code>
+                        </pre>
+                        <Button onClick={copyToClipboard} className="absolute top-2 right-2 !px-3 !py-1 text-xs">
+                            Copiar
+                        </Button>
+                    </div>
                 </div>
-                
-                <div>
-                    <h2 className="text-xl font-semibold text-yellow-300 mb-2">Passo 2: Criar o Bucket de Armazenamento</h2>
-                    <ol className="list-decimal list-inside space-y-1 pl-4">
-                        <li>No seu painel Supabase, vá para a secção <strong>Storage</strong> (ícone de balde).</li>
-                        <li>Clique em <strong>"Create a new bucket"</strong>.</li>
-                        <li>Dê ao bucket o nome exato de <strong>`public_assets`</strong>.</li>
-                        <li>Deixe todas as outras opções desmarcadas e clique em <strong>"Create"</strong>.</li>
-                    </ol>
+                 <div className="mt-8">
+                    <Button onClick={onRetry} primary>
+                        Tentar Novamente Após a Configuração
+                    </Button>
                 </div>
-
-                <div>
-                    <h2 className="text-xl font-semibold text-yellow-300 mb-2">Passo 3: Executar Script de Políticas de Armazenamento</h2>
-                    <p>Volte ao <strong>SQL Editor</strong>, crie uma nova query, copie e cole o seguinte script e clique em "RUN".</p>
-                    <CodeBlock>{storageScript}</CodeBlock>
-                </div>
-            </div>
-
-            <div className="mt-8 text-center">
-                <p className="mb-4">Depois de completar todos os passos acima, clique no botão abaixo para tentar novamente.</p>
-                <Button onClick={onRetry} primary className="!text-lg !px-8">Tentar Novamente</Button>
             </div>
         </div>
     );

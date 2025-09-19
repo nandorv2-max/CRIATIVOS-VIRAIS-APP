@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
+import type { User } from '@supabase/gotrue-js';
+import { nanoid } from 'nanoid';
 
 import Button from '../../components/Button.tsx';
 import PhotoDisplay from '../../components/PhotoDisplay.tsx';
@@ -13,17 +15,20 @@ import RadioPill from '../../components/RadioPill.tsx';
 import AlbumDownloadButton from '../../components/AlbumDownloadButton.tsx';
 import UploadOptionsModal from '../../components/UploadOptionsModal.tsx';
 import { IconUpload, IconSparkles, IconCamera } from '../../components/Icons.tsx';
+import GalleryPickerModal from '../GalleryPickerModal.tsx';
 
-import { toBase64, cropImage, createSingleFramedImage } from '../../utils/imageUtils.ts';
-import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService.ts';
+import { toBase64, createSingleFramedImage, blobToBase64, base64ToFile } from '../../utils/imageUtils.ts';
+import { generateImageWithRetry, getModelInstruction, translateText } from '../../services/geminiService.ts';
+import { uploadUserAsset } from '../../services/databaseService.ts';
 import { TEMPLATES } from '../../constants.ts';
-import type { GeneratedImage, Prompt, Template } from '../../types.ts';
+import type { GeneratedImage, Prompt, Template, UserProfile, UploadedAsset } from '../../types.ts';
 
 interface GeneratorViewProps {
     templateKey: string;
+    userProfile: (User & { isAdmin: boolean }) | null;
 }
 
-const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
+const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile }) => {
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState<boolean>(false);
     const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
@@ -34,10 +39,13 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
     const resultsRef = useRef<HTMLDivElement>(null);
 
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingImageInfo, setEditingImageInfo] = useState<{imageUrl: string; index: number} | null>(null);
     
+    // Customization state
+    const [numImages, setNumImages] = useState(6);
     const [cameraAngle, setCameraAngle] = useState<string>('Padrão');
     const [selectedLocation, setSelectedLocation] = useState<string>('');
     const [instagramScenePrompt, setInstagramScenePrompt] = useState<string>('');
@@ -49,22 +57,20 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
     
     const template = TEMPLATES[templateKey];
 
-    const getInstagramScenePrompts = (): Prompt[] => {
-        if (!instagramScenePrompt.trim()) return [];
-        return Array.from({ length: 6 }, (_, i) => ({
-            id: `Variação ${i + 1}`,
-            base: `${instagramScenePrompt}${i > 0 ? `, variação ${i + 1}` : ''}`
-        }));
-    };
-
     const getPromptsForTemplate = (): Prompt[] => {
         if (!template) return [];
         switch (templateKey) {
             case 'worldTour':
                 const destination = (template as any).destinations?.find((d: any) => d.id === selectedLocation);
-                return destination ? destination.prompts : [];
+                if (!destination) return [];
+                const shuffled = [...destination.prompts].sort(() => 0.5 - Math.random());
+                return shuffled.slice(0, numImages);
             case 'cenasDoInstagram':
-                return getInstagramScenePrompts();
+                 if (!instagramScenePrompt.trim()) return [];
+                return Array.from({ length: numImages }, (_, i) => ({
+                    id: `Variação ${i + 1}`,
+                    base: `${instagramScenePrompt}${i > 0 ? `, variação ${i + 1}` : ''}`
+                }));
             case 'cleanAndSwap':
                 return template.prompts || [];
             default:
@@ -93,6 +99,27 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
         setGeneratedImages([]);
         setError(null);
     };
+    
+    const handleSelectFromGallery = async (asset: UploadedAsset) => {
+        setIsGalleryPickerModalOpen(false);
+        setIsUploading(true);
+        setError(null);
+        try {
+            const response = await fetch(asset.url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
+            }
+            const blob = await response.blob();
+            const base64Image = await blobToBase64(blob);
+            setUploadedImage(base64Image);
+            setGeneratedImages([]); 
+        } catch (err) {
+            console.error("Error loading image from gallery:", err);
+            setError("Não foi possível carregar a imagem da galeria.");
+        } finally {
+            setIsUploading(false);
+        }
+    };
 
     const handleGenerateClick = async () => {
         if (!uploadedImage) { setError("Por favor, carregue uma foto para começar!"); return; }
@@ -113,12 +140,29 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
         }
 
         setGeneratedImages(promptsForGeneration.map(p => ({ id: p.id, status: 'pending', imageUrl: null })));
+        
+        let translatedBasePrompt = instagramScenePrompt;
+        if (templateKey === 'cenasDoInstagram') {
+            try {
+                translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
+            } catch (e) {
+                setError("A tradução do prompt falhou. A gerar com o prompt original.");
+                console.error("Translation failed:", e);
+            }
+        }
+
 
         for (let i = 0; i < promptsForGeneration.length; i++) {
             const p = promptsForGeneration[i];
             try {
+                let promptForModel = p;
+                 if (templateKey === 'cenasDoInstagram') {
+                    const translatedVariation = i > 0 ? ` (variation ${i + 1})` : '';
+                    promptForModel = { ...p, base: translatedBasePrompt + translatedVariation };
+                }
+
                 const aspectRatio = templateKey === 'cenasDoInstagram' ? instagramSceneAspectRatio : undefined;
-                const modelInstruction = getModelInstruction(templateKey, p, options, aspectRatio);
+                const modelInstruction = getModelInstruction(templateKey, promptForModel, options, aspectRatio);
                 const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage });
                 setGeneratedImages(prev => prev.map((img, index) => index === i ? { ...img, status: 'success', imageUrl } : img));
             } catch (err) {
@@ -135,7 +179,16 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
             return;
         }
         
-        const promptsForGeneration = getPromptsForTemplate();
+        let promptsForGeneration = getPromptsForTemplate();
+        
+        if (templateKey === 'cenasDoInstagram' && instagramScenePrompt) {
+             const translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
+             promptsForGeneration = Array.from({ length: numImages }, (_, i) => ({
+                id: `Variação ${i + 1}`,
+                base: `${translatedBasePrompt}${i > 0 ? `, variação ${i + 1}` : ''}`
+            }));
+        }
+
         const promptToRegenerate = promptsForGeneration[imageIndex];
         
         if (!promptToRegenerate) {
@@ -232,6 +285,20 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
             setIsDownloadingAlbum(false);
         }
     };
+
+    const handleSaveToGallery = async (imageUrl: string, era: string) => {
+        setError(null);
+        alert('A salvar na sua galeria...');
+        try {
+            const fileName = `GenIA_${template?.name}_${era}_${nanoid(4)}.png`;
+            const file = base64ToFile(imageUrl, fileName);
+            await uploadUserAsset(file);
+            alert(`'${era}' salvo na sua galeria com sucesso!`);
+        } catch (err) {
+            console.error("Failed to save to gallery:", err);
+            setError("Falha ao salvar na galeria. Por favor, tente novamente.");
+        }
+    };
     
     // FIX: A component must return a ReactNode. Added a return statement to the component function.
     return (
@@ -243,10 +310,16 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
                 isOpen={isUploadModalOpen} 
                 onClose={() => setIsUploadModalOpen(false)} 
                 onLocalUpload={() => { (fileInputRef.current as any)?.click(); setIsUploadModalOpen(false); }}
-                onGoogleDriveUpload={() => {
-                    setError("Google Drive ainda não implementado.");
+                onGalleryUpload={() => {
                     setIsUploadModalOpen(false);
+                    setIsGalleryPickerModalOpen(true);
                 }}
+                galleryEnabled={true}
+            />
+            <GalleryPickerModal
+                isOpen={isGalleryPickerModalOpen}
+                onClose={() => setIsGalleryPickerModalOpen(false)}
+                onSelectAsset={handleSelectFromGallery}
             />
 
             <div className="h-full flex flex-col">
@@ -328,13 +401,19 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
                                 )}
                                 
                                 { (templateKey === 'worldTour' || templateKey === 'cenasDoInstagram') && (
-                                    <div className="space-y-2">
-                                        <label className="block font-medium text-gray-300">Ângulo da Câmara (Opcional)</label>
-                                        <div className="flex flex-wrap gap-2">
-                                            <RadioPill name="camera-angle" value="Padrão" label="Padrão" checked={cameraAngle === 'Padrão'} onChange={e => setCameraAngle(e.target.value)} />
-                                            <RadioPill name="camera-angle" value="Low Angle" label="Ângulo Baixo" checked={cameraAngle === 'Low Angle'} onChange={e => setCameraAngle(e.target.value)} />
-                                            <RadioPill name="camera-angle" value="High Angle" label="Ângulo Alto" checked={cameraAngle === 'High Angle'} onChange={e => setCameraAngle(e.target.value)} />
-                                            <RadioPill name="camera-angle" value="Extreme Close-up" label="Close-up Extremo" checked={cameraAngle === 'Extreme Close-up'} onChange={e => setCameraAngle(e.target.value)} />
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="block font-medium text-gray-300">Número de Imagens</label>
+                                            <input type="number" value={numImages} onChange={(e) => setNumImages(Math.max(1, Math.min(12, parseInt(e.target.value, 10))))} min="1" max="12" className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block font-medium text-gray-300">Ângulo da Câmara (Opcional)</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                <RadioPill name="camera-angle" value="Padrão" label="Padrão" checked={cameraAngle === 'Padrão'} onChange={e => setCameraAngle(e.target.value)} />
+                                                <RadioPill name="camera-angle" value="Low Angle" label="Ângulo Baixo" checked={cameraAngle === 'Low Angle'} onChange={e => setCameraAngle(e.target.value)} />
+                                                <RadioPill name="camera-angle" value="High Angle" label="Ângulo Alto" checked={cameraAngle === 'High Angle'} onChange={e => setCameraAngle(e.target.value)} />
+                                                <RadioPill name="camera-angle" value="Extreme Close-up" label="Close-up Extremo" checked={cameraAngle === 'Extreme Close-up'} onChange={e => setCameraAngle(e.target.value)} />
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -368,6 +447,8 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey }) => {
                                                 onEdit={handleEditImage}
                                                 isPolaroid={template?.isPolaroid}
                                                 index={index}
+                                                onSaveToGallery={handleSaveToGallery}
+                                                canSaveToGallery={true}
                                             />
                                         );
                                     }

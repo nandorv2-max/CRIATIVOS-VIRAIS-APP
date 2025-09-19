@@ -145,10 +145,13 @@ export interface UploadedAsset {
     name: string;
     type: UploadedAssetType;
     url: string;
+    storage_path: string;
     thumbnail: string;
+    thumbnail_storage_path?: string;
     duration?: number;
     originalWidth?: number;
     originalHeight?: number;
+    is_favorite?: boolean;
 }
 
 export interface PublicAsset {
@@ -156,6 +159,7 @@ export interface PublicAsset {
     name: string;
     asset_type: UploadedAssetType;
     asset_url: string;
+    storage_path: string;
     thumbnail_url?: string;
     visibility: AssetVisibility;
     created_at: string;
@@ -188,7 +192,7 @@ export interface Creation {
     };
 }
 
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'starter' | 'premium' | 'professional';
 
 export interface UserProfile {
   id: string;

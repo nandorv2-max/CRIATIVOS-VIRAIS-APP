@@ -16,18 +16,42 @@ import {
 import { removeBackground } from '../../geminiService.ts';
 import { blobToBase64 } from '../../utils/imageUtils.ts';
 import SelectionBox from '../SelectionBox.tsx';
+import { uploadUserAsset } from '../../services/databaseService.ts';
 
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
     return new Promise((resolve, reject) => {
-        const element = type === 'image' ? new Image() : document.createElement('video');
-        element.crossOrigin = 'anonymous';
-        const eventToListen = type === 'image' ? 'onload' : 'onloadedmetadata';
-        (element as any)[eventToListen] = () => resolve(element);
-        element.onerror = (err) => reject(new Error(`Failed to load media: ${src.substring(0, 100)}...`));
-        element.src = src;
-        if (type === 'video') {
-            (element as HTMLVideoElement).load();
+        if (type === 'image') {
+            const element = new Image();
+            element.crossOrigin = 'anonymous';
+            element.onload = () => resolve(element);
+            element.onerror = (err) => reject(new Error(`Failed to load media: ${src.substring(0, 100)}...`));
+            element.src = src;
+        } else { // video
+            const element = document.createElement('video');
+            element.crossOrigin = 'anonymous';
+            element.muted = true;
+            element.loop = true;
+            element.playsInline = true;
+
+            const onCanPlay = () => {
+                element.removeEventListener('canplay', onCanPlay);
+                // A quick play/pause can force the browser to load the first frame for drawing
+                element.play().then(() => {
+                    element.pause();
+                    element.currentTime = 0; // Ensure it's at the start
+                    resolve(element);
+                }).catch(e => {
+                    console.warn("Autoplay was prevented for video loading, but proceeding.", e);
+                    // Even if autoplay fails, the video element is likely ready.
+                    resolve(element);
+                });
+            };
+            
+            element.addEventListener('canplay', onCanPlay);
+            element.onerror = (err) => reject(new Error(`Failed to load media: ${src.substring(0, 100)}...`));
+            element.src = src;
+            element.load();
         }
     });
 };
@@ -75,6 +99,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const [historyIndex, setHistoryIndex] = useState(0);
     const [customFonts, setCustomFonts] = useState<string[]>([]);
     const [cropLayerId, setCropLayerId] = useState<string | null>(null);
+    const [playingVideoIds, setPlayingVideoIds] = useState<Set<string>>(new Set());
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -245,7 +270,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             };
             
             if (type === 'video') {
-                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: false, _videoElement: mediaElement as HTMLVideoElement };
+                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: true, _videoElement: mediaElement as HTMLVideoElement };
                 addLayer(newLayer);
             } else {
                  const newLayer: ImageLayer = { ...newLayerBase, type: 'image', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, _imageElement: mediaElement as HTMLImageElement };
@@ -254,6 +279,22 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         } catch (e) { console.error("Failed to load asset media", e); }
     };
 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || !assetContext) return;
+        const filesToUpload = Array.from(e.target.files);
+        if (filesToUpload.length === 0) return;
+
+        try {
+            await Promise.all(filesToUpload.map(file => uploadUserAsset(file, null)));
+            await assetContext.refetchAssets();
+        } catch (err) {
+            console.error("Upload failed:", err);
+            // Optionally show an error to the user via a notification component
+        } finally {
+            if (e.target) e.target.value = '';
+        }
+    };
+    
     const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -295,6 +336,35 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             }, true);
         } catch (e) { console.error("BG Removal Failed", e); } finally { setIsLoadingAI(false); }
     };
+    
+    const toggleVideoPlayback = useCallback((layerId: string) => {
+        setPlayingVideoIds(prev => {
+            const newSet = new Set<string>();
+            const layerToToggle = activePage.layers.find(l => l.id === layerId) as VideoLayer;
+    
+            if (!layerToToggle?._videoElement) {
+                return prev;
+            }
+    
+            // Pause all videos that were playing before
+            prev.forEach(id => {
+                const oldLayer = activePage.layers.find(l => l.id === id) as VideoLayer;
+                if (oldLayer?._videoElement) {
+                    oldLayer._videoElement.pause();
+                }
+            });
+            
+            // If the clicked layer was NOT the one playing, we start it.
+            // If it WAS playing, this logic will effectively stop it, as newSet is empty.
+            if (!prev.has(layerId)) {
+                newSet.add(layerId);
+                layerToToggle._videoElement.muted = false; // Unmute
+                layerToToggle._videoElement.play().catch(e => console.error("Video play failed:", e));
+            }
+            
+            return newSet;
+        });
+    }, [activePage.layers]);
 
     const getCoords = useCallback((e: React.MouseEvent<HTMLDivElement> | MouseEvent): { x: number, y: number } => {
         const canvasWrapper = canvasContainerRef.current?.querySelector('.relative.shadow-2xl');
@@ -585,6 +655,21 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
     }, [drawScene]);
+    
+    // Stop videos when changing pages
+    useEffect(() => {
+        playingVideoIds.forEach(id => {
+            project.pages.forEach(p => {
+                const layer = p.layers.find(l => l.id === id) as VideoLayer;
+                if (layer?._videoElement) {
+                    layer._videoElement.pause();
+                    layer._videoElement.currentTime = 0;
+                }
+            });
+        });
+        setPlayingVideoIds(new Set());
+    }, [activePageIndex, project.pages]);
+
 
     useEffect(() => {
         activePage?.layers.forEach(layer => {
@@ -644,7 +729,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     <div className="relative shadow-2xl" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
                         <canvas ref={canvasRef} />
                         <div className="absolute top-0 left-0 w-full h-full" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
-                           <SelectionBox layers={selectedLayers} zoom={zoom} cropLayerId={cropLayerId} />
+                           <SelectionBox 
+                                layers={selectedLayers} 
+                                zoom={zoom} 
+                                cropLayerId={cropLayerId}
+                                playingVideoIds={playingVideoIds}
+                                onToggleVideoPlayback={toggleVideoPlayback}
+                            />
                         </div>
                     </div>
                 </main>
@@ -669,7 +760,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 </AnimatePresence>
             </div>
             <Timeline pages={project.pages} activePageIndex={activePageIndex} onSelectPage={setActivePageIndex} onAddPage={() => {}} onDeletePage={() => {}} onDuplicatePage={() => {}} onReorderPages={() => {}} onPageDurationChange={() => {}} projectTime={0} isPlaying={false} onPlayPause={() => {}} />
-            <input type="file" ref={fileUploadRef} onChange={(e) => { if (e.target.files) console.log("Files ready to be uploaded"); e.target.value = ''; }} multiple className="hidden" accept="image/*,video/*"/>
+            <input type="file" ref={fileUploadRef} onChange={handleFileUpload} multiple className="hidden" accept="image/*,video/*"/>
             <input type="file" ref={fontUploadRef} onChange={handleFontUpload} className="hidden" accept=".otf,.ttf,.woff,.woff2"/>
         </div>
     );

@@ -1,9 +1,18 @@
 import React from 'react';
 import type { AnyLayer } from '../types.ts';
+import { IconPlay, IconPause } from './Icons.tsx';
 
 type Handle = 'tl' | 'tr' | 'bl' | 'br' | 'tm' | 'ml' | 'bm' | 'mr' | 'rotate';
 
-const SelectionBox: React.FC<{ layers: AnyLayer[], zoom: number, cropLayerId: string | null }> = ({ layers, zoom, cropLayerId }) => {
+interface SelectionBoxProps {
+    layers: AnyLayer[];
+    zoom: number;
+    cropLayerId: string | null;
+    playingVideoIds: Set<string>;
+    onToggleVideoPlayback: (id: string) => void;
+}
+
+const SelectionBox: React.FC<SelectionBoxProps> = ({ layers, zoom, cropLayerId, playingVideoIds, onToggleVideoPlayback }) => {
     if (layers.length !== 1) {
         if (layers.length > 1) {
             const xs = layers.map(l => l.x);
@@ -42,6 +51,7 @@ const SelectionBox: React.FC<{ layers: AnyLayer[], zoom: number, cropLayerId: st
         borderRadius: '50%',
         pointerEvents: 'auto',
     };
+    const isPlaying = layer.type === 'video' && playingVideoIds.has(layer.id);
 
     if (isCropping) {
         const cornerHandleStyle = { ...handleStyle, width: handleSize, height: handleSize };
@@ -120,6 +130,44 @@ const SelectionBox: React.FC<{ layers: AnyLayer[], zoom: number, cropLayerId: st
                     }}
                 />
             </div>
+            
+            {/* Video Play/Pause Control */}
+            {layer.type === 'video' && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <button
+                        onMouseDown={(e) => {
+                            e.stopPropagation();
+                            onToggleVideoPlayback(layer.id);
+                        }}
+                        style={{
+                            width: Math.max(32, 48 / zoom),
+                            height: Math.max(32, 48 / zoom),
+                            borderRadius: '50%',
+                            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'white'
+                        }}
+                    >
+                        {isPlaying ? (
+                            <IconPause className="w-1/2 h-1/2" />
+                        ) : (
+                            <IconPlay className="w-1/2 h-1/2" />
+                        )}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

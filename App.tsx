@@ -41,22 +41,21 @@ const App: React.FC = () => {
             };
         }
     }, []);
-
+    
     useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        let isMounted = true;
+
+        const processSession = async (currentSession: Session | null) => {
             try {
-                if (session && session.user) {
-                    const profile = await fetchUserProfile(session.user);
-                    
-                    setSession(session);
+                if (currentSession && currentSession.user) {
+                    const profile = await fetchUserProfile(currentSession.user);
+                    if (!isMounted) return;
+
+                    setSession(currentSession);
                     setUserProfile(profile);
 
-                    let keyToUse = '';
-                    const userKey = window.localStorage.getItem('user_gemini_api_key');
-                    
-                    if (userKey) {
-                        keyToUse = userKey;
-                    } else if (profile.isAdmin) {
+                    let keyToUse = window.localStorage.getItem('user_gemini_api_key');
+                    if (!keyToUse && profile.isAdmin) {
                         keyToUse = process.env.API_KEY as string;
                         if (!keyToUse) {
                             console.error("FATAL ERROR: Master API_KEY is not configured for admin user.");
@@ -72,24 +71,43 @@ const App: React.FC = () => {
                         initializeGeminiClient('');
                         setApiKeyStatus('pending');
                     }
-                    
                 } else {
+                    if (!isMounted) return;
                     setSession(null);
                     setUserProfile(null);
                     initializeGeminiClient('');
                     setApiKeyStatus('pending');
                 }
             } catch (error) {
-                console.error("An error occurred during auth state change handling:", error);
-                setSession(null);
-                setUserProfile(null);
-                setApiKeyStatus('error');
-            } finally {
-                setLoading(false);
+                console.error("Error processing session:", error);
+                if (isMounted) {
+                    setSession(null);
+                    setUserProfile(null);
+                    setApiKeyStatus('error');
+                }
             }
+        };
+
+        // First, check for an existing session to handle the initial page load.
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            processSession(session).finally(() => {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            });
         });
 
+        // Then, listen for any auth changes (login, logout) during the session.
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            (_event, session) => {
+                if (isMounted) {
+                    processSession(session);
+                }
+            }
+        );
+
         return () => {
+            isMounted = false;
             subscription.unsubscribe();
         };
     }, [fetchUserProfile]);

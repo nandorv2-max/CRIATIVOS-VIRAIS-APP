@@ -4,12 +4,20 @@ import { toBase64 } from "../utils/imageUtils.ts";
 declare var gapi: any;
 declare var google: any;
 
-// IMPORTANT: A full Google Drive integration requires a GOOGLE_CLIENT_ID from the Google Cloud Console,
-// with a configured OAuth 2.0 consent screen. Without a valid Client ID, the login pop-up may not complete successfully.
+// =====================================================================================
+// INSTRUÇÕES DE CONFIGURAÇÃO - AÇÃO NECESSÁRIA
+// =====================================================================================
+// 1. O 'DEVELOPER_KEY' é a sua chave de API do Google, a mesma que usa para o Gemini.
+//    O código já tenta usar a chave do ambiente, o que deve funcionar.
 const DEVELOPER_KEY = process.env.API_KEY;
-// Using `null` for CLIENT_ID to prevent a "process is not defined" error in the browser.
-// The developer must configure this in their own environment.
-const CLIENT_ID = null;
+
+// 2. O 'CLIENT_ID' FOI ATUALIZADO com o valor da sua imagem.
+//    AGORA, você PRECISA adicionar a URL do seu app às "Origens JavaScript autorizadas"
+//    nas configurações deste Client ID no Google Cloud Console.
+const CLIENT_ID = '1013578034437-4qim2pqvb5sloqdro5l444raf0ut5abo.apps.googleusercontent.com';
+// =====================================================================================
+
+
 const APP_ID = CLIENT_ID ? CLIENT_ID.split('-')[0] : '';
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
 
@@ -47,10 +55,10 @@ const fileToB64 = (blob: Blob): Promise<string> => new Promise((resolve, reject)
 });
 
 const authenticateAndShowPicker = async (viewId: any, mimeTypes: string): Promise<any[]> => {
+    // FIX: Removed the comparison to a placeholder value ('SEU_CLIENT_ID_DO_GOOGLE_VAI_AQUI') which is always false
+    // because CLIENT_ID is a constant. This resolves the TypeScript error about non-overlapping types.
     if (!CLIENT_ID || !DEVELOPER_KEY) {
         // Use an alert for a user-facing message, then throw for developer console.
-        // FIX: Prefix 'alert' with 'window.' to ensure it is available in non-browser-default environments.
-        // FIX: Property 'alert' does not exist on type 'Window'.
         window.alert("A integração com o Google Drive não está configurada. O proprietário do site precisa de configurar um 'Client ID' da API do Google para ativar esta funcionalidade.");
         throw new Error("A configuração da API do Google Drive está em falta. Por favor, configure um GOOGLE_CLIENT_ID e certifique-se de que a API_KEY está disponível.");
     }

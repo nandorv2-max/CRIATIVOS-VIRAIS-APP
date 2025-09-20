@@ -154,40 +154,40 @@ export const generateVideo = async (
     aspectRatio: string,
     userRole: UserRole
 ): Promise<Blob> => {
-    // 1. Verificação de permissão: Apenas utilizadores autorizados podem prosseguir.
+    // Check for premium feature access BEFORE any API call
     const authorizedRoles: UserRole[] = ['admin', 'premium', 'professional'];
     if (!authorizedRoles.includes(userRole)) {
         throw new Error("A geração de vídeo está disponível apenas nos planos Premium ou Profissional. Faça um upgrade para aceder a esta funcionalidade.");
     }
     
-    // 2. USA O CLIENTE GLOBAL: Esta é a alteração. Alinha com o comportamento observado pelo utilizador.
-    // A lógica em App.tsx garante que para administradores sem chave pessoal, o cliente global é inicializado com a chave mestra.
-    // Se um administrador fornecer a sua própria chave, o cliente global usará essa chave.
-    const client = getClient();
+    // CRITICAL FIX: Video generation MUST use the master API key from the environment.
+    // It is a premium feature that depends on the owner's quota and setup.
+    const apiKey = process.env.API_KEY;
+
+    if (!apiKey) {
+        throw new Error("A chave de API principal para geração de vídeo não está configurada no ambiente da aplicação. Por favor, contacte o administrador.");
+    }
+
+    // Create a fresh client for this specific call to ensure the correct master key is used.
+    const client = new GoogleGenAI({ apiKey });
 
     try {
-        const config: any = {
+        let operation = await client.models.generateVideos({
             model: 'veo-2.0-generate-001',
-            prompt,
+            prompt: prompt,
+            image: base64ImageBytes ? {
+                imageBytes: base64ImageBytes,
+                mimeType: mimeType,
+            } : undefined,
             config: {
-              aspectRatio,
-              numberOfVideos: 1,
-            },
-        };
+                numberOfVideos: 1,
+                aspectRatio: aspectRatio,
+            }
+        });
 
-        if (base64ImageBytes && mimeType) {
-            config.image = {
-              imageBytes: base64ImageBytes,
-              mimeType,
-            };
-        }
-
-        let operation = await client.models.generateVideos(config);
-
-        // 3. Polling: Aguarda a conclusão da operação de longa duração.
         while (!operation.done) {
-            await delay(10000); // Aguarda 10 segundos
-            operation = await client.operations.getVideosOperation({ operation });
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            operation = await client.operations.getVideosOperation({ operation: operation });
         }
 
         if (operation.error) {
@@ -195,14 +195,16 @@ export const generateVideo = async (
             throw new Error(`A API de geração de vídeo retornou um erro: ${operation.error.message} (Código: ${operation.error.code})`);
         }
 
-        const video = operation.response?.generatedVideos?.[0];
-        if (!video?.video?.uri) {
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (!downloadLink) {
             throw new Error("A geração de vídeo foi bem-sucedida, mas não foi encontrado nenhum link para download na resposta da API.");
         }
         
-        // 4. Download: Usa a URL assinada diretamente, como no exemplo funcional.
-        const url = decodeURIComponent(video.video.uri);
-        const response = await fetch(url);
+        const finalUrl = decodeURIComponent(downloadLink);
+        
+        // DEFINITIVE FIX: The download link is a pre-signed URL and does NOT need the API key appended.
+        // Appending the key was invalidating the URL.
+        const response = await fetch(finalUrl);
 
         if (!response.ok) {
             const errorBody = await response.text();
@@ -213,7 +215,7 @@ export const generateVideo = async (
         return await response.blob();
 
     } catch (error: any) {
-        // Re-lança o erro para ser tratado pelo componente da UI.
+        // Re-throw the original error to be handled by the UI component
         throw error;
     }
 };

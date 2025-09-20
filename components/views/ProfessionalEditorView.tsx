@@ -10,6 +10,7 @@ import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { uploadUserAsset, getUserAssets, deleteUserAsset, renameUserAsset } from '../../services/databaseService.ts';
 import type { UploadedAsset } from '../../types.ts';
 import { ProfessionalEditorContext, Adjustments, AdjustmentKey, DEFAULT_ADJUSTMENTS } from '../MainDashboard.tsx';
+import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
 
 type AdjustmentPanel = 'Luz' | 'Cor' | 'Efeitos';
 
@@ -128,6 +129,28 @@ const ProfessionalEditorView: React.FC = () => {
             setIsLoading(null);
         };
         img.src = asset.url;
+    };
+
+    // FIX: Added handler for Google Drive uploads.
+    const handleGoogleDriveUpload = async () => {
+        setIsUploadOptionsModalOpen(false);
+        setIsLoading('upload');
+        try {
+            const images = await showGoogleDrivePicker();
+            if (images.length > 0) {
+                const img = new Image();
+                img.onload = () => {
+                    setImage(img);
+                    setIsLoading(null);
+                };
+                img.src = images[0];
+            } else {
+                setIsLoading(null);
+            }
+        } catch (error) {
+            console.error("Google Drive upload failed", error);
+            setIsLoading(null);
+        }
     };
 
     const handleAiEdit = async () => {
@@ -329,6 +352,8 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
                 setIsUploadOptionsModalOpen(false);
                 setIsGalleryPickerModalOpen(true);
             }}
+            // FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface.
+            onGoogleDriveUpload={handleGoogleDriveUpload}
             galleryEnabled={true}
         />
         <GalleryPickerModal 

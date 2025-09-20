@@ -12,6 +12,7 @@ import MyCreationsModal from '../MyCreationsModal.tsx';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { uploadUserAsset } from '../../services/databaseService.ts';
+import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
 
 
 // A self-contained image uploader component with drag-and-drop support
@@ -128,6 +129,28 @@ const UnirView: React.FC = () => {
         }
     };
     
+    const handleGoogleDriveUpload = async () => {
+        setIsUploadOptionsModalOpen(false);
+        if (!uploadTarget) return;
+
+        try {
+            const images = await showGoogleDrivePicker();
+            if (images.length > 0) {
+                if (uploadTarget === 'base') {
+                    setBaseImage(images[0]);
+                } else {
+                    setBlendImages(prev => [...prev, ...images]);
+                }
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
+            console.error("Google Drive Picker Error:", err);
+            setError(`Falha ao importar do Google Drive: ${msg}`);
+        } finally {
+            setUploadTarget(null);
+        }
+    };
+
     const handleSelectFromGallery = async (asset: UploadedAsset) => {
         setIsGalleryPickerModalOpen(false);
         setError(null);
@@ -284,6 +307,7 @@ const UnirView: React.FC = () => {
                     setIsUploadOptionsModalOpen(false);
                     setIsGalleryPickerModalOpen(true);
                 }}
+                onGoogleDriveUpload={handleGoogleDriveUpload}
                 galleryEnabled={true}
             />
              <GalleryPickerModal

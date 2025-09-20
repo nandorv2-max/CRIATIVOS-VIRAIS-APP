@@ -10,6 +10,7 @@ import UploadOptionsModal from './UploadOptionsModal.tsx';
 import GalleryPickerModal from './GalleryPickerModal.tsx';
 import { uploadUserAsset } from '../services/databaseService.ts';
 import type { UploadedAsset, UserProfile } from '../types.ts';
+import { showGoogleDrivePicker } from '../services/googleDriveService.ts';
 
 interface VideoGeneratorProps {
     userProfile: UserProfile;
@@ -63,6 +64,25 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
         } catch (err) {
             console.error("Error loading image from gallery:", err);
             setError({ message: "Não foi possível carregar a imagem da galeria.", details: err instanceof Error ? err.message : '' });
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    // FIX: Added handler for Google Drive uploads to pass to the modal.
+    const handleGoogleDriveUpload = async () => {
+        setIsUploadModalOpen(false);
+        setIsUploading(true);
+        setError(null);
+        try {
+            const images = await showGoogleDrivePicker();
+            if (images.length > 0) {
+                setUploadedImage(images[0]);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
+            console.error("Google Drive Picker Error:", err);
+            setError({ message: "Falha ao importar do Google Drive.", details: msg });
         } finally {
             setIsUploading(false);
         }
@@ -155,6 +175,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                     setIsUploadModalOpen(false);
                     setIsGalleryPickerModalOpen(true);
                 }}
+                // FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface.
+                onGoogleDriveUpload={handleGoogleDriveUpload}
                 galleryEnabled={true}
             />
             <GalleryPickerModal

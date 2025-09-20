@@ -11,6 +11,8 @@ import ErrorNotification from '../ErrorNotification.tsx';
 import { AssetContext } from '../MainDashboard.tsx';
 import Button from '../Button.tsx';
 import SkeletonLoader from '../SkeletonLoader.tsx';
+import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
+import { base64ToFile } from '../../utils/imageUtils.ts';
 
 const ProjectsView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('all');
@@ -48,6 +50,35 @@ const ProjectsView: React.FC = () => {
         }
     };
     
+    // FIX: Added handler for Google Drive uploads.
+    const handleGoogleDriveUpload = async () => {
+        setIsUploadModalOpen(false);
+        try {
+            const images = await showGoogleDrivePicker();
+            if (images.length > 0) {
+                const filesToUpload = images.map((base64Str, index) =>
+                    base64ToFile(base64Str, `gdrive-import-${Date.now()}-${index}.png`)
+                );
+                
+                const uploadFiles = async (files: File[]) => {
+                    if (files.length === 0) return;
+                    try {
+                        await Promise.all(files.map(file => uploadUserAsset(file, null)));
+                        await refetchAssets();
+                    } catch (err: any) {
+                         setLocalError("Ocorreu um erro durante o upload.");
+                         console.error(err);
+                         await refetchAssets();
+                    }
+                };
+                await uploadFiles(filesToUpload);
+            }
+        } catch (err) {
+            setLocalError("Falha ao importar do Google Drive.");
+            console.error(err);
+        }
+    };
+
     const handleToggleFavorite = async (id: string, isFavorite: boolean) => {
         try {
             await toggleAssetFavorite(id, isFavorite);
@@ -133,7 +164,8 @@ const ProjectsView: React.FC = () => {
         <>
             <ErrorNotification message={localError || (globalError && !requiresSetup ? "Falha ao carregar os seus recursos." : null)} onDismiss={() => setLocalError(null)} />
             <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
-            <UploadOptionsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onLocalUpload={handleLocalUpload} onGalleryUpload={() => { alert("A galeria será adicionada em breve!"); setIsUploadModalOpen(false); }} />
+            {/* FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface. */}
+            <UploadOptionsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onLocalUpload={handleLocalUpload} onGalleryUpload={() => { alert("A galeria será adicionada em breve!"); setIsUploadModalOpen(false); }} onGoogleDriveUpload={handleGoogleDriveUpload} />
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" accept="image/*,video/*,.dng,.brmp,.otf,.ttf" />
             
             <div className="h-full w-full flex flex-col p-8 bg-brand-dark text-white">

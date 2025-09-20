@@ -1,12 +1,13 @@
-// FIX: Implemented the full geminiService module to resolve multiple "Cannot find name" and "is not a module" errors across the application.
 import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
-// FIX: Corrected import path for a root-level file.
-import type { Prompt, ModelInstructionOptions } from './types.ts';
-// FIX: Corrected import path for a root-level file.
+import type { Prompt, ModelInstructionOptions, UserRole } from './types.ts';
 import { delay } from './utils/imageUtils.ts';
+import { supabase } from './services/supabaseClient.ts';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
+
+// This list should ideally be managed in a central config, but defining here for service-level logic
+const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
@@ -20,7 +21,7 @@ export const initializeGeminiClient = (apiKey: string) => {
 
 const getClient = (): GoogleGenAI => {
     if (!ai) {
-        throw new Error("Gemini API client has not been initialized. Please provide an API key.");
+        throw new Error("O cliente da API Gemini não foi inicializado. Por favor, forneça uma chave de API.");
     }
     return ai;
 };
@@ -92,7 +93,6 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
                         textResponse += part.text + ' ';
                     }
                 }
-                // Se chegarmos aqui, nenhuma imagem foi encontrada. Se encontrarmos texto, inclua-o.
                 if (textResponse.trim()) {
                      throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
                 }
@@ -139,7 +139,7 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
             return `data:image/jpeg;base64,${base64ImageBytes}`;
         }
         
-        throw new Error("No image was generated.");
+        throw new Error("Nenhuma imagem foi gerada.");
 
     } catch (error) {
         console.error("Image generation from prompt failed:", error);
@@ -151,45 +151,73 @@ export const generateVideo = async (
     prompt: string,
     base64ImageBytes: string | null,
     mimeType: string,
-    aspectRatio: string
+    aspectRatio: string,
+    userRole: UserRole
 ): Promise<Blob> => {
+    // 1. Verificação de permissão: Apenas utilizadores autorizados podem prosseguir.
+    const authorizedRoles: UserRole[] = ['admin', 'premium', 'professional'];
+    if (!authorizedRoles.includes(userRole)) {
+        throw new Error("A geração de vídeo está disponível apenas nos planos Premium ou Profissional. Faça um upgrade para aceder a esta funcionalidade.");
+    }
+    
+    // 2. USA O CLIENTE GLOBAL: Esta é a alteração. Alinha com o comportamento observado pelo utilizador.
+    // A lógica em App.tsx garante que para administradores sem chave pessoal, o cliente global é inicializado com a chave mestra.
+    // Se um administrador fornecer a sua própria chave, o cliente global usará essa chave.
     const client = getClient();
-    
-    let operation = await client.models.generateVideos({
-        model: 'veo-2.0-generate-001',
-        prompt: prompt,
-        image: base64ImageBytes ? {
-            imageBytes: base64ImageBytes,
-            mimeType: mimeType,
-        } : undefined,
-        config: {
-            numberOfVideos: 1,
-            aspectRatio: aspectRatio,
+
+    try {
+        const config: any = {
+            model: 'veo-2.0-generate-001',
+            prompt,
+            config: {
+              aspectRatio,
+              numberOfVideos: 1,
+            },
+        };
+
+        if (base64ImageBytes && mimeType) {
+            config.image = {
+              imageBytes: base64ImageBytes,
+              mimeType,
+            };
         }
-    });
 
-    while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        operation = await client.operations.getVideosOperation({ operation: operation });
-    }
+        let operation = await client.models.generateVideos(config);
 
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) {
-        throw new Error("Video generation succeeded but no download link was found.");
-    }
-    
-    if (!currentApiKey) {
-        throw new Error("API Key not available to download video. Please re-initialize the client.");
-    }
+        // 3. Polling: Aguarda a conclusão da operação de longa duração.
+        while (!operation.done) {
+            await delay(10000); // Aguarda 10 segundos
+            operation = await client.operations.getVideosOperation({ operation });
+        }
 
-    const response = await fetch(`${downloadLink}&key=${currentApiKey}`);
-    if (!response.ok) {
-        throw new Error(`Failed to download the generated video. Status: ${response.status}`);
+        if (operation.error) {
+            console.error('Video generation operation finished with an error:', operation.error);
+            throw new Error(`A API de geração de vídeo retornou um erro: ${operation.error.message} (Código: ${operation.error.code})`);
+        }
+
+        const video = operation.response?.generatedVideos?.[0];
+        if (!video?.video?.uri) {
+            throw new Error("A geração de vídeo foi bem-sucedida, mas não foi encontrado nenhum link para download na resposta da API.");
+        }
+        
+        // 4. Download: Usa a URL assinada diretamente, como no exemplo funcional.
+        const url = decodeURIComponent(video.video.uri);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("Failed to download video. Status:", response.status, "Body:", errorBody);
+            throw new Error(`Falha ao baixar o vídeo gerado. Status: ${response.status}`);
+        }
+        
+        return await response.blob();
+
+    } catch (error: any) {
+        // Re-lança o erro para ser tratado pelo componente da UI.
+        throw error;
     }
-    
-    const videoBlob = await response.blob();
-    return videoBlob;
 };
+
 
 export const removeBackground = async (base64ImageData: string): Promise<string> => {
     const prompt = "CRITICAL TASK: Your only function is to remove the background from the provided image. Identify the primary subject(s) and perfectly isolate them. The output MUST be a high-resolution PNG of ONLY the subject(s) on a fully transparent background. Do not add shadows, reflections, or any other elements. Do not alter the subject in any way.";
@@ -204,6 +232,24 @@ export const magicExpand = async (base64ImageData: string, prompt: string): Prom
 export const magicCapture = async (base64ImageData: string, objectToCapture: string): Promise<string> => {
     const prompt = `CRITICAL TASK: From the provided image, precisely extract ONLY the object described as: "${objectToCapture}". The output MUST be a high-resolution PNG of the extracted object on a fully transparent background. Ensure the edges are clean and accurate. Do not include any part of the original background or other objects.`;
     return generateImageWithRetry({ prompt, base64ImageData });
+};
+
+export const translateText = async (text: string, targetLanguage: string = 'English'): Promise<string> => {
+    const client = getClient();
+    if (!text.trim()) return text;
+    try {
+        const response = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
+            config: {
+                temperature: 0.1,
+            }
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Translation failed:", error);
+        throw new Error("Failed to translate text.");
+    }
 };
 
 export const getModelInstruction = (
@@ -224,7 +270,7 @@ export const getModelInstruction = (
             break;
         
         case 'cenasDoInstagram':
-            instruction = `Generate a photorealistic image for a social media post, based on this scene: "${prompt.base}". The image must look high-quality and authentic. The person in the reference image must be the subject.`;
+            instruction = `Generate a photorealistic image for a social media post, based on this scene: "${prompt.base}". The image must look high-quality and authentic. The person in the reference image must be the subject. CRITICAL: The final image must NOT contain any text, watermarks, or captions written on it.`;
             if (aspectRatio) {
                 instruction += ` The image aspect ratio must be strictly ${aspectRatio}.`;
             }
@@ -258,5 +304,5 @@ export const getModelInstruction = (
             break;
     }
     
-    return instruction.trim().trim();
+    return instruction.trim();
 };

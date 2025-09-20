@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconX, IconSparkles } from './Icons.tsx';
-import { generateImageWithRetry } from '../services/geminiService.ts';
+import { generateImageWithRetry } from '../geminiService.ts';
 import ErrorNotification from './ErrorNotification.tsx';
 
 interface MagicCaptureModalProps {

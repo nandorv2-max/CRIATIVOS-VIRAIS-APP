@@ -1,6 +1,8 @@
 import type { Templates } from './types.ts';
 import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine, IconImageIcon, IconTshirt, IconPackage } from './components/Icons.tsx';
 
+export const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
+
 export const TEMPLATES: Templates = {
     imageGenerator: {
         name: 'Gerador de Imagem',
@@ -26,9 +28,9 @@ export const TEMPLATES: Templates = {
         isPolaroid: false,
         prompts: []
     },
-    criativoViral: {
-        name: 'Criativo Viral',
-        description: 'Crie designs com fotos, vídeos e áudio.',
+    studioCriativo: {
+        name: 'Studio Criativo',
+        description: 'Um editor completo para criar designs com fotos, vídeos, texto e IA.',
         icon: '🚀',
         sidebarIcon: IconRocket,
         isPolaroid: false,

@@ -5,10 +5,10 @@ import LoginScreen from './components/LoginScreen.tsx';
 import MainDashboard from './components/MainDashboard.tsx';
 import ApiKeyPrompt from './components/ApiKeyPrompt.tsx';
 import { supabase } from './services/supabaseClient.ts';
-import { initializeGeminiClient } from './services/geminiService.ts';
+import { initializeGeminiClient } from './geminiService.ts';
 import type { UserProfile } from './types.ts';
+import { MASTER_USERS } from './constants.ts';
 
-const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
 
 const App: React.FC = () => {
     const [session, setSession] = useState<Session | null>(null);
@@ -56,22 +56,26 @@ const App: React.FC = () => {
                 const isAdmin = MASTER_USERS.includes(session.user.email ?? '');
                 let keyToUse = '';
 
-                if (isAdmin) {
+                // PRIORITIZE user's own key from local storage, even for admins.
+                const userKey = window.localStorage.getItem('user_gemini_api_key');
+                if (userKey) {
+                    keyToUse = userKey;
+                } else if (isAdmin) {
+                    // Fallback to master key ONLY if user is admin AND has no personal key set.
                     keyToUse = process.env.API_KEY as string;
                     if (!keyToUse) {
                         console.error("FATAL ERROR: Master API_KEY is not configured in the application environment for admin user.");
                         setApiKeyStatus('error');
                         return;
                     }
-                } else {
-                    keyToUse = window.localStorage.getItem('user_gemini_api_key') || '';
                 }
 
                 if (keyToUse) {
                     initializeGeminiClient(keyToUse);
                     setApiKeyStatus('set');
                 } else {
-                    setApiKeyStatus('pending'); // Prompt for key if not admin and no key is stored
+                    // This now only happens for non-admins with no key.
+                    setApiKeyStatus('pending');
                 }
             } else {
                 // De-initialize on logout
@@ -81,13 +85,28 @@ const App: React.FC = () => {
         };
 
         const fetchSession = async () => {
-            if (!supabase) {
+            try {
+                if (!supabase) {
+                    console.error("Supabase client is not available.");
+                    setLoading(false);
+                    return;
+                }
+
+                // Race getSession against a timeout to prevent hanging in restrictive environments.
+                const sessionPromise = supabase.auth.getSession();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Session fetch timed out")), 5000) // 5-second timeout
+                );
+
+                const { data } = await (Promise.race([sessionPromise, timeoutPromise]) as Promise<{ data: { session: Session | null }, error: any }>);
+                await handleAuthStateChange('INITIAL_SESSION', data.session);
+            } catch (error) {
+                console.error("Error or timeout fetching initial session:", error);
+                // On timeout or error, assume no session is available.
+                await handleAuthStateChange('INITIAL_SESSION', null);
+            } finally {
                 setLoading(false);
-                return;
             }
-            const { data: { session } } = await supabase.auth.getSession();
-            await handleAuthStateChange('INITIAL_SESSION', session);
-            setLoading(false);
         };
 
         fetchSession();

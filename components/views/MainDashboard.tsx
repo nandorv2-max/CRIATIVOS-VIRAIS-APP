@@ -1,18 +1,18 @@
 import React, { useState, useCallback, createContext, useContext, useEffect } from 'react';
 import type { User } from '@supabase/gotrue-js';
-import Sidebar from './Sidebar.tsx';
-import ProjectsView from './views/ProjectsView.tsx';
-import GeneratorView from './views/GeneratorView.tsx';
-import ImageGeneratorView from './views/ImageGeneratorView.tsx';
-import MockupGeneratorView from './views/MockupGeneratorView.tsx';
-import ProductStudioView from './views/ProductStudioView.tsx';
-import CreativeEditorView from './views/CreativeEditorView.tsx';
-import UnirView from './views/UnirView.tsx';
-import VideoGenerator from './VideoGenerator.tsx';
-import ProfessionalEditorView from './views/ProfessionalEditorView.tsx';
-import AdminView from './views/AdminView.tsx';
-import { getUserAssets } from '../services/databaseService.ts';
-import type { Project, UserProfile, UploadedAsset } from '../types.ts';
+import Sidebar from '../Sidebar.tsx';
+import ProjectsView from './ProjectsView.tsx';
+import GeneratorView from './GeneratorView.tsx';
+import ImageGeneratorView from './ImageGeneratorView.tsx';
+import MockupGeneratorView from './MockupGeneratorView.tsx';
+import ProductStudioView from './ProductStudioView.tsx';
+import CreativeEditorView from './CreativeEditorView.tsx';
+import UnirView from './UnirView.tsx';
+import VideoGenerator from '../VideoGenerator.tsx';
+import ProfessionalEditorView from './ProfessionalEditorView.tsx';
+import AdminView from './AdminView.tsx';
+import { getUserAssets } from '../../services/databaseService.ts';
+import type { Project, UserProfile, UploadedAsset } from '../../types.ts';
 
 
 interface MainDashboardProps {

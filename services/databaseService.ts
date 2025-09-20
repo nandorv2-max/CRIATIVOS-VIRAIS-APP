@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.ts';
-import type { UserProfile, PublicAsset, AssetVisibility, UploadedAssetType, UploadedAsset, UserRole } from '../types.ts';
+import type { UserProfile, PublicAsset, AssetVisibility, UploadedAssetType, UploadedAsset, UserRole, Folder } from '../types.ts';
 import { nanoid } from 'nanoid';
 import { base64ToFile, extractLastFrame } from '../utils/imageUtils.ts';
 
@@ -170,7 +170,7 @@ function getAssetTypeFromFile(file: File): UploadedAssetType {
     return 'image'; // Default fallback
 }
 
-export async function uploadUserAsset(file: File): Promise<UploadedAsset> {
+export async function uploadUserAsset(file: File, folderId: string | null = null): Promise<UploadedAsset> {
     const user = (await supabase.auth.getUser()).data.user;
     if (!user) throw new Error("Usuário não autenticado.");
 
@@ -221,7 +221,7 @@ export async function uploadUserAsset(file: File): Promise<UploadedAsset> {
         }
     }
 
-    const assetData = {
+    const assetData: any = {
         user_id: user.id,
         name: file.name,
         asset_type: assetType,
@@ -230,6 +230,10 @@ export async function uploadUserAsset(file: File): Promise<UploadedAsset> {
         thumbnail_url: thumbnailUrl,
         thumbnail_storage_path: thumbnailStoragePath,
     };
+
+    if (folderId) {
+        assetData.folder_id = folderId;
+    }
     
     const { data: dbData, error: dbError } = await supabase
         .from('user_assets')
@@ -243,8 +247,7 @@ export async function uploadUserAsset(file: File): Promise<UploadedAsset> {
         }
         throw dbError;
     }
-
-    // This simplified return is sufficient as the UI will refetch with getUserAssets, which handles signed URLs properly.
+    
     return {
         id: dbData.id,
         name: dbData.name,
@@ -254,6 +257,7 @@ export async function uploadUserAsset(file: File): Promise<UploadedAsset> {
         is_favorite: dbData.is_favorite,
         storage_path: dbData.storage_path,
         thumbnail_storage_path: dbData.thumbnail_storage_path,
+        folder_id: dbData.folder_id,
     };
 }
 
@@ -312,6 +316,7 @@ export async function getUserAssets(): Promise<UploadedAsset[]> {
             is_favorite: asset.is_favorite,
             storage_path: asset.storage_path,
             thumbnail_storage_path: asset.thumbnail_storage_path,
+            folder_id: asset.folder_id,
         };
     });
 }
@@ -346,4 +351,110 @@ export async function deleteUserAsset(asset: UploadedAsset): Promise<void> {
         console.error('Error deleting user asset via RPC:', error);
         throw error;
     }
+}
+
+// FOLDER MANAGEMENT
+export async function getFolders(parentId: string | null): Promise<Folder[]> {
+    let query = supabase.from('folders').select('*');
+    if (parentId) {
+        query = query.eq('parent_id', parentId);
+    } else {
+        query = query.is('parent_id', null);
+    }
+    const { data, error } = await query.order('name');
+    if (error) throw error;
+    return data;
+}
+
+export async function getAssetsInFolder(folderId: string | null): Promise<UploadedAsset[]> {
+    let query = supabase.from('user_assets').select('*');
+    if (folderId) {
+        query = query.eq('folder_id', folderId);
+    } else {
+        query = query.is('folder_id', null);
+    }
+    const { data: assets, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    if (!assets || assets.length === 0) return [];
+
+    const allPaths = assets
+        .flatMap(asset => [asset.storage_path, asset.thumbnail_storage_path])
+        .filter((path): path is string => !!path);
+
+    const uniquePaths = [...new Set(allPaths)];
+    
+    if (uniquePaths.length === 0) {
+        return assets.map(asset => ({
+            id: asset.id,
+            name: asset.name,
+            type: asset.asset_type as UploadedAssetType,
+            url: asset.url,
+            thumbnail: asset.thumbnail_url || asset.url,
+            is_favorite: asset.is_favorite,
+            storage_path: asset.storage_path,
+            thumbnail_storage_path: asset.thumbnail_storage_path,
+            folder_id: asset.folder_id,
+        }));
+    }
+    
+    const { data: signedUrls, error: urlError } = await supabase.storage
+        .from('user_assets')
+        .createSignedUrls(uniquePaths, 3600);
+    
+    if (urlError) {
+        console.error("Failed to get signed URLs for folder assets", urlError);
+        throw urlError;
+    }
+    
+    const urlMap = new Map(signedUrls.map(item => [item.path, item.signedUrl]));
+
+    return assets.map(asset => {
+        const signedUrl = urlMap.get(asset.storage_path) || asset.url;
+        let signedThumbnailUrl = signedUrl; 
+        
+        if (asset.thumbnail_storage_path) {
+            signedThumbnailUrl = urlMap.get(asset.thumbnail_storage_path) || asset.thumbnail_url || signedUrl;
+        }
+
+        return {
+            id: asset.id,
+            name: asset.name,
+            type: asset.asset_type as UploadedAssetType,
+            url: signedUrl,
+            thumbnail: signedThumbnailUrl,
+            is_favorite: asset.is_favorite,
+            storage_path: asset.storage_path,
+            thumbnail_storage_path: asset.thumbnail_storage_path,
+            folder_id: asset.folder_id,
+        };
+    });
+}
+
+
+export async function createFolder(name: string, parentId: string | null): Promise<Folder> {
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) throw new Error("Usuário não autenticado.");
+    const { data, error } = await supabase
+        .from('folders')
+        .insert({ name, parent_id: parentId, user_id: user.id })
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+export async function moveAssetToFolder(assetId: string, folderId: string | null): Promise<void> {
+    const { error } = await supabase
+        .from('user_assets')
+        .update({ folder_id: folderId })
+        .eq('id', assetId);
+    if (error) throw error;
+}
+
+export async function moveFolderToFolder(folderId: string, parentId: string | null): Promise<void> {
+    const { error } = await supabase
+        .from('folders')
+        .update({ parent_id: parentId })
+        .eq('id', folderId);
+    if (error) throw error;
 }

@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import Button from '../../components/Button.tsx';
 import { IconUpload, IconSparkles, IconTrash, IconImage, IconDownload, IconLayers, IconTranslate, IconX, IconImageIcon } from '../../components/Icons.tsx';
 import ErrorNotification from '../../components/ErrorNotification.tsx';
-import { generateImageWithRetry, translateText } from '../../services/geminiService.ts';
+import { generateImageWithRetry, translateText } from '../../geminiService.ts';
 import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
 import { addCreation } from '../../utils/db.ts';
 import type { Creation, UploadedAsset } from '../../types.ts';

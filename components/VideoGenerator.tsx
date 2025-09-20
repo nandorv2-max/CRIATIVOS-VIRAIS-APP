@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from './Button.tsx';
-import { generateVideo } from '../services/geminiService.ts';
+import { generateVideo } from '../geminiService.ts';
 import { extractLastFrame, toBase64, blobToBase64 } from '../utils/imageUtils.ts';
 import { IconUpload, IconCamera, IconImageIcon } from './Icons.tsx';
 import CameraModal from './CameraModal.tsx';
@@ -16,7 +16,7 @@ interface VideoGeneratorProps {
 }
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
-    const [prompt, setPrompt] = useState('Animate a imagem como um UGC de uma pessoa como se estivesse a falar para a câmara, a explicar algo, sem fazer alterações bruscas e mantendo o mesmo ambiente. Gerar um vídeo de alta definição, preservando a alta fidelidade e os detalhes nítidos da imagem original. A animação deve manter a qualidade fotorrealista e a textura da imagem de referência. Não deve haver alteração no zoom ou cortes para diferentes ângulos em nenhum momento do vídeo gerado. Nenhum elemento da imagem pode ser alterado, apenas a animação deve ser feita de forma natural, como se fosse um UGC real. A animação não deve alterar as cores da imagem original, mantendo o mesmo padrão de cores do início ao fim, sem quaisquer modificações.');
+    const [prompt, setPrompt] = useState(`Animate the person in the image. They should be talking to the camera, as if explaining something in a user-generated content (UGC) style. The animation should be subtle and natural. Maintain the original image's high-definition, photorealistic quality, details, and colors. Do not change the background, zoom, or camera angle.`);
     const [status, setStatus] = useState('Pronto.');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<{ message: string, details: string } | null>(null);
@@ -89,7 +89,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
             for (let i = 1; i <= sequenceLength; i++) {
                 setStatus(`A gerar vídeo ${i} de ${sequenceLength}... Isto pode demorar alguns minutos.`);
                 
-                const fullPrompt = `Um vídeo de 8 segundos de ${prompt}`;
+                const fullPrompt = `An 8-second video of: ${prompt}`;
                 const videoBlob = await generateVideo(
                     fullPrompt,
                     currentImageBytes,
@@ -119,7 +119,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
             const errorMessage = e instanceof Error ? e.message : String(e);
             console.error('Erro de Geração:', e);
             setStatus('Ocorreu um erro durante a geração.');
-            setError({ message: "Ocorreu um erro na API.", details: errorMessage });
+            setError({ message: "Erro de Geração:", details: errorMessage });
         } finally {
             setIsLoading(false);
         }
@@ -162,21 +162,21 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                 onClose={() => setIsGalleryPickerModalOpen(false)}
                 onSelectAsset={handleSelectFromGallery}
             />
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row gap-6 w-full h-full">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row gap-6 w-full h-full p-6">
                 {/* Left Column: Controls */}
                 <div className="md:w-1/3 xl:w-1/4 flex flex-col gap-6 overflow-y-auto pr-4">
                     <h2 className="text-2xl font-semibold text-white">Gerador de Vídeo</h2>
                     
                     {/* 1. Upload */}
-                    <div className="p-6 border border-gray-700 rounded-xl bg-gray-800/50">
+                    <div className="p-6 border border-brand-accent rounded-xl bg-brand-dark/50">
                         <h3 className='text-xl font-semibold text-white mb-4'>1. A Sua Foto</h3>
                         <div 
-                            className="w-full aspect-square border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-yellow-400 bg-gray-900/50 overflow-hidden"
+                            className="w-full aspect-square border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-brand-primary bg-brand-dark overflow-hidden"
                             onClick={() => setIsUploadModalOpen(true)}
                         >
-                            {isUploading ? <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-yellow-400"></div> 
+                            {isUploading ? <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-primary"></div> 
                             : uploadedImage ? <img src={uploadedImage} alt="Uploaded" className="w-full h-full object-cover" /> 
-                            : <div className="text-center text-gray-500"><IconUpload className="w-10 h-10 mx-auto" /><p className="mt-2 text-sm">Carregar Foto</p></div>}
+                            : <div className="text-center text-gray-400"><IconUpload className="w-10 h-10 mx-auto" /><p className="mt-2 text-sm">Carregar Foto</p></div>}
                         </div>
                         <div className="flex justify-center gap-2 mt-4">
                             <Button onClick={() => setIsCameraOpen(true)}><div className="flex items-center gap-2 text-sm"><IconCamera /><span>Câmara</span></div></Button>
@@ -187,25 +187,25 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                     </div>
 
                     {/* 2. Describe */}
-                     <div className="p-6 border border-gray-700 rounded-xl space-y-4 bg-gray-800/50">
+                     <div className="p-6 border border-brand-accent rounded-xl space-y-4 bg-brand-dark/50">
                         <h3 className='text-xl font-semibold text-white'>2. Descreva a Cena</h3>
                         <textarea 
                             value={prompt}
                             // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
                             onChange={e => setPrompt((e.target as any).value)}
                             placeholder="Descreva a animação para a sequência de vídeo..."
-                            className="w-full bg-gray-800 border border-gray-600 rounded-lg p-3 h-32 focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white resize-y"
+                            className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 h-32 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white resize-y"
                         />
                     </div>
 
                     {/* 3. Define Stage */}
-                    <div className="p-6 border border-gray-700 rounded-xl space-y-4 bg-gray-800/50">
+                    <div className="p-6 border border-brand-accent rounded-xl space-y-4 bg-brand-dark/50">
                          <h3 className='text-xl font-semibold text-white'>3. Defina o Palco</h3>
                          <div className="grid grid-cols-1 gap-4">
                             <div>
                                  <label className="block text-sm font-medium text-gray-400 mb-2">Proporção:</label>
                                  {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                                 <select value={aspectRatio} onChange={e => setAspectRatio((e.target as any).value)} className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white">
+                                 <select value={aspectRatio} onChange={e => setAspectRatio((e.target as any).value)} className="w-full bg-brand-light border border-brand-accent rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white">
                                      <option value="9:16">9:16 (Retrato)</option>
                                      <option value="16:9">16:9 (Paisagem)</option>
                                      <option value="1:1">1:1 (Quadrado)</option>
@@ -214,7 +214,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                             <div>
                                  <label className="block text-sm font-medium text-gray-400 mb-2">Número de Vídeos:</label>
                                  {/* FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings. */}
-                                 <input type="number" value={sequenceLength} onChange={e => setSequenceLength(Math.max(1, Math.min(10, parseInt((e.target as any).value, 10))))} min="1" max="10" className="w-full bg-gray-800 border border-gray-600 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-yellow-400 text-white" />
+                                 <input type="number" value={sequenceLength} onChange={e => setSequenceLength(Math.max(1, Math.min(10, parseInt((e.target as any).value, 10))))} min="1" max="10" className="w-full bg-brand-light border border-brand-accent rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white" />
                             </div>
                          </div>
                     </div>
@@ -222,7 +222,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                     <div className="mt-auto">
                         <Button onClick={handleGenerate} primary disabled={isLoading || !uploadedImage} className="w-full text-lg px-8 py-3">
                              {isLoading ? (
-                                <div className="flex items-center justify-center gap-3"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-black"></div><span>A gerar...</span></div>
+                                <div className="flex items-center justify-center gap-3"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div><span>A gerar...</span></div>
                             ) : 'Gerar Sequência'}
                         </Button>
                         <p className="text-gray-400 mt-2 text-sm text-center">{status}</p>
@@ -233,7 +233,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
                 {/* Right Column: Results */}
                 <div className="flex-1 flex flex-col min-w-0">
                     <h3 className='text-xl font-semibold text-white mb-4'>A Sua Linha do Tempo</h3>
-                    <div className="bg-gray-800/50 p-4 rounded-xl flex-grow flex items-center justify-center border border-gray-700 overflow-hidden relative">
+                    <div className="bg-brand-dark/50 p-4 rounded-xl flex-grow flex items-center justify-center border border-brand-accent overflow-hidden relative">
                         {error && (
                             <div className="absolute top-4 left-4 right-4 z-10 p-4 bg-red-900/50 border border-red-500/50 rounded-lg text-center text-red-300">
                                 <p className="font-semibold">{error.message}</p>

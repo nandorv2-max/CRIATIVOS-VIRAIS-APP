@@ -6,7 +6,8 @@ import { IconDownload, IconSparkles } from './Icons.tsx';
 
 interface PropertiesPanelProps {
     selectedLayers: AnyLayer[];
-    onUpdateLayers: (layers: AnyLayer[]) => void;
+    onUpdateLayers: (update: Partial<AnyLayer>) => void;
+    onCommitHistory: () => void;
     canvasWidth: number;
     canvasHeight: number;
     onCanvasSizeChange: (width: number, height: number) => void;
@@ -24,7 +25,7 @@ const SIZE_PRESETS = [
 ];
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
-    selectedLayers, onUpdateLayers, canvasWidth, canvasHeight, onCanvasSizeChange,
+    selectedLayers, onUpdateLayers, onCommitHistory, canvasWidth, canvasHeight, onCanvasSizeChange,
     backgroundColor, onBackgroundColorChange, onDownload, onPublish
 }) => {
     
@@ -60,8 +61,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
              <div>
                 <label className="text-sm font-medium text-gray-300 mb-1 block">Cor de Fundo</label>
                 <div className="flex items-center gap-2">
-                    <ColorPicker color={backgroundColor} onChange={onBackgroundColorChange} />
-                    <input type="text" value={backgroundColor} onChange={e => onBackgroundColorChange(e.target.value)} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white font-mono"/>
+                    <ColorPicker color={backgroundColor} onChange={onBackgroundColorChange} onInteractionEnd={onCommitHistory} />
+                    <input type="text" value={backgroundColor} onChange={e => onBackgroundColorChange(e.target.value)} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white font-mono"/>
                 </div>
             </div>
             <div className="pt-4 border-t border-brand-accent/50 space-y-2">
@@ -82,17 +83,24 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
          return (
              <div className="p-4 space-y-4">
                 <h3 className="text-lg font-bold text-white truncate">{layer.name}</h3>
-                {/* Add layer specific controls here */}
-                 {layer.type === 'text' && (
+                <div className="grid grid-cols-2 gap-2">
                     <div>
-                        <p>Controles de Texto aqui...</p>
+                        <label className="text-xs font-medium text-gray-400 mb-1 block">X</label>
+                        <input type="number" value={Math.round(layer.x)} onChange={e => onUpdateLayers({ x: Number(e.target.value) })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white"/>
                     </div>
-                )}
-                 {layer.type === 'shape' && (
                     <div>
-                         <p>Controles de Forma aqui...</p>
+                        <label className="text-xs font-medium text-gray-400 mb-1 block">Y</label>
+                        <input type="number" value={Math.round(layer.y)} onChange={e => onUpdateLayers({ y: Number(e.target.value) })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white"/>
                     </div>
-                )}
+                     <div>
+                        <label className="text-xs font-medium text-gray-400 mb-1 block">Largura</label>
+                        <input type="number" value={Math.round(layer.width)} onChange={e => onUpdateLayers({ width: Number(e.target.value) })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white"/>
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-gray-400 mb-1 block">Altura</label>
+                        <input type="number" value={Math.round(layer.height)} onChange={e => onUpdateLayers({ height: Number(e.target.value) })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white"/>
+                    </div>
+                </div>
              </div>
          );
     };

@@ -1,13 +1,9 @@
 import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
-import { supabase } from './supabaseClient.ts';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
-
-// This list should ideally be managed in a central config, but defining here for service-level logic
-const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
@@ -154,19 +150,25 @@ export const generateVideo = async (
     aspectRatio: string,
     userRole: UserRole
 ): Promise<Blob> => {
+    // Check for premium feature access BEFORE any API call
     const authorizedRoles: UserRole[] = ['admin', 'premium', 'professional'];
     if (!authorizedRoles.includes(userRole)) {
         throw new Error("A geração de vídeo está disponível apenas nos planos Premium ou Profissional. Faça um upgrade para aceder a esta funcionalidade.");
     }
     
-    const masterApiKey = process.env.API_KEY as string;
-    if (!masterApiKey) {
-        throw new Error("A chave de API principal da aplicação não está configurada no ambiente, o que é necessário para a geração de vídeo.");
+    // CRITICAL FIX: Video generation MUST use the master API key from the environment.
+    // It is a premium feature that depends on the owner's quota and setup.
+    const apiKey = process.env.API_KEY;
+
+    if (!apiKey) {
+        throw new Error("A chave de API principal para geração de vídeo não está configurada no ambiente da aplicação. Por favor, contacte o administrador.");
     }
-    const videoAi = new GoogleGenAI({ apiKey: masterApiKey });
+
+    // Create a fresh client for this specific call to ensure the correct master key is used.
+    const client = new GoogleGenAI({ apiKey });
 
     try {
-        let operation = await videoAi.models.generateVideos({
+        let operation = await client.models.generateVideos({
             model: 'veo-2.0-generate-001',
             prompt: prompt,
             image: base64ImageBytes ? {
@@ -181,7 +183,7 @@ export const generateVideo = async (
 
         while (!operation.done) {
             await new Promise(resolve => setTimeout(resolve, 10000));
-            operation = await videoAi.operations.getVideosOperation({ operation: operation });
+            operation = await client.operations.getVideosOperation({ operation: operation });
         }
 
         if (operation.error) {
@@ -193,11 +195,11 @@ export const generateVideo = async (
         if (!downloadLink) {
             throw new Error("A geração de vídeo foi bem-sucedida, mas não foi encontrado nenhum link para download na resposta da API.");
         }
-
-        const url = new URL(downloadLink);
-        url.searchParams.append('key', masterApiKey);
-        const finalUrl = url.toString();
         
+        const finalUrl = decodeURIComponent(downloadLink);
+        
+        // DEFINITIVE FIX: The download link is a pre-signed URL and does NOT need the API key appended.
+        // Appending the key was invalidating the URL.
         const response = await fetch(finalUrl);
 
         if (!response.ok) {
@@ -209,10 +211,7 @@ export const generateVideo = async (
         return await response.blob();
 
     } catch (error: any) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('Lifetime quota exceeded') || (error.code === 429)) {
-            throw new Error("A cota da API para geração de vídeo foi excedida. Verifique o faturamento e as cotas no seu projeto Google Cloud.");
-        }
+        // Re-throw the original error to be handled by the UI component
         throw error;
     }
 };

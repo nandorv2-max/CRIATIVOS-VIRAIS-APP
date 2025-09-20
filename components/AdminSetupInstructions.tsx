@@ -8,8 +8,8 @@ interface AdminSetupInstructionsProps {
 
 const AdminSetupInstructions: React.FC<AdminSetupInstructionsProps> = ({ error, onRetry }) => {
 
-    const sqlScript = `-- SCRIPT DE CONFIGURAÇÃO MESTRE UNIFICADO v15.0 - CONTROLO DE PLANOS (STARTER, PREMIUM, PRO)
--- Este script introduz o controlo de acesso baseado em funções para funcionalidades como a geração de vídeo.
+    const sqlScript = `-- SCRIPT DE CONFIGURAÇÃO MESTRE UNIFICADO v17.0 - CORRIGE O SEARCH_PATH
+-- Este script corrige um bug crítico onde as funções SECURITY DEFINER não conseguiam encontrar auth.uid().
 -- AVISO: Apaga e recria tabelas, o que limpará os dados existentes nelas.
 
 -- ======= PARTE 1: APAGAR CONFIGURAÇÃO ANTIGA (para garantir um estado limpo) =======
@@ -34,6 +34,7 @@ DROP FUNCTION IF EXISTS public.set_user_id_on_asset() CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 DROP TABLE IF EXISTS public.user_assets CASCADE;
 DROP TABLE IF EXISTS public.public_assets CASCADE;
+DROP TABLE IF EXISTS public.folders CASCADE;
 DROP TABLE IF EXISTS public.user_profiles CASCADE;
 
 -- ======= PARTE 2: CRIAR TABELAS DA BASE DE DADOS =======
@@ -41,7 +42,9 @@ CREATE TABLE public.user_profiles ( id uuid NOT NULL PRIMARY KEY REFERENCES auth
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 CREATE TABLE public.public_assets ( id uuid default gen_random_uuid() not null primary key, name text not null, asset_type text not null, storage_path text not null, asset_url text not null, thumbnail_url text, visibility text default 'Public'::text not null, owner_id uuid references auth.users(id) on delete set null, created_at timestamp with time zone default timezone('utc'::text, now()) not null );
 ALTER TABLE public.public_assets ENABLE ROW LEVEL SECURITY;
-CREATE TABLE public.user_assets ( id uuid default gen_random_uuid() not null primary key, user_id uuid not null references auth.users(id) on delete cascade, name text not null, asset_type text not null, storage_path text not null, url text not null, thumbnail_url text, thumbnail_storage_path text, is_favorite boolean default false not null, created_at timestamp with time zone default timezone('utc'::text, now()) not null );
+CREATE TABLE public.folders ( id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, name text NOT NULL, user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, parent_id uuid NULL REFERENCES public.folders(id) ON DELETE CASCADE, created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()) );
+ALTER TABLE public.folders ENABLE ROW LEVEL SECURITY;
+CREATE TABLE public.user_assets ( id uuid default gen_random_uuid() not null primary key, user_id uuid not null references auth.users(id) on delete cascade, name text not null, asset_type text not null, storage_path text not null, url text not null, thumbnail_url text, thumbnail_storage_path text, is_favorite boolean default false not null, created_at timestamp with time zone default timezone('utc'::text, now()) not null, folder_id uuid NULL REFERENCES public.folders(id) ON DELETE SET NULL );
 ALTER TABLE public.user_assets ENABLE ROW LEVEL SECURITY;
 
 -- ======= PARTE 3: CRIAR FUNÇÕES HELPER E GATILHOS =======
@@ -59,15 +62,16 @@ CREATE POLICY "Os utilizadores podem gerir o seu próprio perfil." ON public.use
 CREATE POLICY "Recursos públicos são visíveis por todos." ON public.public_assets FOR SELECT USING ( visibility = 'Public' );
 CREATE POLICY "Admins têm acesso total aos recursos públicos." ON public.public_assets FOR ALL USING ( (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' ) WITH CHECK ( (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' );
 CREATE POLICY "Os utilizadores podem gerir os seus próprios recursos." ON public.user_assets FOR ALL USING ( auth.uid() = user_id ) WITH CHECK ( auth.uid() = user_id );
+CREATE POLICY "Os utilizadores podem gerir as suas próprias pastas." ON public.folders FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
--- ======= PARTE 6: CRIAR FUNÇÕES RPC (CORRIGIDAS) =======
-CREATE OR REPLACE FUNCTION public.admin_get_all_users() RETURNS TABLE (id uuid, email text, role text, credits integer) LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$ SELECT id, email, role, credits FROM public.user_profiles; $$;
-CREATE OR REPLACE FUNCTION public.admin_get_all_assets() RETURNS SETOF public.public_assets LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$ SELECT * FROM public.public_assets ORDER BY created_at DESC; $$;
-CREATE OR REPLACE FUNCTION public.admin_add_public_asset(p_name text, p_asset_type text, p_storage_path text, p_asset_url text, p_thumbnail_url text, p_visibility text, p_owner_id uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; INSERT INTO public.public_assets (name, asset_type, storage_path, asset_url, thumbnail_url, visibility, owner_id) VALUES (p_name, p_asset_type, p_storage_path, p_asset_url, p_thumbnail_url, p_visibility, p_owner_id); END; $$;
-CREATE OR REPLACE FUNCTION public.admin_update_user(p_user_id uuid, p_role text, p_credits integer) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; UPDATE public.user_profiles SET role = COALESCE(p_role, role), credits = COALESCE(p_credits, credits) WHERE id = p_user_id; END; $$;
+-- ======= PARTE 6: CRIAR FUNÇÕES RPC (COM SEGURANÇA REFORÇADA) =======
+CREATE OR REPLACE FUNCTION public.admin_get_all_users() RETURNS TABLE(id uuid, email text, role text, credits integer) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$ DECLARE v_invoker_is_admin boolean; BEGIN SELECT p.role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles p WHERE p.id = auth.uid(); IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; RETURN QUERY SELECT p.id, p.email, p.role, p.credits FROM public.user_profiles p; END; $$;
+CREATE OR REPLACE FUNCTION public.admin_get_all_assets() RETURNS SETOF public.public_assets LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$ DECLARE v_invoker_is_admin boolean; BEGIN SELECT p.role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles p WHERE p.id = auth.uid(); IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; RETURN QUERY SELECT * FROM public.public_assets ORDER BY created_at DESC; END; $$;
+CREATE OR REPLACE FUNCTION public.admin_add_public_asset(p_name text, p_asset_type text, p_storage_path text, p_asset_url text, p_thumbnail_url text, p_visibility text, p_owner_id uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; INSERT INTO public.public_assets (name, asset_type, storage_path, asset_url, thumbnail_url, visibility, owner_id) VALUES (p_name, p_asset_type, p_storage_path, p_asset_url, p_thumbnail_url, p_visibility, p_owner_id); END; $$;
+CREATE OR REPLACE FUNCTION public.admin_update_user(p_user_id uuid, p_role text, p_credits integer) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$ DECLARE v_invoker_uid uuid := auth.uid(); v_invoker_is_admin boolean; BEGIN SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid; IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF; UPDATE public.user_profiles SET role = COALESCE(p_role, role), credits = COALESCE(p_credits, credits) WHERE id = p_user_id; END; $$;
 
 CREATE OR REPLACE FUNCTION public.admin_delete_user(p_user_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage, auth AS $$
 DECLARE
     v_invoker_uid uuid := auth.uid();
     v_invoker_is_admin boolean;
@@ -86,7 +90,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.admin_delete_public_asset(p_asset_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage, auth AS $$
 DECLARE
     v_invoker_uid uuid := auth.uid();
     v_invoker_is_admin boolean;
@@ -102,7 +106,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.user_delete_asset(p_asset_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage AS $$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, storage, auth AS $$
 DECLARE
     v_asset_record RECORD;
     v_invoker_uid uuid := auth.uid();

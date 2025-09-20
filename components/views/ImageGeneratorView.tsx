@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import Button from '../Button';
 import { IconSparkles, IconImage } from '../Icons';
-import { generateImageFromPrompt } from '../../services/geminiService';
+import { generateImageFromPrompt } from '../../geminiService.ts';
 import ErrorNotification from '../ErrorNotification';
 import LoadingCard from '../LoadingCard';
 
@@ -33,7 +33,7 @@ const ImageGeneratorView: React.FC = () => {
     };
 
     return (
-        <div className="h-full flex flex-col md:flex-row gap-8">
+        <div className="h-full flex flex-col md:flex-row gap-8 p-6">
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
             {/* Left Panel */}
             <div className="w-full md:w-1/3 lg:w-1/4 bg-brand-dark/50 p-6 rounded-2xl border border-brand-accent/50 flex flex-col">

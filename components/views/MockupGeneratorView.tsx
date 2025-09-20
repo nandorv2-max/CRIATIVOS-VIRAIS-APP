@@ -26,7 +26,7 @@ const MockupGeneratorView: React.FC = () => {
 
     return (
         <>
-            <div className="h-full flex flex-col">
+            <div className="h-full flex flex-col p-6">
                 <header className="mb-8">
                     <h1 className="text-3xl font-bold text-white">Gerador de Mockups</h1>
                     <p className="text-gray-300 mt-1">Selecione um produto para aplicar a sua arte.</p>

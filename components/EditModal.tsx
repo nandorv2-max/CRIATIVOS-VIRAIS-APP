@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconRotate, IconBrush, IconTrash, IconSparkles, IconX } from './Icons.tsx';
-import { generateImageWithRetry } from '../services/geminiService.ts';
+import { generateImageWithRetry } from '../geminiService.ts';
 import { toBase64 } from '../utils/imageUtils.ts';
 
 interface EditModalProps {

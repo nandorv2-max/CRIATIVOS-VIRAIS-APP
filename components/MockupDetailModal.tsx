@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import Button from './Button';
-import { IconUpload, IconX, IconImage } from './Icons';
-import { toBase64 } from '../utils/imageUtils';
-import { generateImageWithRetry, getModelInstruction } from '../services/geminiService';
-import { Prompt } from '../types';
+import Button from './Button.tsx';
+import { IconUpload, IconX, IconImage, IconDownload, IconImageIcon } from './Icons.tsx';
+import { toBase64, base64ToFile } from '../utils/imageUtils.ts';
+import { generateImageWithRetry, getModelInstruction } from '../geminiService.ts';
+import { uploadUserAsset } from '../services/databaseService.ts';
+import { nanoid } from 'nanoid';
+import { Prompt } from '../types.ts';
 
 interface MockupDetailModalProps {
     isOpen: boolean;
@@ -17,6 +19,7 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
     const [instructions, setInstructions] = useState('');
     const [quantity, setQuantity] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [resultImages, setResultImages] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +62,35 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
         }
     };
 
+    const handleDownload = () => {
+        const imageUrl = resultImages[0];
+        if (!imageUrl) return;
+        const link = document.createElement('a');
+        link.href = imageUrl;
+        link.download = `GenIA_Mockup_${mockupType.name}_${nanoid(6)}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleSaveToGallery = async () => {
+        const imageUrl = resultImages[0];
+        if (!imageUrl) return;
+        setIsSaving(true);
+        setError(null);
+        try {
+            const fileName = `Mockup_${mockupType.name}_${nanoid(6)}.png`;
+            const file = base64ToFile(imageUrl, fileName);
+            await uploadUserAsset(file);
+            alert('Mockup salvo na sua galeria com sucesso!');
+        } catch (err) {
+            setError('Falha ao salvar na galeria.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+
     if (!isOpen) return null;
 
     return (
@@ -95,9 +127,17 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
                     </div>
                 </div>
                 {/* Right side */}
-                <div className="w-1/2 bg-black rounded-lg flex items-center justify-center p-2">
+                <div className="w-1/2 bg-black rounded-lg flex flex-col items-center justify-center p-2">
                     {isLoading && <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>}
-                    {!isLoading && resultImages.length > 0 && <img src={resultImages[0]} className="max-w-full max-h-full object-contain rounded-lg" />}
+                    {!isLoading && resultImages.length > 0 ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+                             <img src={resultImages[0]} className="max-w-full max-h-[80%] object-contain rounded-lg" />
+                             <div className="flex items-center gap-2">
+                                <Button onClick={handleDownload}><div className="flex items-center gap-2"><IconDownload/> Baixar</div></Button>
+                                <Button onClick={handleSaveToGallery} disabled={isSaving}><div className="flex items-center gap-2"><IconImageIcon className="w-4 h-4" />{isSaving ? 'Salvando...' : 'Salvar na Galeria'}</div></Button>
+                             </div>
+                        </div>
+                    ): null}
                     {!isLoading && resultImages.length === 0 && <div className="text-center text-gray-500"><IconImage /><p className="mt-2">O seu mockup aparecerá aqui.</p></div>}
                 </div>
                 <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-brand-accent transition-colors"><IconX/></button>

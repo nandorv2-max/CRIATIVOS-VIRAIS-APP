@@ -1,25 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion } from 'framer-motion';
 import Button from '../../components/Button.tsx';
 import { IconUpload, IconSparkles, IconTrash, IconUndo, IconRedo, IconDownload, IconImageIcon, IconEdit } from '../../components/Icons.tsx';
 import { toBase64, base64ToFile } from '../../utils/imageUtils.ts';
-import { generateImageWithRetry, translateText } from '../../services/geminiService.ts';
+import { generateImageWithRetry, translateText } from '../../geminiService.ts';
 import { parseDngPreset } from '../../utils/dngPresetParser.ts';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { uploadUserAsset, getUserAssets, deleteUserAsset, renameUserAsset } from '../../services/databaseService.ts';
 import type { UploadedAsset } from '../../types.ts';
+import { ProfessionalEditorContext, Adjustments, AdjustmentKey, DEFAULT_ADJUSTMENTS } from '../MainDashboard.tsx';
 
 type AdjustmentPanel = 'Luz' | 'Cor' | 'Efeitos';
-type AdjustmentKey = 'exposure' | 'contrast' | 'highlights' | 'shadows' | 'whites' | 'blacks' | 'temperature' | 'tint' | 'saturation' | 'vibrance' | 'texture' | 'clarity' | 'dehaze' | 'grain' | 'vignette' | 'sharpness';
-
-type Adjustments = { [key in AdjustmentKey]: number };
-
-const DEFAULT_ADJUSTMENTS: Adjustments = {
-    exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
-    temperature: 0, tint: 0, saturation: 0, vibrance: 0,
-    texture: 0, clarity: 0, dehaze: 0, grain: 0, vignette: 0, sharpness: 0,
-};
 
 const ADJUSTMENT_CONFIG: { [key in AdjustmentPanel]: AdjustmentKey[] } = {
     'Luz': ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks'],
@@ -39,67 +31,17 @@ const AdjustmentSlider: React.FC<{ name: AdjustmentKey, label: string, value: nu
 
 
 const ProfessionalEditorView: React.FC = () => {
-    const [image, setImage] = useState<HTMLImageElement | null>(null);
+    const context = useContext(ProfessionalEditorContext);
+    if (!context) {
+        throw new Error("ProfessionalEditorView must be used within a ProfessionalEditorProvider");
+    }
+    const { 
+        image, setImage, 
+        liveAdjustments, setLiveAdjustments,
+        history, undo, redo, pushHistory, resetHistory 
+    } = context;
+    
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    
-    const [history, setHistory] = useState({
-        snapshots: [DEFAULT_ADJUSTMENTS],
-        currentIndex: 0,
-    });
-    const [liveAdjustments, setLiveAdjustments] = useState<Adjustments>(DEFAULT_ADJUSTMENTS);
-
-    const pushHistory = (newState: Adjustments) => {
-        setHistory(prevHistory => {
-            const { snapshots, currentIndex } = prevHistory;
-            const lastCommittedState = snapshots[currentIndex];
-            
-            if (JSON.stringify(lastCommittedState) === JSON.stringify(newState)) {
-                return prevHistory;
-            }
-    
-            let newSnapshots = snapshots.slice(0, currentIndex + 1);
-            newSnapshots.push(newState);
-    
-            if (newSnapshots.length > 50) {
-                newSnapshots = newSnapshots.slice(newSnapshots.length - 50);
-            }
-    
-            return {
-                snapshots: newSnapshots,
-                currentIndex: newSnapshots.length - 1
-            };
-        });
-    };
-
-    useEffect(() => {
-        setLiveAdjustments(history.snapshots[history.currentIndex]);
-    }, [history]);
-
-    const undo = () => {
-        setHistory(prev => {
-            if (prev.currentIndex > 0) {
-                return { ...prev, currentIndex: prev.currentIndex - 1 };
-            }
-            return prev;
-        });
-    };
-
-    const redo = () => {
-        setHistory(prev => {
-            if (prev.currentIndex < prev.snapshots.length - 1) {
-                return { ...prev, currentIndex: prev.currentIndex + 1 };
-            }
-            return prev;
-        });
-    };
-    
-    const resetHistory = (adjustments = DEFAULT_ADJUSTMENTS) => {
-        setHistory({
-            snapshots: [adjustments],
-            currentIndex: 0
-        });
-        setLiveAdjustments(adjustments);
-    };
 
     const [aiPrompt, setAiPrompt] = useState('');
     const [isLoading, setIsLoading] = useState<'upload' | 'ai' | 'upscale' | 'gallery' | null>(null);
@@ -154,7 +96,7 @@ const ProfessionalEditorView: React.FC = () => {
 
     useEffect(() => {
         drawImage();
-    }, [image, liveAdjustments, getCssFilter]);
+    }, [image, liveAdjustments]);
 
 
     const handleImageUpload = async (file: File) => {
@@ -163,8 +105,7 @@ const ProfessionalEditorView: React.FC = () => {
             const base64 = await toBase64(file);
             const img = new Image();
             img.onload = () => {
-                setImage(img);
-                resetHistory();
+                setImage(img); // From context, also resets history
                 setIsLoading(null);
             };
             img.src = base64;
@@ -179,8 +120,7 @@ const ProfessionalEditorView: React.FC = () => {
         const img = new Image();
         img.crossOrigin = "Anonymous"; 
         img.onload = () => {
-            setImage(img);
-            resetHistory();
+            setImage(img); // From context
             setIsLoading(null);
         };
         img.onerror = () => {
@@ -218,7 +158,6 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
             const newImage = new Image();
             newImage.onload = () => {
                 setImage(newImage);
-                resetHistory();
                 setAiPrompt('');
                 setIsLoading(null);
             }
@@ -267,7 +206,7 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
             }
     
             // Aplica o efeito imediatamente
-            const newAdjustments = {...DEFAULT_ADJUSTMENTS, ...presetAdjustments};
+            const newAdjustments = {...DEFAULT_ADJUSTMENTS, ...presetAdjustments} as Adjustments;
             setLiveAdjustments(newAdjustments);
             pushHistory(newAdjustments);
     
@@ -374,7 +313,6 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
 
     const handleRemoveImage = () => {
         setImage(null);
-        resetHistory();
     };
 
 

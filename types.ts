@@ -152,6 +152,7 @@ export interface UploadedAsset {
     originalWidth?: number;
     originalHeight?: number;
     is_favorite?: boolean;
+    folder_id?: string | null;
 }
 
 export interface PublicAsset {

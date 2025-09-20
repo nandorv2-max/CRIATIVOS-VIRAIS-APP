@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react';
-import Button from '../Button';
-import { IconUpload, IconImage } from '../Icons';
-import { toBase64 } from '../../utils/imageUtils';
-import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService';
-import { Prompt } from '../../types';
+import Button from '../Button.tsx';
+import { IconUpload, IconImage, IconDownload, IconImageIcon } from '../Icons.tsx';
+import { toBase64, base64ToFile } from '../../utils/imageUtils.ts';
+import { generateImageWithRetry, getModelInstruction } from '../../geminiService.ts';
+import { uploadUserAsset } from '../../services/databaseService.ts';
+import { nanoid } from 'nanoid';
+import { Prompt } from '../../types.ts';
 
 const ProductStudioView: React.FC = () => {
     const [productImage, setProductImage] = useState<string | null>(null);
@@ -12,6 +14,7 @@ const ProductStudioView: React.FC = () => {
     const [lighting, setLighting] = useState('Softbox diffused lighting');
     const [resultImage, setResultImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const productImageRef = useRef<HTMLInputElement>(null);
 
@@ -47,6 +50,32 @@ const ProductStudioView: React.FC = () => {
             setError(`A geração falhou: ${msg}`);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleDownload = () => {
+        if (!resultImage) return;
+        const link = document.createElement('a');
+        link.href = resultImage;
+        link.download = `GenIA_ProductScene_${nanoid(6)}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleSaveToGallery = async () => {
+        if (!resultImage) return;
+        setIsSaving(true);
+        setError(null);
+        try {
+            const fileName = `ProductScene_${nanoid(6)}.png`;
+            const file = base64ToFile(resultImage, fileName);
+            await uploadUserAsset(file);
+            alert('Cena de produto salva na sua galeria com sucesso!');
+        } catch (err) {
+            setError('Falha ao salvar na galeria.');
+        } finally {
+            setIsSaving(false);
         }
     };
     
@@ -94,9 +123,17 @@ const ProductStudioView: React.FC = () => {
                 </div>
             </div>
              {/* Right Panel */}
-            <div className="flex-grow flex items-center justify-center bg-black rounded-2xl p-4 border border-brand-accent/50 min-h-[300px] md:min-h-0">
+            <div className="flex-grow flex flex-col items-center justify-center bg-black rounded-2xl p-4 border border-brand-accent/50 min-h-[300px] md:min-h-0">
                 {isLoading && <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>}
-                {resultImage && <img src={resultImage} alt="Resultado do estúdio de produto" className="max-w-full max-h-full object-contain rounded-lg" />}
+                {resultImage && (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+                        <img src={resultImage} alt="Resultado do estúdio de produto" className="max-w-full max-h-[85%] object-contain rounded-lg" />
+                        <div className="flex items-center gap-2">
+                           <Button onClick={handleDownload}><div className="flex items-center gap-2"><IconDownload/> Baixar</div></Button>
+                           <Button onClick={handleSaveToGallery} disabled={isSaving}><div className="flex items-center gap-2"><IconImageIcon className="w-4 h-4" />{isSaving ? 'Salvando...' : 'Salvar na Galeria'}</div></Button>
+                        </div>
+                    </div>
+                )}
                 {!isLoading && !resultImage && <div className="text-center text-gray-500"><IconImage /><p className="mt-2">O seu resultado aparecerá aqui.</p></div>}
             </div>
         </div>

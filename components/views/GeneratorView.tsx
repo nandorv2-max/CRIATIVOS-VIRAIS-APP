@@ -18,7 +18,7 @@ import { IconUpload, IconSparkles, IconCamera } from '../../components/Icons.tsx
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 
 import { toBase64, createSingleFramedImage, blobToBase64, base64ToFile } from '../../utils/imageUtils.ts';
-import { generateImageWithRetry, getModelInstruction, translateText } from '../../services/geminiService.ts';
+import { generateImageWithRetry, getModelInstruction, translateText } from '../../geminiService.ts';
 import { uploadUserAsset } from '../../services/databaseService.ts';
 import { TEMPLATES } from '../../constants.ts';
 import type { GeneratedImage, Prompt, Template, UserProfile, UploadedAsset } from '../../types.ts';

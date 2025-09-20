@@ -1,9 +1,10 @@
+
 import React from 'react';
-import { motion, Reorder } from 'framer-motion';
+import { Reorder } from 'framer-motion';
 import { Page } from '../types.ts';
 import { IconPlus, IconDuplicate, IconTrash } from './Icons.tsx';
 
-interface PagesManagerProps {
+interface TimelineProps {
     pages: Page[];
     activePageIndex: number;
     onSelectPage: (index: number) => void;
@@ -17,41 +18,31 @@ interface PagesManagerProps {
     onPlayPause: () => void;
 }
 
-const PagesManager: React.FC<PagesManagerProps> = ({
+const PageThumbnail: React.FC<{ page: Page, isActive: boolean }> = ({ page, isActive }) => (
+    <div className={`relative aspect-video h-full rounded border-2 ${isActive ? 'border-brand-primary ring-2 ring-brand-primary/50' : 'border-brand-accent/50'} overflow-hidden`} style={{backgroundColor: page.backgroundColor}}>
+        {/* A full render of layers here would be too slow. This is a visual placeholder. */}
+    </div>
+);
+
+const Timeline: React.FC<TimelineProps> = ({
     pages, activePageIndex, onSelectPage, onAddPage, onDeletePage, onDuplicatePage,
-    onReorderPages, onPageDurationChange, projectTime, isPlaying, onPlayPause
+    onReorderPages
 }) => {
     
-    // We render a static thumbnail of the background color for simplicity and performance.
-    // A full canvas snapshot would be more complex.
-    const PageThumbnail: React.FC<{ page: Page, isActive: boolean }> = ({ page, isActive }) => (
-        <div className={`aspect-video h-full rounded border-2 ${isActive ? 'border-brand-primary' : 'border-brand-accent/50'}`} style={{backgroundColor: page.backgroundColor}}>
-        </div>
-    );
-    
     return (
-        <div className="bg-brand-dark h-36 flex-shrink-0 border-t border-brand-accent z-20 flex flex-col p-2">
+        <div className="bg-brand-dark h-36 flex-shrink-0 border-t border-brand-accent z-20 flex p-2">
             <div className="flex-grow flex items-center gap-3 overflow-x-auto">
-                <Reorder.Group axis="x" values={pages} onReorder={onReorderPages} className="flex items-center gap-3 h-full">
+                <Reorder.Group axis="x" values={pages} onReorder={onReorderPages} className="flex items-center gap-3 h-full px-2">
                     {pages.map((page, index) => (
                         <Reorder.Item key={page.id} value={page}>
-                            <div className="relative h-24 group">
-                                <div className="flex flex-col items-center h-full">
-                                    <span className="text-xs text-gray-400 mb-1">{index + 1}</span>
-                                    <div className="h-16 w-auto cursor-pointer" onClick={() => onSelectPage(index)}>
-                                        <PageThumbnail page={page} isActive={index === activePageIndex} />
-                                    </div>
-                                    <input 
-                                        type="number" 
-                                        value={page.duration}
-                                        onChange={(e) => onPageDurationChange(index, Number(e.target.value))}
-                                        className="w-12 text-center bg-transparent text-xs mt-1 focus:outline-none focus:bg-brand-light rounded"
-                                        step="0.1" min="0.1"
-                                    />
+                            <div className="flex flex-col items-center h-24 group relative">
+                                <span className="text-xs text-gray-400 mb-1">{index + 1}</span>
+                                <div className="h-16 w-auto cursor-pointer" onClick={() => onSelectPage(index)}>
+                                    <PageThumbnail page={page} isActive={index === activePageIndex} />
                                 </div>
-                                 <div className="absolute top-2 -right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => onDuplicatePage(index)} className="p-1 bg-brand-light rounded-full text-gray-300 hover:bg-brand-primary"><IconDuplicate/></button>
-                                    {pages.length > 1 && <button onClick={() => onDeletePage(index)} className="p-1 bg-brand-light rounded-full text-gray-300 hover:bg-red-500"><IconTrash/></button>}
+                                 <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button title="Duplicar Página" onClick={(e) => { e.stopPropagation(); onDuplicatePage(index); }} className="p-1 bg-brand-light/80 rounded-full text-gray-300 hover:bg-brand-primary"><IconDuplicate className="w-3 h-3"/></button>
+                                    {pages.length > 1 && <button title="Apagar Página" onClick={(e) => { e.stopPropagation(); onDeletePage(index); }} className="p-1 bg-brand-light/80 rounded-full text-gray-300 hover:bg-red-500"><IconTrash className="w-3 h-3"/></button>}
                                 </div>
                             </div>
                         </Reorder.Item>
@@ -66,4 +57,4 @@ const PagesManager: React.FC<PagesManagerProps> = ({
     );
 };
 
-export default PagesManager;
+export default Timeline;

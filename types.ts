@@ -41,7 +41,7 @@ export interface GeneratedImage {
 }
 
 // Creative Editor Types
-export type LayerType = 'image' | 'text' | 'shape' | 'video';
+export type LayerType = 'image' | 'text' | 'shape' | 'video' | 'frame';
 
 interface BaseLayer {
     id: string;
@@ -55,6 +55,9 @@ interface BaseLayer {
     opacity: number;
     isLocked: boolean;
     isVisible: boolean;
+    flipH?: boolean;
+    flipV?: boolean;
+    isLoading?: boolean;
 }
 
 export interface ImageLayer extends BaseLayer {
@@ -65,6 +68,9 @@ export interface ImageLayer extends BaseLayer {
     mediaNaturalHeight: number;
     scale: number; 
     crop: { x: number; y: number; width: number; height: number };
+    _imageElement?: HTMLImageElement; // Runtime element, not saved in project JSON
+    originalImage?: HTMLImageElement;
+    assetId?: string;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -80,11 +86,12 @@ export interface TextLayer extends BaseLayer {
     lineHeight: number;
     letterSpacing: number;
     textTransform: 'none' | 'uppercase' | 'lowercase';
+    letterCase?: 'normal' | 'uppercase' | 'lowercase';
 }
 
 export interface ShapeLayer extends BaseLayer {
     type: 'shape';
-    shape: 'rectangle' | 'ellipse';
+    shape: 'rectangle' | 'ellipse' | 'line' | 'arrow';
     fill: string;
     stroke: string;
     strokeWidth: number;
@@ -102,9 +109,43 @@ export interface VideoLayer extends BaseLayer {
     mediaNaturalHeight: number;
     scale: number;
     crop: { x: number; y: number; width: number; height: number };
+    _videoElement?: HTMLVideoElement; // Runtime element, not saved in project JSON
+    assetId?: string;
 }
 
-export type AnyLayer = ImageLayer | TextLayer | ShapeLayer | VideoLayer;
+export interface FrameFillContent {
+    type: 'image' | 'video';
+    src: string;
+    assetId?: string;
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+}
+
+export interface ImageFrameFill extends FrameFillContent {
+    type: 'image';
+    image?: HTMLImageElement;
+}
+
+export interface VideoFrameFill extends FrameFillContent {
+    type: 'video';
+    videoElement?: HTMLVideoElement;
+}
+
+export type FrameFill = ImageFrameFill | VideoFrameFill;
+
+
+export interface FrameLayer extends BaseLayer {
+    type: 'frame';
+    shape: 'rectangle' | 'ellipse';
+    fill: FrameFill | null;
+}
+
+
+export type AnyLayer = ImageLayer | TextLayer | ShapeLayer | VideoLayer | FrameLayer;
+export type Layer = AnyLayer;
+export type LayerUpdateProps = Partial<AnyLayer>;
+
 
 export interface AudioTrack {
     id: string;
@@ -112,6 +153,8 @@ export interface AudioTrack {
     src: string;
     startTime: number;
     volume: number;
+    audioElement?: HTMLAudioElement;
+    assetId?: string;
 }
 
 export interface Page {
@@ -153,6 +196,8 @@ export interface UploadedAsset {
     originalHeight?: number;
     is_favorite?: boolean;
     folder_id?: string | null;
+    src?: string; // For compatibility with new editor
+    projectId?: string; // For compatibility with new editor
 }
 
 export interface PublicAsset {

@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { motion, Reorder } from 'framer-motion';
-import { AnyLayer, ImageLayer, TextLayer, ShapeLayer, VideoLayer } from '../types.ts';
-import { IconImage, IconType, IconShapes, IconMovie, IconFrame, IconLock, IconUnlock, IconX } from './Icons.tsx';
+import { AnyLayer, ImageLayer, TextLayer, ShapeLayer } from '../types.ts';
+import { IconMovie, IconLock, IconUnlock, IconX } from './Icons.tsx';
 
 interface LayersPanelProps {
     isOpen: boolean;
@@ -13,25 +14,10 @@ interface LayersPanelProps {
     onToggleLayerLock: (id: string) => void;
 }
 
-const LayerIcon: React.FC<{ layer: AnyLayer }> = ({ layer }) => {
-    const className = "w-5 h-5 text-gray-300";
-    switch (layer.type) {
-        case 'image': return <IconImage />;
-        case 'text': return <IconType className={className}/>;
-        case 'shape': return <IconShapes className={className}/>;
-        case 'video': return <IconMovie />;
-        default: return <IconImage />;
-    }
-};
-
 const LayerPreview: React.FC<{ layer: AnyLayer }> = ({ layer }) => {
     const baseClasses = "w-10 h-10 object-cover rounded-sm bg-brand-light flex-shrink-0";
     if (layer.type === 'image') return <img src={(layer as ImageLayer).src} className={baseClasses} alt={layer.name}/>;
-    if (layer.type === 'video') {
-        // We can't easily show a video thumbnail here without more complex logic,
-        // so we use an icon as a reliable fallback.
-        return <div className={`${baseClasses} flex items-center justify-center`}><IconMovie /></div>
-    }
+    if (layer.type === 'video') return <div className={`${baseClasses} flex items-center justify-center`}><IconMovie /></div>
     if (layer.type === 'text') {
         const textLayer = layer as TextLayer;
         return <div className={`${baseClasses} flex items-center justify-center p-1`}><span className="text-xs truncate" style={{color: textLayer.color, fontFamily: textLayer.fontFamily, fontWeight: textLayer.fontWeight}}>{textLayer.text}</span></div>
@@ -46,14 +32,10 @@ const LayerPreview: React.FC<{ layer: AnyLayer }> = ({ layer }) => {
 const LayersPanel: React.FC<LayersPanelProps> = ({ isOpen, onClose, layers, selectedLayerIds, onSelectLayer, onReorderLayers, onToggleLayerLock }) => {
     if (!isOpen) return null;
 
-    // The canvas z-index is the array order (0 is back).
-    // The layers panel should show the top layer first (visually).
-    // So we reverse the array for display and reordering.
+    const reversedLayers = [...layers].reverse();
     const handleReorder = (newOrder: AnyLayer[]) => {
         onReorderLayers([...newOrder].reverse());
     };
-    
-    const reversedLayers = [...layers].reverse();
 
     return (
         <motion.div 

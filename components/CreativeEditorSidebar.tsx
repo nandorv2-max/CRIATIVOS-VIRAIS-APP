@@ -1,26 +1,27 @@
+
 import React, { useState, useEffect } from 'react';
 import {
-    IconFolder, IconType, IconShapes, IconUpload, IconMagicWand, IconLayers, IconPlus, IconAudio, IconImageIcon
+    IconType, IconShapes, IconUpload, IconMagicWand, IconLayers, IconPlus, IconImageIcon, IconMovie, IconFile
 } from './Icons.tsx';
 import type { AnyLayer, UploadedAsset, PublicAsset } from '../types.ts';
 import Button from './Button.tsx';
 import { getPublicAssets } from '../services/databaseService.ts';
+import SkeletonLoader from './SkeletonLoader.tsx';
 
-type SidebarTab = 'project' | 'uploads' | 'gallery' | 'text' | 'elements' | 'ai';
-type AITool = 'remove-bg' | 'magic-expand' | 'magic-capture';
-
+type SidebarTab = 'uploads' | 'gallery' | 'text' | 'elements' | 'ai';
+type AITool = 'remove-bg';
 
 interface CreativeEditorSidebarProps {
     onAddTextLayer: (preset: 'heading' | 'subheading' | 'body') => void;
     onAddShapeLayer: (shape: 'rectangle' | 'ellipse') => void;
-    onTriggerUpload: (type: 'media' | 'font') => void;
+    onTriggerUpload: () => void;
     uploadedAssets: UploadedAsset[];
     onAddAssetToCanvas: (asset: UploadedAsset | PublicAsset) => void;
     onToggleLayersPanel: () => void;
     onSaveProject: () => void;
     onLoadProject: () => void;
     onAITool: (tool: AITool, options?: any) => void;
-    isLoadingAI: 'remove-bg' | 'magic-expand' | 'magic-capture' | 'download' | 'project' | false;
+    isLoadingAI: 'remove-bg' | false;
     selectedLayers: AnyLayer[];
 }
 
@@ -41,55 +42,84 @@ const TabButton: React.FC<{
     </button>
 );
 
+const AssetGridItem: React.FC<{asset: UploadedAsset | PublicAsset, onClick: () => void}> = ({ asset, onClick }) => {
+    const isPublic = 'asset_type' in asset;
+    const type = isPublic ? asset.asset_type : asset.type;
+    const name = asset.name;
+    const thumbnail = isPublic ? (asset.thumbnail_url || asset.asset_url) : asset.thumbnail;
+
+    const renderIcon = () => {
+        switch (type) {
+            case 'video': return <IconMovie className="w-8 h-8 text-gray-300" />;
+            case 'brmp': return <IconFile className="w-8 h-8 text-gray-300" />;
+            default: return <IconPlus className="w-8 h-8 text-white"/>;
+        }
+    };
+
+    return (
+        <div className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={onClick}>
+            {type === 'image' || type === 'video' ? (
+                 <img src={thumbnail} alt={name} className="w-full h-full object-cover rounded-md" />
+            ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center p-1">
+                    {renderIcon()}
+                    <span className="text-xs text-center text-gray-400 mt-1 truncate">{name}</span>
+                </div>
+            )}
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                {renderIcon()}
+            </div>
+        </div>
+    );
+};
+
 const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
     onAddTextLayer, onAddShapeLayer, onTriggerUpload, uploadedAssets, onAddAssetToCanvas,
-    onToggleLayersPanel, onSaveProject, onLoadProject, onAITool, isLoadingAI, selectedLayers
+    onToggleLayersPanel, onAITool, isLoadingAI, selectedLayers
 }) => {
     const [activeTab, setActiveTab] = useState<SidebarTab>('uploads');
     const [publicAssets, setPublicAssets] = useState<PublicAsset[]>([]);
     const [isLoadingGallery, setIsLoadingGallery] = useState(false);
 
     useEffect(() => {
-        if (activeTab === 'gallery') {
+        if (activeTab === 'gallery' && publicAssets.length === 0) {
             setIsLoadingGallery(true);
             getPublicAssets()
                 .then(setPublicAssets)
                 .catch(err => console.error("Failed to fetch public assets", err))
                 .finally(() => setIsLoadingGallery(false));
         }
-    }, [activeTab]);
+    }, [activeTab, publicAssets.length]);
 
     const renderTabContent = () => {
         switch (activeTab) {
-            case 'project':
-                return (
-                    <div className="p-4 space-y-4">
-                        <h3 className="text-lg font-bold text-white">Projeto</h3>
-                        <p className="text-xs text-gray-400">Salvar/Carregar projetos está disponível no menu da sua conta na barra lateral principal.</p>
-                    </div>
-                );
             case 'uploads':
                 const imageAssets = uploadedAssets.filter(a => a.type === 'image');
                 const videoAssets = uploadedAssets.filter(a => a.type === 'video');
-                const audioAssets = uploadedAssets.filter(a => a.type === 'audio');
+                
                 return (
                     <div className="p-4 space-y-4 h-full flex flex-col">
-                        <h3 className="text-lg font-bold text-white">Uploads</h3>
-                        <Button onClick={() => onTriggerUpload('media')} primary className="w-full">Fazer upload de mídia</Button>
+                        <h3 className="text-lg font-bold text-white">Meus Uploads</h3>
+                        <Button onClick={onTriggerUpload} primary className="w-full">Fazer upload de mídia</Button>
                          <div className="flex-grow overflow-y-auto space-y-4 pr-1">
-                             {imageAssets.length > 0 && <div>
-                                 <h4 className="font-semibold text-sm text-gray-300 mb-2">Imagens</h4>
-                                 <div className="grid grid-cols-2 gap-2">
-                                    {imageAssets.map(asset => (
-                                        <div key={asset.id} className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={() => onAddAssetToCanvas(asset)}>
-                                            <img src={asset.thumbnail} alt={asset.name} className="w-full h-full object-cover rounded-md" />
-                                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                <IconPlus className="w-8 h-8 text-white"/>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                             </div>}
+                             {uploadedAssets.length > 0 ? (
+                                <>
+                                 {imageAssets.length > 0 && <div>
+                                     <h4 className="font-semibold text-sm text-gray-300 mb-2">Imagens</h4>
+                                     <div className="grid grid-cols-2 gap-2">
+                                         {imageAssets.map(asset => <AssetGridItem key={asset.id} asset={asset} onClick={() => onAddAssetToCanvas(asset)} />)}
+                                     </div>
+                                 </div>}
+                                 {videoAssets.length > 0 && <div>
+                                     <h4 className="font-semibold text-sm text-gray-300 mb-2">Vídeos</h4>
+                                     <div className="grid grid-cols-2 gap-2">
+                                         {videoAssets.map(asset => <AssetGridItem key={asset.id} asset={asset} onClick={() => onAddAssetToCanvas(asset)} />)}
+                                     </div>
+                                 </div>}
+                                </>
+                             ) : (
+                                <div className="text-center text-gray-500 text-sm pt-8">Nenhum upload encontrado.</div>
+                             )}
                          </div>
                     </div>
                 );
@@ -97,16 +127,13 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                 return (
                      <div className="p-4 space-y-4 h-full flex flex-col">
                         <h3 className="text-lg font-bold text-white">Galeria Pública</h3>
-                         {isLoadingGallery ? <p className="text-gray-400">Carregando...</p> : (
+                         {isLoadingGallery ? (
+                            <div className="grid grid-cols-2 gap-2">
+                                {Array.from({length: 8}).map((_, i) => <SkeletonLoader key={i} className="aspect-square rounded-md" />)}
+                            </div>
+                         ) : (
                              <div className="grid grid-cols-2 gap-2 overflow-y-auto pr-1">
-                                {publicAssets.map(asset => (
-                                    <div key={asset.id} className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={() => onAddAssetToCanvas(asset)}>
-                                        <img src={asset.thumbnail_url || asset.asset_url} alt={asset.name} className="w-full h-full object-cover rounded-md" />
-                                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <IconPlus className="w-8 h-8 text-white"/>
-                                        </div>
-                                    </div>
-                                ))}
+                                {publicAssets.map(asset => <AssetGridItem key={asset.id} asset={asset} onClick={() => onAddAssetToCanvas(asset)} />)}
                             </div>
                          )}
                     </div>
@@ -117,6 +144,12 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                          <h3 className="text-lg font-bold text-white mb-2">Texto</h3>
                         <button onClick={() => onAddTextLayer('heading')} className="w-full text-left p-3 hover:bg-brand-light rounded-md transition-colors">
                             <span className="font-bold text-2xl">Adicionar Título</span>
+                        </button>
+                         <button onClick={() => onAddTextLayer('subheading')} className="w-full text-left p-3 hover:bg-brand-light rounded-md transition-colors">
+                            <span className="font-semibold text-xl">Adicionar Subtítulo</span>
+                        </button>
+                         <button onClick={() => onAddTextLayer('body')} className="w-full text-left p-3 hover:bg-brand-light rounded-md transition-colors">
+                            <span className="text-base">Adicionar um pouco de texto</span>
                         </button>
                     </div>
                 );
@@ -130,6 +163,9 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                                 <button onClick={() => onAddShapeLayer('rectangle')} className="flex items-center justify-center aspect-square bg-brand-light hover:bg-brand-accent rounded-md transition-colors">
                                     <div className="w-16 h-16 bg-gray-400"></div>
                                 </button>
+                                <button onClick={() => onAddShapeLayer('ellipse')} className="flex items-center justify-center aspect-square bg-brand-light hover:bg-brand-accent rounded-md transition-colors">
+                                    <div className="w-16 h-16 bg-gray-400 rounded-full"></div>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -139,6 +175,7 @@ const CreativeEditorSidebar: React.FC<CreativeEditorSidebarProps> = ({
                  return (
                      <div className="p-4 space-y-4">
                         <h3 className="text-lg font-bold text-white">IA Mágica</h3>
+                        <p className="text-xs text-gray-400">Selecione uma única camada de imagem para habilitar as ferramentas de IA.</p>
                         <Button onClick={() => onAITool('remove-bg')} disabled={!isImageSelected || !!isLoadingAI} className="w-full">
                             {isLoadingAI === 'remove-bg' ? "Processando..." : "Removedor de Fundo"}
                         </Button>

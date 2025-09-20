@@ -15,6 +15,7 @@ import {
 } from '../../types.ts';
 import { removeBackground } from '../../geminiService.ts';
 import { blobToBase64 } from '../../utils/imageUtils.ts';
+import SelectionBox from '../SelectionBox.tsx';
 
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
@@ -31,104 +32,8 @@ const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageEleme
     });
 };
 
-type Handle = 'tl' | 'tr' | 'bl' | 'br' | 'tm' | 'ml' | 'bm' | 'mr';
-type InteractionType = 'move' | 'resize' | 'pan';
-
-const SelectionBox: React.FC<{ layers: AnyLayer[], zoom: number, cropLayerId: string | null }> = ({ layers, zoom, cropLayerId }) => {
-    if (layers.length !== 1) {
-        if (layers.length > 1) {
-            const xs = layers.map(l => l.x);
-            const ys = layers.map(l => l.y);
-            const widths = layers.map(l => l.width);
-            const heights = layers.map(l => l.height);
-            const minX = Math.min(...xs);
-            const minY = Math.min(...ys);
-            const maxX = Math.max(...xs.map((x, i) => x + widths[i]));
-            const maxY = Math.max(...ys.map((y, i) => y + heights[i]));
-            
-            return (
-                 <div 
-                    style={{
-                        position: 'absolute',
-                        left: minX,
-                        top: minY,
-                        width: maxX - minX,
-                        height: maxY - minY,
-                        outline: '1px dashed #4CAF50',
-                        pointerEvents: 'none',
-                    }} 
-                />
-            )
-        }
-        return null;
-    }
-
-    const layer = layers[0];
-    const isCropping = cropLayerId === layer.id;
-    const handleSize = 10 / zoom;
-    const handleStyle: React.CSSProperties = {
-        position: 'absolute',
-        background: 'white',
-        border: `1px solid ${isCropping ? '#fbbf24' : '#4CAF50'}`,
-        borderRadius: '50%',
-        pointerEvents: 'auto',
-    };
-
-    if (isCropping) {
-        const cornerHandleStyle = { ...handleStyle, width: handleSize, height: handleSize };
-        const halfHandle = handleSize / 2;
-        return (
-             <div 
-                style={{
-                    position: 'absolute',
-                    left: layer.x,
-                    top: layer.y,
-                    width: layer.width,
-                    height: layer.height,
-                    outline: `2px solid #fbbf24`,
-                    transform: `rotate(${layer.rotation}deg)`,
-                    transformOrigin: 'center center',
-                    pointerEvents: 'none',
-                    boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
-                }}
-            >
-                <div data-handle="tl" style={{ ...cornerHandleStyle, top: -halfHandle, left: -halfHandle, cursor: 'nwse-resize' }}></div>
-                <div data-handle="tr" style={{ ...cornerHandleStyle, top: -halfHandle, right: -halfHandle, cursor: 'nesw-resize' }}></div>
-                <div data-handle="bl" style={{ ...cornerHandleStyle, bottom: -halfHandle, left: -halfHandle, cursor: 'nesw-resize' }}></div>
-                <div data-handle="br" style={{ ...cornerHandleStyle, bottom: -halfHandle, right: -halfHandle, cursor: 'nwse-resize' }}></div>
-            </div>
-        )
-    }
-    
-    const halfHandle = handleSize / 2;
-    const sideHandleStyle: React.CSSProperties = { ...handleStyle, borderRadius: 2, width: handleSize * 1.5, height: handleSize / 2 , background: '#4CAF50', border: '1px solid white' };
-
-    return (
-        <div 
-            style={{
-                position: 'absolute',
-                left: layer.x,
-                top: layer.y,
-                width: layer.width,
-                height: layer.height,
-                outline: '1px solid #4CAF50',
-                transform: `rotate(${layer.rotation}deg)`,
-                transformOrigin: 'center center',
-                pointerEvents: 'none',
-            }}
-        >
-            <div data-handle="tl" style={{ ...handleStyle, width: handleSize, height: handleSize, top: -halfHandle, left: -halfHandle, cursor: 'nwse-resize' }}></div>
-            <div data-handle="tr" style={{ ...handleStyle, width: handleSize, height: handleSize, top: -halfHandle, right: -halfHandle, cursor: 'nesw-resize' }}></div>
-            <div data-handle="bl" style={{ ...handleStyle, width: handleSize, height: handleSize, bottom: -halfHandle, left: -halfHandle, cursor: 'nesw-resize' }}></div>
-            <div data-handle="br" style={{ ...handleStyle, width: handleSize, height: handleSize, bottom: -halfHandle, right: -halfHandle, cursor: 'nwse-resize' }}></div>
-            
-            <div data-handle="tm" style={{ ...sideHandleStyle, top: -halfHandle/2, left: `calc(50% - ${handleSize * 0.75}px)`, cursor: 'ns-resize' }}></div>
-            <div data-handle="bm" style={{ ...sideHandleStyle, bottom: -halfHandle/2, left: `calc(50% - ${handleSize * 0.75}px)`, cursor: 'ns-resize' }}></div>
-            <div data-handle="ml" style={{ ...sideHandleStyle, width: handleSize / 2, height: handleSize * 1.5, top: `calc(50% - ${handleSize * 0.75}px)`, left: -halfHandle/2, cursor: 'ew-resize' }}></div>
-            <div data-handle="mr" style={{ ...sideHandleStyle, width: handleSize / 2, height: handleSize * 1.5, top: `calc(50% - ${handleSize * 0.75}px)`, right: -halfHandle/2, cursor: 'ew-resize' }}></div>
-        </div>
-    );
-};
+type Handle = 'tl' | 'tr' | 'bl' | 'br' | 'tm' | 'ml' | 'bm' | 'mr' | 'rotate';
+type InteractionType = 'move' | 'resize' | 'pan' | 'rotate';
 
 const DEFAULT_PAGE: Page = {
     id: nanoid(), name: 'Página 1', layers: [], duration: 5000,
@@ -146,6 +51,10 @@ interface InteractionState {
     startY: number;
     initialLayerStates: Map<string, AnyLayer>;
     handle?: Handle;
+    // For rotation
+    centerX?: number;
+    centerY?: number;
+    startAngle?: number;
 }
 
 interface CreativeEditorViewProps {
@@ -306,19 +215,40 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             } else {
                 return;
             }
+
+            const canvasWidth = activePage.width;
+            const canvasHeight = activePage.height;
             
-            const aspectRatio = naturalWidth / naturalHeight;
-            const maxWidth = 512;
-            const layerWidth = Math.min(naturalWidth, maxWidth);
-            const layerHeight = layerWidth / aspectRatio;
+            let scaleToFit = 1;
+            if (naturalWidth > canvasWidth || naturalHeight > canvasHeight) {
+                const widthRatio = canvasWidth / naturalWidth;
+                const heightRatio = canvasHeight / naturalHeight;
+                scaleToFit = Math.min(widthRatio, heightRatio) * 0.9; // Add some padding
+            }
+
+            const layerWidth = naturalWidth * scaleToFit;
+            const layerHeight = naturalHeight * scaleToFit;
             
-            const newLayerBase = { name: asset.name, src: mediaElement.src, width: layerWidth, height: layerHeight, mediaNaturalWidth: naturalWidth, mediaNaturalHeight: naturalHeight, scale: 1, crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight } };
+            const newLayerBase = { 
+                name: asset.name, 
+                src: mediaElement.src, 
+                x: (canvasWidth - layerWidth) / 2,
+                y: (canvasHeight - layerHeight) / 2,
+                width: layerWidth, 
+                height: layerHeight, 
+                mediaNaturalWidth: naturalWidth, 
+                mediaNaturalHeight: naturalHeight, 
+                scale: scaleToFit,
+                offsetX: 0, 
+                offsetY: 0, 
+                crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight } 
+            };
             
             if (type === 'video') {
-                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), x:50, y:50, rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: false, _videoElement: mediaElement as HTMLVideoElement };
+                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: false, _videoElement: mediaElement as HTMLVideoElement };
                 addLayer(newLayer);
             } else {
-                 const newLayer: ImageLayer = { ...newLayerBase, type: 'image', id: nanoid(), x:50, y:50, rotation: 0, opacity: 1, isLocked: false, isVisible: true, _imageElement: mediaElement as HTMLImageElement };
+                 const newLayer: ImageLayer = { ...newLayerBase, type: 'image', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, _imageElement: mediaElement as HTMLImageElement };
                  addLayer(newLayer);
             }
         } catch (e) { console.error("Failed to load asset media", e); }
@@ -407,6 +337,17 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             return;
         }
 
+        if (handle === 'rotate' && selectedLayers.length === 1) {
+            e.stopPropagation();
+            const layer = selectedLayers[0];
+            const centerX = layer.x + layer.width / 2;
+            const centerY = layer.y + layer.height / 2;
+            const startAngle = Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+            const initialLayerStates = new Map<string, AnyLayer>([[layer.id, { ...layer }]]);
+            setInteraction({ type: 'rotate', layerIds: [layer.id], startX: e.clientX, startY: e.clientY, initialLayerStates, centerX, centerY, startAngle: startAngle - layer.rotation });
+            return;
+        }
+
         if (handle && selectedLayers.length === 1) {
             e.stopPropagation();
             const layer = selectedLayers[0];
@@ -446,6 +387,17 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                         }
                     });
                 }, false);
+            } else if (interaction.type === 'rotate') {
+                const { centerX, centerY, startAngle } = interaction;
+                if (centerX === undefined || centerY === undefined || startAngle === undefined) return;
+                const { x, y } = getCoords(e);
+                const currentAngle = Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+                let newRotation = currentAngle - startAngle;
+                if (e.shiftKey) newRotation = Math.round(newRotation / 15) * 15;
+                updateProject(draft => {
+                    const layer = draft.pages[activePageIndex].layers.find(l => l.id === interaction.layerIds[0]);
+                    if (layer) layer.rotation = newRotation;
+                }, false);
             } else if (interaction.type === 'resize' && interaction.handle && interaction.layerIds.length === 1) {
                 const { handle, startX, startY, initialLayerStates } = interaction;
                 const initialLayer = initialLayerStates.get(interaction.layerIds[0]);
@@ -456,10 +408,61 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 const cos = Math.cos(rad); const sin = Math.sin(rad);
                 const dx = (e.clientX - startX) / zoom;
                 const dy = (e.clientY - startY) / zoom;
-                let {x: newX, y: newY, width: newW, height: newH} = initialLayer;
                 const minSize = 20;
                 
-                if (handle.length === 2) { // Corner handles
+                if (handle.includes('m')) { // Side handles (cropping/expanding)
+                    const rdx = dx * cos + dy * sin;
+                    const rdy = -dx * sin + dy * cos;
+                    
+                    let newW = ow;
+                    let newH = oh;
+
+                    if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
+                    if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
+                    if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
+                    if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
+
+                    const dw = newW - ow;
+                    const dh = newH - oh;
+
+                    const updates: any = { width: newW, height: newH };
+                    const mediaLayer = initialLayer as ImageLayer | VideoLayer;
+                    updates.offsetX = mediaLayer.offsetX;
+                    updates.offsetY = mediaLayer.offsetY;
+                    
+                    let d_center_x = 0;
+                    let d_center_y = 0;
+
+                    if (dw !== 0) { // Horizontal resize
+                        const d_center_local_x = (handle === 'ml' ? -dw / 2 : dw / 2);
+                        d_center_x = d_center_local_x * cos;
+                        d_center_y = d_center_local_x * sin;
+                        if (handle === 'ml') updates.offsetX = mediaLayer.offsetX + dw;
+                    } else if (dh !== 0) { // Vertical resize
+                        const d_center_local_y = (handle === 'tm' ? -dh / 2 : dh / 2);
+                        const local_y_axis_x = -sin;
+                        const local_y_axis_y = cos;
+                        d_center_x = d_center_local_y * local_y_axis_x;
+                        d_center_y = d_center_local_y * local_y_axis_y;
+                        if (handle === 'tm') updates.offsetY = mediaLayer.offsetY + dh;
+                    }
+
+                    const old_center_x = ox + ow / 2;
+                    const old_center_y = oy + oh / 2;
+                    
+                    const new_center_x = old_center_x + d_center_x;
+                    const new_center_y = old_center_y + d_center_y;
+
+                    updates.x = new_center_x - newW / 2;
+                    updates.y = new_center_y - newH / 2;
+                    
+                    updateProject(draft => {
+                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
+                        if (l && !l.isLocked) Object.assign(l, updates);
+                    }, false);
+
+                } else { // Corner handles (scaling)
+                    let {x: newX, y: newY, width: newW, height: newH} = initialLayer;
                     const rdx = dx * cos + dy * sin;
                     const rdy = -dx * sin + dy * cos;
                     const isShift = e.shiftKey;
@@ -469,48 +472,28 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     if (handle.includes('r')) potentialW = ow + rdx; else potentialW = ow - rdx;
                     if (handle.includes('b')) potentialH = oh + rdy; else potentialH = oh - rdy;
 
-                    if (!isShift) {
+                    if (isShift) { // Free transform
+                        newW = potentialW;
+                        newH = potentialH;
+                    } else { // Proportional transform
                         if (Math.abs(potentialW - ow) > Math.abs(potentialH - oh) * aspectRatio) {
                             newW = potentialW; newH = potentialW / aspectRatio;
                         } else {
                             newH = potentialH; newW = newH * aspectRatio;
                         }
-                    } else {
-                        newW = potentialW; newH = potentialH;
                     }
+
                     newW = Math.max(minSize, newW);
                     newH = Math.max(minSize, newH);
                     const center = { x: ox + ow / 2, y: oy + oh / 2 };
                     newX = center.x - newW / 2;
                     newY = center.y - newH / 2;
-
-                } else { // Side handles
-                    const rdx = dx * cos + dy * sin;
-                    const rdy = -dx * sin + dy * cos;
-    
-                    if (handle === 'mr') {
-                        newW = Math.max(minSize, ow + rdx);
-                    } else if (handle === 'ml') {
-                        const deltaW = ow - Math.max(minSize, ow - rdx);
-                        newW = ow - deltaW;
-                        newX = ox + deltaW * cos;
-                        newY = oy + deltaW * sin;
-                    } else if (handle === 'bm') {
-                        newH = Math.max(minSize, oh + rdy);
-                    } else if (handle === 'tm') {
-                        const deltaH = oh - Math.max(minSize, oh - rdy);
-                        newH = oh - deltaH;
-                        newX = ox + deltaH * sin;
-                        newY = oy - deltaH * cos;
-                    }
+                    
+                    updateProject(draft => {
+                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
+                        if (l && !l.isLocked) { l.x = newX; l.y = newY; l.width = newW; l.height = newH; }
+                    }, false);
                 }
-                
-                updateProject(draft => {
-                    const layer = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
-                    if (layer && !layer.isLocked) {
-                        layer.x = newX; layer.y = newY; layer.width = newW; layer.height = newH;
-                    }
-                }, false);
             }
         };
         const handleMouseUp = () => {
@@ -564,19 +547,16 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 if(layer.shape === 'rectangle') ctx.fillRect(drawX, drawY, layer.width, layer.height);
                 else { ctx.beginPath(); ctx.ellipse(0, 0, layer.width / 2, layer.height / 2, 0, 0, 2 * Math.PI); ctx.fill(); }
             } else if (layer.type === 'image' || layer.type === 'video') {
-                const mediaLayer = layer;
-                const mediaElement = mediaLayer.type === 'image' ? (mediaLayer as ImageLayer)._imageElement : (mediaLayer as VideoLayer)._videoElement;
+                const mediaLayer = layer as ImageLayer | VideoLayer;
+                const mediaElement = mediaLayer.type === 'image' ? mediaLayer._imageElement : mediaLayer._videoElement;
     
                 let isReady = false;
-                let naturalWidth = 0, naturalHeight = 0;
     
                 if (mediaElement) {
                     if (mediaElement instanceof HTMLImageElement) {
                         isReady = mediaElement.complete && mediaElement.naturalWidth > 0;
-                        if (isReady) { naturalWidth = mediaElement.naturalWidth; naturalHeight = mediaElement.naturalHeight; }
                     } else if (mediaElement instanceof HTMLVideoElement) {
                         isReady = mediaElement.readyState >= 2;
-                        if (isReady) { naturalWidth = mediaElement.videoWidth; naturalHeight = mediaElement.videoHeight; }
                     }
                 }
     
@@ -584,23 +564,11 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     ctx.beginPath();
                     ctx.rect(drawX, drawY, layer.width, layer.height);
                     ctx.clip();
-    
-                    const frameRatio = layer.width / layer.height;
-                    const mediaRatio = naturalWidth / naturalHeight;
-    
-                    let drawW, drawH;
-                    if (mediaRatio > frameRatio) {
-                        drawH = layer.height;
-                        drawW = drawH * mediaRatio;
-                    } else {
-                        drawW = layer.width;
-                        drawH = drawW / mediaRatio;
-                    }
-    
-                    const mediaX = drawX + (layer.width - drawW) / 2;
-                    const mediaY = drawY + (layer.height - drawH) / 2;
                     
-                    ctx.drawImage(mediaElement, mediaX, mediaY, drawW, drawH);
+                    const contentWidth = mediaLayer.mediaNaturalWidth * mediaLayer.scale;
+                    const contentHeight = mediaLayer.mediaNaturalHeight * mediaLayer.scale;
+                    
+                    ctx.drawImage(mediaElement, drawX + mediaLayer.offsetX, drawY + mediaLayer.offsetY, contentWidth, contentHeight);
                 }
             }
             ctx.restore();

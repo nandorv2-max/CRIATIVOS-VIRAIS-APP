@@ -66,7 +66,9 @@ export interface ImageLayer extends BaseLayer {
     originalSrc?: string;
     mediaNaturalWidth: number;
     mediaNaturalHeight: number;
-    scale: number; 
+    scale: number;
+    offsetX: number;
+    offsetY: number;
     crop: { x: number; y: number; width: number; height: number };
     _imageElement?: HTMLImageElement; // Runtime element, not saved in project JSON
     originalImage?: HTMLImageElement;
@@ -108,6 +110,8 @@ export interface VideoLayer extends BaseLayer {
     mediaNaturalWidth: number;
     mediaNaturalHeight: number;
     scale: number;
+    offsetX: number;
+    offsetY: number;
     crop: { x: number; y: number; width: number; height: number };
     _videoElement?: HTMLVideoElement; // Runtime element, not saved in project JSON
     assetId?: string;

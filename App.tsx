@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Session, User } from '@supabase/gotrue-js';
 import LoginScreen from './components/LoginScreen.tsx';
@@ -9,113 +9,90 @@ import { initializeGeminiClient } from './geminiService.ts';
 import type { UserProfile } from './types.ts';
 import { MASTER_USERS } from './constants.ts';
 
-
 const App: React.FC = () => {
     const [session, setSession] = useState<Session | null>(null);
     const [userProfile, setUserProfile] = useState<(User & UserProfile & { isAdmin: boolean }) | null>(null);
     const [loading, setLoading] = useState(true);
     const [apiKeyStatus, setApiKeyStatus] = useState<'pending' | 'set' | 'error'>('pending');
 
-    const updateUserProfile = async (user: User | null) => {
-        if (!user) {
-            setUserProfile(null);
-            return;
-        }
+    const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
         const isAdmin = MASTER_USERS.includes(user.email ?? '');
-
+        
         const { data, error } = await supabase.from('user_profiles').select('role, credits').eq('id', user.id).single();
 
         if (error) {
             console.error("Error fetching user profile, using defaults:", error.message);
-            setUserProfile({
+            return {
                 ...user,
                 id: user.id,
                 email: user.email ?? '',
                 role: isAdmin ? 'admin' : 'starter',
                 credits: 0,
                 isAdmin,
-            });
+            };
         } else {
-            setUserProfile({
+            return {
                 ...user,
                 id: user.id,
                 email: user.email ?? '',
                 role: data.role,
                 credits: data.credits,
                 isAdmin,
-            });
+            };
         }
-    };
+    }, []);
 
     useEffect(() => {
-        const handleAuthStateChange = async (_event: string, session: Session | null) => {
-            setSession(session);
-            await updateUserProfile(session?.user ?? null);
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            try {
+                if (session && session.user) {
+                    const profile = await fetchUserProfile(session.user);
+                    
+                    setSession(session);
+                    setUserProfile(profile);
 
-            if (session) {
-                const isAdmin = MASTER_USERS.includes(session.user.email ?? '');
-                let keyToUse = '';
-
-                // PRIORITIZE user's own key from local storage, even for admins.
-                const userKey = window.localStorage.getItem('user_gemini_api_key');
-                if (userKey) {
-                    keyToUse = userKey;
-                } else if (isAdmin) {
-                    // Fallback to master key ONLY if user is admin AND has no personal key set.
-                    keyToUse = process.env.API_KEY as string;
-                    if (!keyToUse) {
-                        console.error("FATAL ERROR: Master API_KEY is not configured in the application environment for admin user.");
-                        setApiKeyStatus('error');
-                        return;
+                    let keyToUse = '';
+                    const userKey = window.localStorage.getItem('user_gemini_api_key');
+                    
+                    if (userKey) {
+                        keyToUse = userKey;
+                    } else if (profile.isAdmin) {
+                        keyToUse = process.env.API_KEY as string;
+                        if (!keyToUse) {
+                            console.error("FATAL ERROR: Master API_KEY is not configured for admin user.");
+                            setApiKeyStatus('error');
+                            return;
+                        }
                     }
-                }
 
-                if (keyToUse) {
-                    initializeGeminiClient(keyToUse);
-                    setApiKeyStatus('set');
+                    if (keyToUse) {
+                        initializeGeminiClient(keyToUse);
+                        setApiKeyStatus('set');
+                    } else {
+                        initializeGeminiClient('');
+                        setApiKeyStatus('pending');
+                    }
+                    
                 } else {
-                    // This now only happens for non-admins with no key.
+                    setSession(null);
+                    setUserProfile(null);
+                    initializeGeminiClient('');
                     setApiKeyStatus('pending');
                 }
-            } else {
-                // De-initialize on logout
-                initializeGeminiClient('');
-                setApiKeyStatus('pending');
-            }
-        };
-
-        const fetchSession = async () => {
-            try {
-                if (!supabase) {
-                    console.error("Supabase client is not available.");
-                    setLoading(false);
-                    return;
-                }
-
-                // Race getSession against a timeout to prevent hanging in restrictive environments.
-                const sessionPromise = supabase.auth.getSession();
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error("Session fetch timed out")), 5000) // 5-second timeout
-                );
-
-                const { data } = await (Promise.race([sessionPromise, timeoutPromise]) as Promise<{ data: { session: Session | null }, error: any }>);
-                await handleAuthStateChange('INITIAL_SESSION', data.session);
             } catch (error) {
-                console.error("Error or timeout fetching initial session:", error);
-                // On timeout or error, assume no session is available.
-                await handleAuthStateChange('INITIAL_SESSION', null);
+                console.error("An error occurred during auth state change handling:", error);
+                setSession(null);
+                setUserProfile(null);
+                setApiKeyStatus('error');
             } finally {
                 setLoading(false);
             }
+        });
+
+        return () => {
+            subscription.unsubscribe();
         };
-
-        fetchSession();
-
-        if (supabase) {
-            const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthStateChange);
-            return () => subscription.unsubscribe();
-        }
-    }, []);
+    }, [fetchUserProfile]);
 
     const handleApiKeySubmit = (apiKey: string) => {
         initializeGeminiClient(apiKey);
@@ -131,7 +108,7 @@ const App: React.FC = () => {
             );
         }
     
-        if (!session) {
+        if (!session || !userProfile) {
             return (
                 <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
                     <LoginScreen />
@@ -151,8 +128,7 @@ const App: React.FC = () => {
             );
         }
         
-        // If user is not an admin and API key is not set, show the prompt
-        if (apiKeyStatus === 'pending' && userProfile && !userProfile.isAdmin) {
+        if (apiKeyStatus === 'pending' && !userProfile.isAdmin) {
              return (
                  <motion.div key="apikey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <ApiKeyPrompt onApiKeySubmit={handleApiKeySubmit} />
@@ -160,7 +136,7 @@ const App: React.FC = () => {
             );
         }
 
-        if (apiKeyStatus === 'set' && userProfile) {
+        if (apiKeyStatus === 'set') {
             return (
                  <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
                     <MainDashboard userProfile={userProfile} />
@@ -168,9 +144,8 @@ const App: React.FC = () => {
             );
         }
 
-        // Default to a loading state while things initialize
         return (
-             <div key="pending" className="min-h-screen flex items-center justify-center bg-brand-dark">
+             <div key="fallback" className="min-h-screen flex items-center justify-center bg-brand-dark">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>
             </div>
         );

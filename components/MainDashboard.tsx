@@ -168,6 +168,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile }) => {
         imageGenerator: () => <ImageGeneratorView />,
         mockupGenerator: () => <MockupGeneratorView />,
         productStudio: () => <ProductStudioView />,
+        // FIX: Pass `setSaveProjectTrigger` and `setLoadProjectTrigger` to `CreativeEditorView` to satisfy its prop requirements.
         studioCriativo: () => <CreativeEditorView setSaveProjectTrigger={setSaveProjectTrigger} setLoadProjectTrigger={setLoadProjectTrigger} />,
         video: () => <VideoGenerator userProfile={userProfile!} />,
         cenasDoInstagram: () => <GeneratorView templateKey="cenasDoInstagram" userProfile={userProfile} />,

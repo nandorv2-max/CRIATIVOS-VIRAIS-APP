@@ -16,7 +16,6 @@ import type { Project, UserProfile, UploadedAsset } from '../../types.ts';
 
 
 interface MainDashboardProps {
-    // FIX: Update prop type to include the full UserProfile, which contains 'credits'.
     userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
 }
 
@@ -162,7 +161,6 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile }) => {
     const [loadProjectTrigger, setLoadProjectTrigger] = useState<{ trigger: (project: Project) => void }>({ trigger: () => console.warn('Load trigger not initialized') });
 
     const viewComponents: { [key: string]: React.ComponentType<any> } = {
-        // FIX: Removed `setActiveView` prop as `ProjectsView` does not accept it, resolving the type error.
         projects: () => <ProjectsView />,
         admin: () => <AdminView />,
         imageGenerator: () => <ImageGeneratorView />,

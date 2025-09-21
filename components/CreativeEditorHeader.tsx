@@ -1,9 +1,7 @@
-
-
 import React from 'react';
 import ColorPicker from './ColorPicker.tsx';
 import { 
-    IconUndo, IconRedo, IconDownload, IconBringForward, IconSendBackward, IconDuplicate, IconTrash,
+    IconUndo, IconRedo, IconBringForward, IconSendBackward, IconDuplicate, IconTrash,
     IconBold, IconItalic, IconUnderline, IconAlignLeft, IconAlignCenter, IconAlignRight, IconType
 } from './Icons.tsx';
 import type { AnyLayer, TextLayer, ShapeLayer } from '../types.ts';
@@ -11,7 +9,6 @@ import type { AnyLayer, TextLayer, ShapeLayer } from '../types.ts';
 interface CreativeEditorHeaderProps {
     projectName: string;
     onProjectNameChange: (name: string) => void;
-    onDownload: () => void;
     onUndo: () => void;
     onRedo: () => void;
     canUndo: boolean;
@@ -29,7 +26,7 @@ interface CreativeEditorHeaderProps {
 }
 
 const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
-    projectName, onProjectNameChange, onDownload, onUndo, onRedo, canUndo, canRedo,
+    projectName, onProjectNameChange, onUndo, onRedo, canUndo, canRedo,
     selectedLayers, onUpdateSelectedLayers, onCommitHistory, onDeleteLayers, onDuplicateLayers, onReorderLayers,
     backgroundColor, onBackgroundColorChange, customFonts, onTriggerFontUpload
 }) => {
@@ -92,7 +89,6 @@ const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
             return (
                  <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-gray-300">Preenchimento</span>
-                    {/* FIX: Corrected a typo in the 'onChange' handler, changing 'onUpdateLayers' to the correct prop name 'onUpdateSelectedLayers'. */}
                     <ColorPicker color={layer.fill} onChange={(c) => onUpdateSelectedLayers({ fill: c })} onInteractionEnd={onCommitHistory} />
                     {commonTools}
                  </div>
@@ -115,10 +111,6 @@ const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
             <div className="flex items-center gap-4 w-1/3 justify-end">
                  <button onClick={onUndo} disabled={!canUndo} className="p-2 rounded hover:bg-brand-accent disabled:opacity-50" title="Desfazer"><IconUndo/></button>
                  <button onClick={onRedo} disabled={!canRedo} className="p-2 rounded hover:bg-brand-accent disabled:opacity-50" title="Refazer"><IconRedo/></button>
-                <button onClick={onDownload} className="flex items-center gap-2 px-4 py-2 rounded-md font-semibold bg-brand-primary text-white hover:bg-brand-secondary">
-                    <IconDownload />
-                    <span>Baixar</span>
-                </button>
             </div>
         </header>
     );

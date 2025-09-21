@@ -13,6 +13,7 @@ export interface VideoExportOptions {
 export interface DownloadOptions extends VideoExportOptions {
     format: DownloadFormat;
     transparent: boolean;
+    pageIndexes: number[];
 }
 
 interface DownloadModalProps {
@@ -20,37 +21,59 @@ interface DownloadModalProps {
     onClose: () => void;
     onDownload: (options: DownloadOptions) => void;
     hasVideoOrAudio: boolean;
+    pageCount: number;
 }
 
-const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onDownload, hasVideoOrAudio }) => {
+const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onDownload, hasVideoOrAudio, pageCount }) => {
     const [format, setFormat] = useState<DownloadFormat>(hasVideoOrAudio ? 'mp4' : 'png');
     const [transparentBg, setTransparentBg] = useState(false);
+    const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set(Array.from({ length: pageCount }, (_, i) => i)));
     
     useEffect(() => {
         if (isOpen) {
             setFormat(hasVideoOrAudio ? 'mp4' : 'png');
+            setSelectedPages(new Set(Array.from({ length: pageCount }, (_, i) => i)));
         }
-    }, [isOpen, hasVideoOrAudio]);
+    }, [isOpen, hasVideoOrAudio, pageCount]);
 
     const handleDownloadClick = () => {
+        if (selectedPages.size === 0) {
+            alert("Por favor, selecione pelo menos uma página para baixar.");
+            return;
+        }
         onDownload({ 
             format, 
             transparent: format === 'png' ? transparentBg : false,
-            // Hardcoded defaults for simplified video export
             resolution: '1080p',
-            bitrate: 8000, // 8 Mbps
+            bitrate: 8000,
             frameRate: 30,
             codec: 'h264',
+            pageIndexes: Array.from(selectedPages).sort((a,b) => a-b),
         });
         onClose();
     };
 
     const handleFormatChange = (newFormat: DownloadFormat) => {
         setFormat(newFormat);
-        if (newFormat !== 'png') {
-            setTransparentBg(false);
-        }
+        if (newFormat !== 'png') setTransparentBg(false);
     }
+    
+    const handlePageSelect = (index: number) => {
+        setSelectedPages(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(index)) newSet.delete(index);
+            else newSet.add(index);
+            return newSet;
+        });
+    };
+    
+    const handleSelectAll = () => {
+        if (selectedPages.size === pageCount) {
+            setSelectedPages(new Set());
+        } else {
+            setSelectedPages(new Set(Array.from({ length: pageCount }, (_, i) => i)));
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -83,6 +106,30 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onDownlo
                             <span className="font-medium">Fundo transparente</span>
                         </label>
                         </motion.div>
+                    )}
+
+                    {pageCount > 1 && (
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-sm font-medium text-gray-400">Selecionar Páginas</label>
+                                <button onClick={handleSelectAll} className="text-xs text-brand-primary font-semibold">
+                                    {selectedPages.size === pageCount ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                                </button>
+                            </div>
+                            <div className="max-h-32 overflow-y-auto space-y-1 pr-2 bg-brand-light/50 p-2 rounded-md">
+                                {Array.from({ length: pageCount }).map((_, i) => (
+                                    <label key={i} className="flex items-center gap-3 cursor-pointer p-2 rounded-md hover:bg-brand-accent/50">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedPages.has(i)}
+                                            onChange={() => handlePageSelect(i)}
+                                            className="w-4 h-4 rounded bg-brand-dark border-brand-accent text-brand-primary focus:ring-brand-secondary"
+                                        />
+                                        <span className="text-sm">Página {i + 1}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
                     )}
                 </div>
                 <div className="mt-8 flex justify-end gap-4">

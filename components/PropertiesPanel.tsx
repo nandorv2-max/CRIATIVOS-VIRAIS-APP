@@ -1,9 +1,7 @@
-
 import React from 'react';
 import type { AnyLayer, TextLayer, ShapeLayer } from '../types.ts';
-import ColorPicker from './ColorPicker.tsx';
 import Button from './Button.tsx';
-import { IconDownload, IconSparkles } from './Icons.tsx';
+import { IconDownload, IconFolder, IconSave } from './Icons.tsx';
 
 interface PropertiesPanelProps {
     selectedLayers: AnyLayer[];
@@ -12,10 +10,9 @@ interface PropertiesPanelProps {
     canvasWidth: number;
     canvasHeight: number;
     onCanvasSizeChange: (width: number, height: number) => void;
-    backgroundColor: string;
-    onBackgroundColorChange: (color: string) => void;
+    onSaveProject: () => void;
+    onLoadProject: () => void;
     onDownload: () => void;
-    onPublish: () => void;
 }
 
 const SIZE_PRESETS = [
@@ -35,14 +32,15 @@ const NumberInput: React.FC<{label: string, value: number, onChange: (v: number)
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     selectedLayers, onUpdateLayers, onCommitHistory, canvasWidth, canvasHeight, onCanvasSizeChange,
-    backgroundColor, onBackgroundColorChange, onDownload, onPublish
+    onSaveProject, onLoadProject, onDownload
 }) => {
     
+    const selectedPresetName = SIZE_PRESETS.find(p => p.width === canvasWidth && p.height === canvasHeight)?.name || 'Personalizado';
+
     const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selected = SIZE_PRESETS.find(p => p.name === e.target.value);
         if(selected && selected.name !== 'Personalizado') {
             onCanvasSizeChange(selected.width, selected.height);
-            onCommitHistory();
         }
     };
     
@@ -51,26 +49,24 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <h3 className="text-lg font-bold text-white">Propriedades da Tela</h3>
             <div>
                 <label className="text-sm font-medium text-gray-300 mb-1 block">Predefinições de Tamanho</label>
-                <select onChange={handlePresetChange} value={SIZE_PRESETS.find(p => p.width === canvasWidth && p.height === canvasHeight)?.name || 'Personalizado'} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white">
+                <select onChange={handlePresetChange} value={selectedPresetName} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white">
                     {SIZE_PRESETS.map((p) => (
                         <option key={p.name} value={p.name}>{p.name} {p.width > 0 ? `(${p.width}x${p.height})` : ''}</option>
                     ))}
                 </select>
             </div>
-             <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Largura" value={canvasWidth} onChange={w => onCanvasSizeChange(w, canvasHeight)} onBlur={onCommitHistory} />
-                <NumberInput label="Altura" value={canvasHeight} onChange={h => onCanvasSizeChange(canvasWidth, h)} onBlur={onCommitHistory} />
-            </div>
-             <div>
-                <label className="text-sm font-medium text-gray-300 mb-1 block">Cor de Fundo</label>
-                <div className="flex items-center gap-2">
-                    <ColorPicker color={backgroundColor} onChange={onBackgroundColorChange} onInteractionEnd={onCommitHistory} />
-                    <input type="text" value={backgroundColor} onChange={e => onBackgroundColorChange(e.target.value)} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white font-mono"/>
+            {selectedPresetName === 'Personalizado' && (
+                 <div className="grid grid-cols-2 gap-2">
+                    <NumberInput label="Largura" value={canvasWidth} onChange={w => onCanvasSizeChange(w, canvasHeight)} onBlur={onCommitHistory} />
+                    <NumberInput label="Altura" value={canvasHeight} onChange={h => onCanvasSizeChange(canvasWidth, h)} onBlur={onCommitHistory} />
                 </div>
-            </div>
+            )}
             <div className="pt-4 border-t border-brand-accent/50 space-y-2">
-                <Button onClick={onPublish} className="w-full">
-                    <div className="flex items-center gap-2"><IconSparkles /> Publicar no Portfólio</div>
+                 <Button onClick={onSaveProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar Projeto</div>
+                </Button>
+                <Button onClick={onLoadProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconFolder className="w-5 h-5"/> Carregar Projeto</div>
                 </Button>
                 <Button onClick={onDownload} primary className="w-full">
                      <div className="flex items-center gap-2"><IconDownload /> Fazer Download</div>
@@ -95,8 +91,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <div>
                     <label className="text-xs font-medium text-gray-400 mb-1 block">Preenchimento</label>
                     <div className="flex items-center gap-2">
-                        <ColorPicker color={l.fill} onChange={c => onUpdateLayers({fill: c})} onInteractionEnd={onCommitHistory}/>
-                        <input type="text" value={l.fill} onChange={e => onUpdateLayers({ fill: e.target.value })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white font-mono"/>
+                        {/* A ColorPicker would go here */}
                     </div>
                 </div>
              </>

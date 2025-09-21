@@ -12,14 +12,11 @@ const DownloadJobCard: React.FC<DownloadJobCardProps> = ({ job, onRemove }) => {
     
     useEffect(() => {
         if (job.status === 'done' && job.resultUrl) {
-            // FIX: Use `window.document` to access the DOM.
             const a = window.document.createElement('a');
             a.href = job.resultUrl;
             a.download = job.fileName;
-            // FIX: Use `window.document` to access the DOM.
             window.document.body.appendChild(a);
             a.click();
-            // FIX: Use `window.document` to access the DOM.
             window.document.body.removeChild(a);
         }
     }, [job.status, job.resultUrl, job.fileName]);

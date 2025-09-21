@@ -1,6 +1,5 @@
 import { Muxer } from 'mp4-muxer';
 
-// FIX: Declare WebCodec API types to resolve TypeScript errors.
 declare var VideoEncoder: any;
 declare var AudioEncoder: any;
 declare var VideoFrame: any;
@@ -9,8 +8,7 @@ declare type AudioEncoderConfig = any;
 declare type VideoEncoderConfig = any;
 
 let muxer: any | null = null;
-let videoEncoder: VideoEncoder | null = null;
-// FIX: Changed type from `AudioEncoder` to `any` because `declare var AudioEncoder: any` defines it as a value, not a type.
+let videoEncoder: any | null = null;
 let audioEncoder: any | null = null;
 
 const ctx = self as any;
@@ -19,14 +17,12 @@ const encodeFullAudio = async (channels: Float32Array[], sampleRate: number, num
     if (!audioEncoder) return;
 
     const totalSamples = channels[0].length;
-    // Process audio in chunks of a comfortable size to avoid creating huge AudioData objects
-    const samplesPerChunk = sampleRate; // e.g., 1 second of audio at a time
+    const samplesPerChunk = sampleRate; // 1 second of audio at a time
 
     for (let i = 0; i < totalSamples; i += samplesPerChunk) {
         const chunkEnd = Math.min(i + samplesPerChunk, totalSamples);
         const chunkNumSamples = chunkEnd - i;
         
-        // Interleave the planar channel data into a single buffer
         const interleavedData = new Float32Array(chunkNumSamples * numberOfChannels);
         for (let chan = 0; chan < numberOfChannels; chan++) {
             const channelData = channels[chan];
@@ -38,7 +34,7 @@ const encodeFullAudio = async (channels: Float32Array[], sampleRate: number, num
         const timestamp = (i / sampleRate) * 1_000_000; // in microseconds
 
         const audioDataChunk = new AudioData({
-            format: 'f32', // Interleaved Float32
+            format: 'f32',
             sampleRate: sampleRate,
             numberOfFrames: chunkNumSamples,
             numberOfChannels: numberOfChannels,
@@ -51,7 +47,7 @@ const encodeFullAudio = async (channels: Float32Array[], sampleRate: number, num
 };
 
 
-ctx.onmessage = async (e) => {
+ctx.onmessage = async (e: MessageEvent) => {
   const { type, payload } = e.data;
 
   try {
@@ -61,7 +57,7 @@ ctx.onmessage = async (e) => {
       const videoCodecString =
         options.codec === 'hevc'
           ? 'hvc1.1.6.L120.90'
-          : 'avc1.42E01E'; // H.264 baseline, compatível
+          : 'avc1.42E01E'; // H.264 baseline, compatible
 
       const videoEncoderConfig: VideoEncoderConfig = {
         codec: videoCodecString,
@@ -93,7 +89,7 @@ ctx.onmessage = async (e) => {
       });
 
       videoEncoder = new VideoEncoder({
-        output: (chunk, meta) => {
+        output: (chunk: any, meta: any) => {
           try {
             muxer!.addVideoChunk(chunk, meta);
           } catch (err: any) {
@@ -101,7 +97,7 @@ ctx.onmessage = async (e) => {
             ctx.postMessage({ type: 'error', payload: { message: `Erro do Muxer de vídeo: ${err.message}` }});
           }
         },
-        error: (err) => {
+        error: (err: any) => {
           console.error('VideoEncoder error:', err);
           ctx.postMessage({ type: 'error', payload: { message: `Erro do VideoEncoder: ${err.message}` }});
         },
@@ -120,7 +116,7 @@ ctx.onmessage = async (e) => {
             throw new Error(`Configuração de áudio não suportada: ${JSON.stringify(audioSupport)}`);
         }
         audioEncoder = new AudioEncoder({
-            output: (chunk, meta) => {
+            output: (chunk: any, meta: any) => {
                 try {
                     muxer!.addAudioChunk(chunk, meta);
                 } catch (err: any) {
@@ -128,13 +124,12 @@ ctx.onmessage = async (e) => {
                     ctx.postMessage({ type: 'error', payload: { message: `Erro do Muxer de áudio: ${err.message}` }});
                 }
             },
-            error: (err) => {
+            error: (err: any) => {
                 console.error('AudioEncoder error:', err);
                 ctx.postMessage({ type: 'error', payload: { message: `Erro do AudioEncoder: ${err.message}` }});
             }
         });
         audioEncoder.configure(audioEncoderConfig);
-        // Start encoding the entire audio track immediately
         encodeFullAudio(audio.channels, audio.sampleRate, audio.numberOfChannels);
       }
 
@@ -163,7 +158,6 @@ ctx.onmessage = async (e) => {
         throw new Error('Buffer MP4 vazio. Verifique se os frames foram enviados.');
       }
 
-      // TRANSFERE o ArrayBuffer corretamente
       ctx.postMessage({ type: 'done', payload: buffer }, [buffer]);
       videoEncoder = null;
       audioEncoder = null;

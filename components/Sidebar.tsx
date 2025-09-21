@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { TEMPLATES } from '../constants.ts';
-import { IconUser, IconLogout, IconKey, IconLogo, IconFolder, IconDownload } from './Icons.tsx';
+import { IconUser, IconLogout, IconKey, IconLogo, IconFolder } from './Icons.tsx';
 import { supabase } from '../services/supabaseClient.ts';
 import { initializeGeminiClient } from '../geminiService.ts';
 import ApiKeyManagerModal from './ApiKeyManagerModal.tsx';
-import type { Template, Project } from '../types.ts';
-import MyProjectsModal from './MyProjectsModal.tsx';
+// FIX: Added Project and UserProfile types for the updated props interface.
+import type { Template, Project, UserProfile } from '../types.ts';
 
 interface SidebarProps {
     activeView: string | null;
     setActiveView: (view: string | null) => void;
-    userProfile: (User & { isAdmin: boolean }) | null;
-    // FIX: Added props for save/load triggers to connect sidebar actions to the active editor view.
+    // FIX: Updated userProfile type to match the parent component's more specific type.
+    userProfile: (User & UserProfile & { isAdmin: boolean }) | null;
+    // FIX: Added saveProjectTrigger and loadProjectTrigger to match the props being passed from MainDashboard.
     saveProjectTrigger: { trigger: () => void };
     loadProjectTrigger: { trigger: (project: Project) => void };
 }
@@ -42,10 +43,9 @@ const NavItem: React.FC<{
     </div>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfile, saveProjectTrigger, loadProjectTrigger }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfile }) => {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-    const [isProjectsModalOpen, setIsProjectsModalOpen] = useState(false);
 
     const handleLogout = async () => {
         if (supabase) {
@@ -61,16 +61,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
     return (
         <>
             <ApiKeyManagerModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSave={handleSaveApiKey} />
-            {/* The MyProjectsModal is triggered from here now */}
-            <MyProjectsModal 
-                isOpen={isProjectsModalOpen} 
-                onClose={() => setIsProjectsModalOpen(false)} 
-                // FIX: Implemented project loading by switching to the Creative Editor view and triggering the load function.
-                onLoadProject={(project) => {
-                    setActiveView('studioCriativo');
-                    loadProjectTrigger.trigger(project);
-                }} 
-            />
             <nav className="flex flex-col items-center p-4 bg-brand-light/50 backdrop-blur-sm border-r border-brand-accent/50 space-y-5">
                  <div className="w-16 h-16">
                     <IconLogo className="w-full h-full rounded-full object-cover" />
@@ -113,9 +103,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
                                 {!userProfile?.isAdmin && (
                                     <button onClick={() => { setIsApiKeyModalOpen(true); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconKey className="w-5 h-5" /><span>Gerir API Key</span></button>
                                 )}
-                                {/* FIX: Replaced alert with a call to the save project trigger. Button is only fully functional in the Creative Editor. */}
-                                <button onClick={() => { if (activeView === 'studioCriativo') { saveProjectTrigger.trigger(); } else { alert("A funcionalidade Salvar Projeto está disponível apenas no Studio Criativo."); } setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconDownload className="w-5 h-5" /><span>Salvar Projeto</span></button>
-                                <button onClick={() => { setIsProjectsModalOpen(true); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconFolder className="w-5 h-5" /><span>Meus Projetos</span></button>
                             </div>
                             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 text-left text-red-400 hover:bg-red-500/10 rounded-md mt-1 border-t border-brand-accent transition-colors"><IconLogout className="w-5 h-5" /><span>Sair</span></button>
                         </motion.div>

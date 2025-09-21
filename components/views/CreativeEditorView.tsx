@@ -8,6 +8,7 @@ import PropertiesPanel from '../PropertiesPanel.tsx';
 import LayersPanel from '../LayersPanel.tsx';
 import Timeline from '../Timeline.tsx';
 import DownloadModal, { DownloadOptions } from '../DownloadModal.tsx';
+import ErrorNotification from '../ErrorNotification.tsx';
 import { AssetContext } from '../MainDashboard.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer,
@@ -17,6 +18,8 @@ import { removeBackground } from '../../geminiService.ts';
 import { blobToBase64 } from '../../utils/imageUtils.ts';
 import SelectionBox from '../SelectionBox.tsx';
 import { uploadUserAsset } from '../../services/databaseService.ts';
+import { IconMinus, IconPlus, IconMaximize } from '../Icons.tsx';
+
 
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
@@ -137,7 +140,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
     const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(true);
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
-    const [zoom, setZoom] = useState(0.75);
+    const [zoom, setZoom] = useState(1);
     const [isLoadingAI, setIsLoadingAI] = useState<'remove-bg' | false>(false);
     const [interaction, setInteraction] = useState<InteractionState | null>(null);
     const [history, setHistory] = useState<ProjectState[]>([INITIAL_PROJECT]);
@@ -146,6 +149,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const [cropLayerId, setCropLayerId] = useState<string | null>(null);
     const [playingVideoIds, setPlayingVideoIds] = useState<Set<string>>(new Set());
     const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -363,27 +367,59 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const handleAITool = async (tool: 'remove-bg') => {
         const targetLayer = selectedLayers[0] as ImageLayer;
         if (!targetLayer || targetLayer.type !== 'image') return;
+
         setIsLoadingAI('remove-bg');
+        setError(null);
+
         try {
+            // Fetch the image data to ensure we're working with a clean source
             const response = await fetch(targetLayer.src);
-            if (!response.ok) throw new Error(`Failed to fetch image for AI tool: ${response.statusText}`);
+            if (!response.ok) {
+                throw new Error(`Não foi possível carregar a imagem para processamento (status: ${response.status}).`);
+            }
             const blob = await response.blob();
             const base64Image = await blobToBase64(blob);
+
+            // Call the AI service to remove the background
             const resultB64 = await removeBackground(base64Image);
-            const newImage = await loadMedia(resultB64, 'image') as HTMLImageElement;
-            const aspectRatio = newImage.naturalWidth / newImage.naturalHeight;
+
+            // Load the new transparent image to get its properties
+            const newImageElement = await loadMedia(resultB64, 'image') as HTMLImageElement;
+
+            // Update the layer with the new image and reset its properties
             updateProject(draft => {
-                const pageToUpdate = draft.pages[activePageIndex];
-                const layerToUpdate = pageToUpdate.layers.find(l => l.id === targetLayer.id) as ImageLayer;
+                const page = draft.pages[activePageIndex];
+                const layerToUpdate = page.layers.find(l => l.id === targetLayer.id) as ImageLayer;
+
                 if (layerToUpdate) {
+                    // Store the original source for potential future use (e.g., revert)
+                    layerToUpdate.originalSrc = targetLayer.originalSrc || targetLayer.src;
+
+                    // Update the image source to the new transparent version
                     layerToUpdate.src = resultB64;
-                    layerToUpdate.height = layerToUpdate.width / aspectRatio;
-                    layerToUpdate.mediaNaturalWidth = newImage.naturalWidth;
-                    layerToUpdate.mediaNaturalHeight = newImage.naturalHeight;
-                    layerToUpdate._imageElement = newImage;
+                    layerToUpdate._imageElement = newImageElement;
+                    layerToUpdate.mediaNaturalWidth = newImageElement.naturalWidth;
+                    layerToUpdate.mediaNaturalHeight = newImageElement.naturalHeight;
+
+                    // Recalculate dimensions and reset transformations to prevent visual bugs
+                    const aspectRatio = newImageElement.naturalWidth / newImageElement.naturalHeight;
+                    layerToUpdate.height = layerToUpdate.width / aspectRatio; // Maintain width, adjust height
+                    
+                    // Reset crop and pan values as they are invalid for the new image asset
+                    layerToUpdate.crop = { x: 0, y: 0, width: newImageElement.naturalWidth, height: newImageElement.naturalHeight };
+                    layerToUpdate.scale = layerToUpdate.width / newImageElement.naturalWidth;
+                    layerToUpdate.offsetX = 0;
+                    layerToUpdate.offsetY = 0;
                 }
             }, true);
-        } catch (e) { console.error("BG Removal Failed", e); } finally { setIsLoadingAI(false); }
+
+        } catch (e) {
+            console.error("BG Removal Failed:", e);
+            const message = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
+            setError(`A remoção do fundo falhou. Por favor, tente novamente. Detalhes: ${message}`);
+        } finally {
+            setIsLoadingAI(false);
+        }
     };
     
     const toggleVideoPlayback = useCallback((layerId: string) => {
@@ -905,13 +941,47 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             }
         })
     }, [activePage?.layers, updateProject, activePageIndex]);
+    
+    const calculateFitZoom = useCallback(() => {
+        if (canvasContainerRef.current && activePage) {
+            const padding = 64; // px
+            const container = canvasContainerRef.current;
+            const availableWidth = container.clientWidth - padding;
+            const availableHeight = container.clientHeight - padding;
+    
+            const scaleX = availableWidth / activePage.width;
+            const scaleY = availableHeight / activePage.height;
+            
+            setZoom(Math.min(scaleX, scaleY));
+        }
+    }, [activePage]);
+    
+    useEffect(() => {
+        calculateFitZoom();
+    
+        const container = canvasContainerRef.current;
+        if (!container) return;
+    
+        const resizeObserver = new ResizeObserver(() => {
+            calculateFitZoom();
+        });
+    
+        resizeObserver.observe(container);
+    
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, [calculateFitZoom]);
+
+    const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 3));
+    const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.1));
 
     return (
         <div className="h-full w-full flex flex-col bg-brand-accent text-white">
+            <ErrorNotification message={error} onDismiss={() => setError(null)} />
             <CreativeEditorHeader
                 projectName={project.name}
                 onProjectNameChange={name => updateProject(draft => { draft.name = name; }, false)}
-                onDownload={() => setIsDownloadModalOpen(true)}
                 onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1}
                 selectedLayers={selectedLayers}
                 onUpdateSelectedLayers={(update) => updateSelectedLayers(update, false)}
@@ -985,15 +1055,24 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                             )}
                         </div>
                     </div>
+                     <div className="absolute bottom-4 right-4 z-10 bg-brand-dark/80 backdrop-blur-sm rounded-lg text-white flex items-center p-1 shadow-lg">
+                        <button onClick={handleZoomOut} className="p-2 hover:bg-brand-light rounded-md" title="Diminuir zoom"><IconMinus className="w-5 h-5"/></button>
+                        <button onClick={() => setZoom(1)} className="px-3 text-sm font-semibold" title="Redefinir para 100%">{Math.round(zoom * 100)}%</button>
+                        <button onClick={handleZoomIn} className="p-2 hover:bg-brand-light rounded-md" title="Aumentar zoom"><IconPlus className="w-5 h-5"/></button>
+                        <div className="w-px h-5 bg-brand-accent/50 mx-1"></div>
+                        <button onClick={calculateFitZoom} className="p-2 hover:bg-brand-light rounded-md" title="Ajustar à tela"><IconMaximize className="w-5 h-5"/></button>
+                    </div>
                 </main>
                 <PropertiesPanel
                     selectedLayers={selectedLayers}
-                    onUpdateLayers={(update) => updateSelectedLayers(update, false)} onCommitHistory={() => commitToHistory(project)}
-                    canvasWidth={activePage.width} canvasHeight={activePage.height}
+                    onUpdateLayers={(update) => updateSelectedLayers(update, false)}
+                    onCommitHistory={() => commitToHistory(project)}
+                    canvasWidth={activePage.width}
+                    canvasHeight={activePage.height}
                     onCanvasSizeChange={(w, h) => updateProject(draft => { const p = draft.pages[activePageIndex]; if(p) {p.width = w; p.height = h;} }, true)}
-                    backgroundColor={activePage.backgroundColor}
-                    onBackgroundColorChange={color => updateProject(draft => { const p = draft.pages[activePageIndex]; if(p) p.backgroundColor = color; }, false)}
-                    onDownload={() => {}} onPublish={() => {}}
+                    onSaveProject={() => {}}
+                    onLoadProject={() => {}}
+                    onDownload={() => setIsDownloadModalOpen(true)}
                 />
                 <AnimatePresence>
                     {isLayersPanelOpen && (
@@ -1006,7 +1085,26 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     )}
                 </AnimatePresence>
             </div>
-            <Timeline pages={project.pages} activePageIndex={activePageIndex} onSelectPage={setActivePageIndex} onAddPage={() => {}} onDeletePage={() => {}} onDuplicatePage={() => {}} onReorderPages={() => {}} onPageDurationChange={() => {}} projectTime={0} isPlaying={false} onPlayPause={() => {}} />
+            <Timeline 
+                pages={project.pages} 
+                activePageIndex={activePageIndex} 
+                onSelectPage={setActivePageIndex} 
+                onAddPage={() => updateProject(draft => {
+                    const newPage: Page = {
+                        id: nanoid(), name: `Página ${draft.pages.length + 1}`, layers: [], duration: 5000,
+                        backgroundColor: '#FFFFFF', width: 1080, height: 1080,
+                    };
+                    draft.pages.push(newPage);
+                    setActivePageIndex(draft.pages.length - 1);
+                }, true)} 
+                onDeletePage={(index) => {}} 
+                onDuplicatePage={(index) => {}} 
+                onReorderPages={(pages) => {}} 
+                onPageDurationChange={() => {}} 
+                projectTime={0} 
+                isPlaying={false} 
+                onPlayPause={() => {}} 
+            />
             <input type="file" ref={fileUploadRef} onChange={handleFileUpload} multiple className="hidden" accept="image/*,video/*"/>
             <input type="file" ref={fontUploadRef} onChange={handleFontUpload} className="hidden" accept=".otf,.ttf,.woff,.woff2"/>
         </div>

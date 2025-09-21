@@ -86,6 +86,51 @@ interface CreativeEditorViewProps {
     setLoadProjectTrigger: React.Dispatch<React.SetStateAction<{ trigger: (project: Project) => void; }>>;
 }
 
+const calculateRequiredHeight = (ctx: CanvasRenderingContext2D, text: string, fontSize: number, layerWidth: number, fontFamily: string, fontWeight: 'normal' | 'bold', lineHeightMultiplier: number): number => {
+    if (!text || fontSize <= 0) return 0;
+    ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`;
+    const words = text.split(' ');
+    let currentLine = '';
+    let lineCount = 1;
+
+    for (let i = 0; i < words.length; i++) {
+        const testLine = currentLine.length > 0 ? currentLine + ' ' + words[i] : words[i];
+        
+        if (ctx.measureText(testLine).width > layerWidth && i > 0 && currentLine.length > 0) {
+            lineCount++;
+            currentLine = words[i];
+        } else {
+            currentLine = testLine;
+        }
+    }
+    return lineCount * fontSize * lineHeightMultiplier;
+};
+
+const findOptimalFontSize = (
+    ctx: CanvasRenderingContext2D, 
+    text: string, 
+    layer: Omit<TextLayer, 'id' | 'name' | 'type' | 'x' | 'y' | 'rotation' | 'opacity' | 'isLocked' | 'isVisible'>
+): number => {
+    let minFont = 1;
+    let maxFont = Math.max(layer.height, 300);
+    let bestSize = 8; // A default minimum
+
+    while (minFont <= maxFont) {
+        let midFont = Math.floor((minFont + maxFont) / 2);
+        if (midFont <= 0) return 1;
+        
+        const requiredHeight = calculateRequiredHeight(ctx, text, midFont, layer.width, layer.fontFamily, layer.fontWeight, layer.lineHeight);
+        
+        if (requiredHeight <= layer.height && requiredHeight > 0) {
+            bestSize = midFont;
+            minFont = midFont + 1;
+        } else {
+            maxFont = midFont - 1;
+        }
+    }
+    return bestSize;
+};
+
 const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectTrigger, setLoadProjectTrigger }) => {
     const [project, setProject] = useState<ProjectState>(INITIAL_PROJECT);
     const [activePageIndex, setActivePageIndex] = useState(0);
@@ -100,12 +145,16 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const [customFonts, setCustomFonts] = useState<string[]>([]);
     const [cropLayerId, setCropLayerId] = useState<string | null>(null);
     const [playingVideoIds, setPlayingVideoIds] = useState<Set<string>>(new Set());
+    const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
+
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const fileUploadRef = useRef<HTMLInputElement>(null);
     const fontUploadRef = useRef<HTMLInputElement>(null);
     const animationFrameRef = useRef<number | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
 
     const assetContext = useContext(AssetContext);
     const activePage = project.pages[activePageIndex];
@@ -191,8 +240,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     
     useHotkeys('ctrl+z, meta+z', (event) => { event.preventDefault(); handleUndo(); }, { enableOnContentEditable: true });
     useHotkeys('ctrl+y, meta+y, ctrl+shift+z, meta+shift+z', (event) => { event.preventDefault(); handleRedo(); }, { enableOnContentEditable: true });
-    useHotkeys('backspace, delete', () => { if (!cropLayerId) deleteSelectedLayers(); });
-    useHotkeys('escape', () => { if (cropLayerId) setCropLayerId(null); });
+    useHotkeys('backspace, delete', () => { if (!cropLayerId && !editingTextLayerId) deleteSelectedLayers(); });
+    useHotkeys('escape', () => { if (cropLayerId) setCropLayerId(null); if(editingTextLayerId) textareaRef.current?.blur(); });
     useHotkeys('ctrl+d, meta+d', (event) => { event.preventDefault(); onDuplicateLayers(); });
 
     const addLayer = useCallback((newLayer: Partial<AnyLayer>) => {
@@ -264,8 +313,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 mediaNaturalWidth: naturalWidth, 
                 mediaNaturalHeight: naturalHeight, 
                 scale: scaleToFit,
-                offsetX: 0, 
-                offsetY: 0, 
+                offsetX: 0,
+                offsetY: 0,
                 crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight } 
             };
             
@@ -390,6 +439,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
         const { x, y } = getCoords(e);
         const clickedLayer = getLayerAtPoint(x, y);
+
+        if (clickedLayer?.type === 'text') {
+            setEditingTextLayerId(clickedLayer.id);
+            setCropLayerId(null);
+            return;
+        }
+        
         if (clickedLayer && (clickedLayer.type === 'image' || clickedLayer.type === 'video')) {
             setCropLayerId(clickedLayer.id);
             setSelectedLayerIds([clickedLayer.id]);
@@ -397,6 +453,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (editingTextLayerId) return;
+        
         const handle = (e.target as HTMLElement).dataset.handle as Handle;
         const { x, y } = getCoords(e);
         
@@ -473,95 +531,193 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 const initialLayer = initialLayerStates.get(interaction.layerIds[0]);
                 if (!initialLayer) return;
 
-                const { x: ox, y: oy, width: ow, height: oh, rotation } = initialLayer;
-                const rad = rotation * Math.PI / 180;
+                const rad = initialLayer.rotation * Math.PI / 180;
                 const cos = Math.cos(rad); const sin = Math.sin(rad);
                 const dx = (e.clientX - startX) / zoom;
                 const dy = (e.clientY - startY) / zoom;
+                const rdx = dx * cos + dy * sin;
+                const rdy = -dx * sin + dy * cos;
                 const minSize = 20;
-                
-                if (handle.includes('m')) { // Side handles (cropping/expanding)
-                    const rdx = dx * cos + dy * sin;
-                    const rdy = -dx * sin + dy * cos;
-                    
-                    let newW = ow;
-                    let newH = oh;
 
-                    if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
-                    if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
-                    if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
-                    if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
+                if (initialLayer.type === 'text') {
+                    const { x: ox, y: oy, width: ow, height: oh, rotation, fontSize: ofs } = initialLayer as TextLayer;
+                    let newW = ow, newH = oh, newX = ox, newY = oy, newFS = ofs;
+                    const aspectRatio = ow / oh;
 
-                    const dw = newW - ow;
-                    const dh = newH - oh;
+                    if (!handle.includes('m')) { // Corner handles
+                        let potentialW, potentialH;
+                        if (handle.includes('r')) potentialW = ow + rdx; else potentialW = ow - rdx;
+                        if (handle.includes('b')) potentialH = oh + rdy; else potentialH = oh - rdy;
 
-                    const updates: any = { width: newW, height: newH };
-                    const mediaLayer = initialLayer as ImageLayer | VideoLayer;
-                    updates.offsetX = mediaLayer.offsetX;
-                    updates.offsetY = mediaLayer.offsetY;
-                    
-                    let d_center_x = 0;
-                    let d_center_y = 0;
+                        if (e.shiftKey) { newW = potentialW; newH = newW/aspectRatio; } 
+                        else {
+                           if (Math.abs(rdx / aspectRatio) > Math.abs(rdy)) { newW = potentialW; newH = newW / aspectRatio; } 
+                           else { newH = potentialH; newW = newH * aspectRatio; }
+                        }
 
-                    if (dw !== 0) { // Horizontal resize
-                        const d_center_local_x = (handle === 'ml' ? -dw / 2 : dw / 2);
-                        d_center_x = d_center_local_x * cos;
-                        d_center_y = d_center_local_x * sin;
-                        if (handle === 'ml') updates.offsetX = mediaLayer.offsetX + dw;
-                    } else if (dh !== 0) { // Vertical resize
-                        const d_center_local_y = (handle === 'tm' ? -dh / 2 : dh / 2);
-                        const local_y_axis_x = -sin;
-                        const local_y_axis_y = cos;
-                        d_center_x = d_center_local_y * local_y_axis_x;
-                        d_center_y = d_center_local_y * local_y_axis_y;
-                        if (handle === 'tm') updates.offsetY = mediaLayer.offsetY + dh;
+                        newW = Math.max(minSize, newW);
+                        newH = Math.max(minSize, newH);
+                        const scaleFactor = newW / ow;
+                        newFS = ofs * scaleFactor;
+
+                        const dw = newW - ow; const dh = newH - oh;
+                        let dx_local = 0, dy_local = 0;
+                        if(handle.includes('l')) dx_local = -dw/2; else dx_local = dw/2;
+                        if(handle.includes('t')) dy_local = -dh/2; else dy_local = dh/2;
+                        
+                        const rotated_dx = dx_local * cos - dy_local * sin;
+                        const rotated_dy = dx_local * sin + dy_local * cos;
+
+                        const original_center = { x: ox + ow/2, y: oy + oh/2 };
+                        newX = original_center.x + rotated_dx - newW/2;
+                        newY = original_center.y + rotated_dy - newH/2;
+                        
+                    } else { // Side handles
+                        if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
+                        if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
+                        if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
+                        if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
+                        
+                        const dw = newW - ow; const dh = newH - oh;
+                        let d_center_x = 0; let d_center_y = 0;
+
+                        if (dw !== 0) { const d_center_local_x = (handle === 'ml' ? -dw / 2 : dw / 2); d_center_x = d_center_local_x * cos; d_center_y = d_center_local_x * sin; } 
+                        else if (dh !== 0) { const d_center_local_y = (handle === 'tm' ? -dh / 2 : dh / 2); d_center_x = d_center_local_y * -sin; d_center_y = d_center_local_y * cos; }
+                        
+                        const old_center_x = ox + ow / 2; const old_center_y = oy + oh / 2;
+                        const new_center_x = old_center_x + d_center_x; const new_center_y = old_center_y + d_center_y;
+                        newX = new_center_x - newW / 2; newY = new_center_y - newH / 2;
+                        
+                        const ctx = canvasRef.current?.getContext('2d');
+                        if (ctx) newFS = findOptimalFontSize(ctx, initialLayer.text, { ...initialLayer, width: newW, height: newH });
                     }
 
-                    const old_center_x = ox + ow / 2;
-                    const old_center_y = oy + oh / 2;
-                    
-                    const new_center_x = old_center_x + d_center_x;
-                    const new_center_y = old_center_y + d_center_y;
+                    updateProject(draft => {
+                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id) as TextLayer;
+                        if (l) { l.x = newX; l.y = newY; l.width = newW; l.height = newH; l.fontSize = newFS; }
+                    }, false);
+                } else { // Image and Video resizing
+                    const { x: ox, y: oy, width: ow, height: oh, rotation } = initialLayer;
+                    const mediaLayer = initialLayer as ImageLayer | VideoLayer;
+                    const updates: any = {};
+                    const aspectRatio = ow / oh;
 
-                    updates.x = new_center_x - newW / 2;
-                    updates.y = new_center_y - newH / 2;
-                    
+                    const isCorner = !handle.includes('m');
+
+                    if (isCorner) { // Proportional Scaling
+                        let newW, newH;
+                         if (Math.abs(rdx / aspectRatio) > Math.abs(rdy)) {
+                            newW = handle.includes('l') ? ow - rdx : ow + rdx;
+                            newH = newW / aspectRatio;
+                        } else {
+                            newH = handle.includes('t') ? oh - rdy : oh + rdy;
+                            newW = newH * aspectRatio;
+                        }
+                        
+                        newW = Math.max(minSize, newW);
+                        newH = Math.max(minSize, newH);
+
+                        const dw = newW - ow;
+                        const dh = newH - oh;
+                        
+                        let dx_local = 0, dy_local = 0;
+                        if (handle.includes('l')) dx_local = -dw/2; else dx_local = dw/2;
+                        if (handle.includes('t')) dy_local = -dh/2; else dy_local = dh/2;
+                        
+                        const rotated_dx = dx_local * cos - dy_local * sin;
+                        const rotated_dy = dx_local * sin + dy_local * cos;
+
+                        const original_center = { x: ox + ow/2, y: oy + oh/2 };
+                        
+                        updates.width = newW;
+                        updates.height = newH;
+                        updates.x = original_center.x + rotated_dx - newW/2;
+                        updates.y = original_center.y + rotated_dy - newH/2;
+                        
+                        const newScale = newW / mediaLayer.mediaNaturalWidth;
+                        updates.scale = newScale;
+                        updates.offsetX = (newW - mediaLayer.mediaNaturalWidth * newScale) / 2;
+                        updates.offsetY = (newH - mediaLayer.mediaNaturalHeight * newScale) / 2;
+                    } else { // Side Handles
+                        const isDraggingOutward = 
+                            (handle === 'mr' && rdx > 0) || (handle === 'ml' && rdx < 0) ||
+                            (handle === 'bm' && rdy > 0) || (handle === 'tm' && rdy < 0);
+
+                        if (isDraggingOutward) { // Proportional Scale Outward
+                            let newW, newH;
+                            if (handle === 'ml' || handle === 'mr') {
+                                newW = handle === 'ml' ? ow - rdx : ow + rdx;
+                                newH = newW / aspectRatio;
+                            } else {
+                                newH = handle === 'tm' ? oh - rdy : oh + rdy;
+                                newW = newH * aspectRatio;
+                            }
+                            
+                            newW = Math.max(minSize, newW);
+                            newH = Math.max(minSize, newH);
+
+                            const dw = newW - ow;
+                            const dh = newH - oh;
+                            
+                            let d_center_local_x = 0, d_center_local_y = 0;
+                            if (handle === 'ml') d_center_local_x = -dw/2;
+                            if (handle === 'mr') d_center_local_x = dw/2;
+                            if (handle === 'tm') d_center_local_y = -dh/2;
+                            if (handle === 'bm') d_center_local_y = dh/2;
+
+                            const rotated_center_dx = d_center_local_x * cos - d_center_local_y * sin;
+                            const rotated_center_dy = d_center_local_x * sin + d_center_local_y * cos;
+                            
+                            const original_center = { x: ox + ow/2, y: oy + oh/2 };
+                            
+                            updates.width = newW;
+                            updates.height = newH;
+                            updates.x = original_center.x + rotated_center_dx - newW/2;
+                            updates.y = original_center.y + rotated_center_dy - newH/2;
+
+                            const newScale = newW / mediaLayer.mediaNaturalWidth;
+                            updates.scale = newScale;
+                            updates.offsetX = (newW - mediaLayer.mediaNaturalWidth * newScale) / 2;
+                            updates.offsetY = (newH - mediaLayer.mediaNaturalHeight * newScale) / 2;
+                        } else { // Crop Inward
+                            let newW = ow, newH = oh;
+                            if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
+                            if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
+                            if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
+                            if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
+                            
+                            const dw = newW - ow;
+                            const dh = newH - oh;
+
+                            let d_center_local_x = 0, d_center_local_y = 0;
+                            if (handle === 'ml') d_center_local_x = -dw/2;
+                            if (handle === 'mr') d_center_local_x = dw/2;
+                            if (handle === 'tm') d_center_local_y = -dh/2;
+                            if (handle === 'bm') d_center_local_y = dh/2;
+
+                            const rotated_d_center_x = d_center_local_x * cos - d_center_local_y * sin;
+                            const rotated_d_center_y = d_center_local_x * sin + d_center_local_y * cos;
+                            
+                            const original_center = { x: ox + ow/2, y: oy + oh/2 };
+
+                            updates.width = newW;
+                            updates.height = newH;
+                            updates.x = original_center.x + rotated_d_center_x - newW/2;
+                            updates.y = original_center.y + rotated_d_center_y - newH/2;
+                            
+                            const dx_layer = updates.x - ox;
+                            const dy_layer = updates.y - oy;
+                            
+                            const unrotated_dx = dx_layer * cos + dy_layer * sin;
+                            const unrotated_dy = -dx_layer * sin + dy_layer * cos;
+
+                            updates.offsetX = mediaLayer.offsetX - unrotated_dx;
+                            updates.offsetY = mediaLayer.offsetY - unrotated_dy;
+                        }
+                    }
                     updateProject(draft => {
                         const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
                         if (l && !l.isLocked) Object.assign(l, updates);
-                    }, false);
-
-                } else { // Corner handles (scaling)
-                    let {x: newX, y: newY, width: newW, height: newH} = initialLayer;
-                    const rdx = dx * cos + dy * sin;
-                    const rdy = -dx * sin + dy * cos;
-                    const isShift = e.shiftKey;
-                    const aspectRatio = ow / oh;
-                    let potentialW, potentialH;
-
-                    if (handle.includes('r')) potentialW = ow + rdx; else potentialW = ow - rdx;
-                    if (handle.includes('b')) potentialH = oh + rdy; else potentialH = oh - rdy;
-
-                    if (isShift) { // Free transform
-                        newW = potentialW;
-                        newH = potentialH;
-                    } else { // Proportional transform
-                        if (Math.abs(potentialW - ow) > Math.abs(potentialH - oh) * aspectRatio) {
-                            newW = potentialW; newH = potentialW / aspectRatio;
-                        } else {
-                            newH = potentialH; newW = newH * aspectRatio;
-                        }
-                    }
-
-                    newW = Math.max(minSize, newW);
-                    newH = Math.max(minSize, newH);
-                    const center = { x: ox + ow / 2, y: oy + oh / 2 };
-                    newX = center.x - newW / 2;
-                    newY = center.y - newH / 2;
-                    
-                    updateProject(draft => {
-                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
-                        if (l && !l.isLocked) { l.x = newX; l.y = newY; l.width = newW; l.height = newH; }
                     }, false);
                 }
             }
@@ -581,6 +737,34 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         }
     }, [interaction, updateProject, commitToHistory, zoom, activePageIndex, project, getCoords]);
 
+    const editingLayer = useMemo(() => {
+        if (!editingTextLayerId || !activePage) return null;
+        return activePage.layers.find(l => l.id === editingTextLayerId) as TextLayer | undefined;
+    }, [editingTextLayerId, activePage]);
+
+    useEffect(() => {
+        if (editingLayer && textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.select();
+        }
+    }, [editingTextLayerId, editingLayer]);
+
+    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        updateProject(draft => {
+            const layer = draft.pages[activePageIndex].layers.find(l => l.id === editingTextLayerId) as TextLayer;
+            if (layer) {
+                layer.text = e.target.value;
+            }
+        });
+    };
+    
+    const handleTextBlur = () => {
+        if (editingTextLayerId) {
+            commitToHistory(project);
+            setEditingTextLayerId(null);
+        }
+    };
+
     const drawScene = useCallback(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
@@ -594,6 +778,9 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     
         currentPage.layers.forEach(layer => {
             if (!layer.isVisible) return;
+
+            // Hide the canvas version of the text if it's being edited
+            if (layer.id === editingTextLayerId) return;
     
             ctx.save();
             ctx.globalAlpha = layer.opacity;
@@ -611,7 +798,27 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 let textDrawX = drawX;
                 if (layer.textAlign === 'center') textDrawX += layer.width / 2;
                 else if (layer.textAlign === 'right') textDrawX += layer.width;
-                ctx.fillText(layer.text, textDrawX, drawY);
+
+                // Manual text wrapping
+                const words = layer.text.split(' ');
+                let line = '';
+                let currentY = drawY;
+                const lineHeight = layer.fontSize * layer.lineHeight;
+
+                for (let n = 0; n < words.length; n++) {
+                    const testLine = line + words[n] + ' ';
+                    const metrics = ctx.measureText(testLine);
+                    const testWidth = metrics.width;
+                    if (testWidth > layer.width && n > 0) {
+                        ctx.fillText(line, textDrawX, currentY);
+                        line = words[n] + ' ';
+                        currentY += lineHeight;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                ctx.fillText(line, textDrawX, currentY);
+
             } else if (layer.type === 'shape') {
                 ctx.fillStyle = layer.fill;
                 if(layer.shape === 'rectangle') ctx.fillRect(drawX, drawY, layer.width, layer.height);
@@ -643,7 +850,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             }
             ctx.restore();
         });
-    }, [project, activePageIndex]);
+    }, [project, activePageIndex, editingTextLayerId]);
     
     useEffect(() => {
         const renderLoop = () => {
@@ -736,6 +943,46 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                                 playingVideoIds={playingVideoIds}
                                 onToggleVideoPlayback={toggleVideoPlayback}
                             />
+                             {editingLayer && (
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        left: editingLayer.x,
+                                        top: editingLayer.y,
+                                        width: editingLayer.width,
+                                        height: editingLayer.height,
+                                        transform: `rotate(${editingLayer.rotation}deg)`,
+                                        transformOrigin: 'center center',
+                                    }}
+                                >
+                                    <textarea
+                                        ref={textareaRef}
+                                        value={editingLayer.text}
+                                        onChange={handleTextChange}
+                                        onBlur={handleTextBlur}
+                                        onMouseDown={e => e.stopPropagation()}
+                                        style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            background: 'transparent',
+                                            border: '1px dashed rgba(255, 255, 255, 0.7)',
+                                            outline: 'none',
+                                            resize: 'none',
+                                            overflow: 'hidden',
+                                            padding: 0,
+                                            color: editingLayer.color,
+                                            fontFamily: `"${editingLayer.fontFamily}"`,
+                                            fontSize: editingLayer.fontSize,
+                                            fontWeight: editingLayer.fontWeight,
+                                            fontStyle: editingLayer.fontStyle,
+                                            textAlign: editingLayer.textAlign,
+                                            lineHeight: editingLayer.lineHeight,
+                                            letterSpacing: `${editingLayer.letterSpacing}px`,
+                                            textTransform: editingLayer.textTransform,
+                                        }}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                 </main>

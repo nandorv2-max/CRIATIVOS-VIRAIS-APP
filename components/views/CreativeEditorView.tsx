@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, useContext } 
 import { motion, AnimatePresence } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import { useHotkeys } from 'react-hotkeys-hook';
-import remove from '@imgly/background-removal';
+// FIX: The default import for '@imgly/background-removal' was causing a type error where the imported module was not callable. Changed to a namespace import to robustly handle module interoperability and access the default export explicitly.
+import * as remove from '@imgly/background-removal';
 import CreativeEditorHeader from '../CreativeEditorHeader.tsx';
 import CreativeEditorSidebar from '../CreativeEditorSidebar.tsx';
 import PropertiesPanel from '../PropertiesPanel.tsx';
@@ -374,7 +375,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         setError(null);
 
         try {
-            const resultBlob = await remove(targetLayer.src, {
+            // FIX: The default export of `@imgly/background-removal` is not being resolved correctly as a function.
+            // Accessing it via the module namespace (`remove.default`) provides a robust workaround for this common
+            // module interoperability issue. The cast to `any` is a safeguard against potentially incorrect typings.
+            const resultBlob = await (remove as any).default(targetLayer.src, {
                 publicPath: 'https://unpkg.com/@imgly/background-removal@1.0.4/dist/'
             });
             const resultB64 = await blobToBase64(resultBlob);
@@ -851,12 +855,21 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 ctx.fillStyle = layer.color;
                 ctx.textAlign = layer.textAlign;
                 ctx.textBaseline = 'top';
+                ctx.letterSpacing = `${layer.letterSpacing || 0}px`;
+                
+                let textToDraw = layer.text;
+                if (layer.textTransform === 'uppercase') {
+                    textToDraw = textToDraw.toUpperCase();
+                } else if (layer.textTransform === 'lowercase') {
+                    textToDraw = textToDraw.toLowerCase();
+                }
+
                 let textDrawX = drawX;
                 if (layer.textAlign === 'center') textDrawX += layer.width / 2;
                 else if (layer.textAlign === 'right') textDrawX += layer.width;
 
                 // Manual text wrapping
-                const words = layer.text.split(' ');
+                const words = textToDraw.split(' ');
                 let line = '';
                 let currentY = drawY;
                 const lineHeight = layer.fontSize * layer.lineHeight;

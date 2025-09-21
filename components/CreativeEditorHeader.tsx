@@ -79,6 +79,17 @@ const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
                         <button onClick={() => handleTextUpdate({ textAlign: 'center'})} className={`p-1.5 rounded ${layer.textAlign === 'center' ? 'bg-brand-primary' : 'hover:bg-brand-accent'}`}><IconAlignCenter/></button>
                         <button onClick={() => handleTextUpdate({ textAlign: 'right'})} className={`p-1.5 rounded ${layer.textAlign === 'right' ? 'bg-brand-primary' : 'hover:bg-brand-accent'}`}><IconAlignRight/></button>
                     </div>
+                    <div className="flex items-center gap-1 bg-brand-accent/50 rounded-md p-0.5 h-9">
+                        <button onClick={() => handleTextUpdate({ textTransform: 'uppercase' })} className={`px-2 py-1.5 rounded w-9 ${layer.textTransform === 'uppercase' ? 'bg-brand-primary' : 'hover:bg-brand-accent'}`} title="Maiúsculas">
+                            <span className="font-bold text-sm">AA</span>
+                        </button>
+                        <button onClick={() => handleTextUpdate({ textTransform: 'lowercase' })} className={`px-2 py-1.5 rounded w-9 ${layer.textTransform === 'lowercase' ? 'bg-brand-primary' : 'hover:bg-brand-accent'}`} title="Minúsculas">
+                            <span className="font-bold text-sm">aa</span>
+                        </button>
+                        <button onClick={() => handleTextUpdate({ textTransform: 'none' })} className={`px-2 py-1.5 rounded w-9 ${layer.textTransform === 'none' || !layer.textTransform ? 'bg-brand-primary' : 'hover:bg-brand-accent'}`} title="Normal">
+                            <span className="font-bold text-sm">Aa</span>
+                        </button>
+                    </div>
                     {commonTools}
                 </div>
             );

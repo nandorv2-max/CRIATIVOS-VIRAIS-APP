@@ -30,6 +30,16 @@ const NumberInput: React.FC<{label: string, value: number, onChange: (v: number)
     </div>
 );
 
+const SliderInput: React.FC<{label: string, value: number, onChange: (v: number) => void, onBlur: () => void, min: number, max: number, step: number}> = ({ label, value, onChange, onBlur, min, max, step }) => (
+    <div>
+        <div className="flex justify-between items-center text-xs font-medium text-gray-400 mb-1">
+            <label>{label}</label>
+            <span>{typeof value === 'number' ? value.toFixed(step < 1 ? 2 : 0) : 0}</span>
+        </div>
+        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} onMouseUp={onBlur} onTouchEnd={onBlur} className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm" />
+    </div>
+);
+
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     selectedLayers, onUpdateLayers, onCommitHistory, canvasWidth, canvasHeight, onCanvasSizeChange,
     onSaveProject, onLoadProject, onDownload
@@ -83,6 +93,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <>
                 <h4 className="text-sm font-bold text-gray-300 pt-4 border-t border-brand-accent/50">Texto</h4>
                 <textarea value={l.text} onChange={e => onUpdateLayers({ text: e.target.value })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white h-24 resize-y"/>
+                <div className="space-y-3 pt-2">
+                    <SliderInput label="Espaçamento Linhas" value={l.lineHeight || 1.2} onChange={v => onUpdateLayers({lineHeight: v})} onBlur={onCommitHistory} min={0.5} max={3} step={0.1} />
+                    <SliderInput label="Espaçamento Letras" value={l.letterSpacing || 0} onChange={v => onUpdateLayers({letterSpacing: v})} onBlur={onCommitHistory} min={-50} max={100} step={1} />
+                </div>
             </>
          );
          const renderShapeProperties = (l: ShapeLayer) => (
@@ -100,24 +114,43 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
          return (
              <div className="p-4 space-y-4">
-                <h3 className="text-lg font-bold text-white truncate">{layer.name}</h3>
-                <div className="grid grid-cols-2 gap-2">
-                    <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v})} onBlur={onCommitHistory} />
-                    <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v})} onBlur={onCommitHistory} />
-                    <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v})} onBlur={onCommitHistory} />
-                    <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v})} onBlur={onCommitHistory} />
+                <h3 className="text-lg font-bold text-white truncate">{selectedLayers.length > 1 ? `${selectedLayers.length} Camadas` : layer.name}</h3>
+                
+                {/* Transform Properties */}
+                <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-gray-300">Transformar</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                        <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v})} onBlur={onCommitHistory} />
+                        <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v})} onBlur={onCommitHistory} />
+                        <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v})} onBlur={onCommitHistory} />
+                        <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v})} onBlur={onCommitHistory} />
+                    </div>
                     <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v})} onBlur={onCommitHistory} />
-                    <NumberInput label="Opacidade" value={layer.opacity} onChange={v => onUpdateLayers({opacity: v})} onBlur={onCommitHistory} />
                 </div>
-                {layer.type === 'text' && renderTextProperties(layer as TextLayer)}
-                {layer.type === 'shape' && renderShapeProperties(layer as ShapeLayer)}
+
+                {/* Appearance Properties */}
+                <div className="pt-4 border-t border-brand-accent/50 space-y-3">
+                    <h4 className="text-sm font-bold text-gray-300">Aparência</h4>
+                    <SliderInput 
+                        label="Opacidade" 
+                        value={Math.round((layer.opacity ?? 1) * 100)} 
+                        onChange={v => onUpdateLayers({ opacity: v / 100 })} 
+                        onBlur={onCommitHistory} 
+                        min={0} 
+                        max={100} 
+                        step={1} 
+                    />
+                </div>
+
+                {selectedLayers.length === 1 && layer.type === 'text' && renderTextProperties(layer as TextLayer)}
+                {selectedLayers.length === 1 && layer.type === 'shape' && renderShapeProperties(layer as ShapeLayer)}
              </div>
          );
     };
 
     return (
         <aside className="w-80 h-full bg-brand-dark/90 backdrop-blur-md shadow-lg z-20 flex-shrink-0 border-l border-brand-accent overflow-y-auto">
-            {selectedLayers.length === 1 ? renderLayerProperties() : renderCanvasProperties()}
+            {selectedLayers.length > 0 ? renderLayerProperties() : renderCanvasProperties()}
         </aside>
     );
 };

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, useContext } 
 import { motion, AnimatePresence } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import { useHotkeys } from 'react-hotkeys-hook';
+import remove from '@imgly/background-removal';
 import CreativeEditorHeader from '../CreativeEditorHeader.tsx';
 import CreativeEditorSidebar from '../CreativeEditorSidebar.tsx';
 import PropertiesPanel from '../PropertiesPanel.tsx';
@@ -9,12 +10,12 @@ import LayersPanel from '../LayersPanel.tsx';
 import Timeline from '../Timeline.tsx';
 import DownloadModal, { DownloadOptions } from '../DownloadModal.tsx';
 import ErrorNotification from '../ErrorNotification.tsx';
+import BackgroundRemoverModal from '../BackgroundRemoverModal.tsx';
 import { AssetContext } from '../MainDashboard.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer,
     UploadedAsset, PublicAsset, Project
 } from '../../types.ts';
-import { removeBackground } from '../../geminiService.ts';
 import { blobToBase64 } from '../../utils/imageUtils.ts';
 import SelectionBox from '../SelectionBox.tsx';
 import { uploadUserAsset } from '../../services/databaseService.ts';
@@ -150,6 +151,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const [playingVideoIds, setPlayingVideoIds] = useState<Set<string>>(new Set());
     const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [bgRemoverState, setBgRemoverState] = useState<{ isOpen: boolean; imageWithTransparency: string | null; originalImage: string | null; layerId: string | null; }>({ isOpen: false, imageWithTransparency: null, originalImage: null, layerId: null });
 
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -372,54 +374,61 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         setError(null);
 
         try {
-            // Fetch the image data to ensure we're working with a clean source
-            const response = await fetch(targetLayer.src);
-            if (!response.ok) {
-                throw new Error(`Não foi possível carregar a imagem para processamento (status: ${response.status}).`);
-            }
-            const blob = await response.blob();
-            const base64Image = await blobToBase64(blob);
-
-            // Call the AI service to remove the background
-            const resultB64 = await removeBackground(base64Image);
-
-            // Load the new transparent image to get its properties
+            const resultBlob = await remove(targetLayer.src, {
+                publicPath: 'https://unpkg.com/@imgly/background-removal@1.0.4/dist/'
+            });
+            const resultB64 = await blobToBase64(resultBlob);
             const newImageElement = await loadMedia(resultB64, 'image') as HTMLImageElement;
 
-            // Update the layer with the new image and reset its properties
             updateProject(draft => {
                 const page = draft.pages[activePageIndex];
                 const layerToUpdate = page.layers.find(l => l.id === targetLayer.id) as ImageLayer;
-
                 if (layerToUpdate) {
-                    // Store the original source for potential future use (e.g., revert)
-                    layerToUpdate.originalSrc = targetLayer.originalSrc || targetLayer.src;
-
-                    // Update the image source to the new transparent version
+                    layerToUpdate.originalSrc = targetLayer.src;
                     layerToUpdate.src = resultB64;
                     layerToUpdate._imageElement = newImageElement;
                     layerToUpdate.mediaNaturalWidth = newImageElement.naturalWidth;
                     layerToUpdate.mediaNaturalHeight = newImageElement.naturalHeight;
-
-                    // Recalculate dimensions and reset transformations to prevent visual bugs
                     const aspectRatio = newImageElement.naturalWidth / newImageElement.naturalHeight;
-                    layerToUpdate.height = layerToUpdate.width / aspectRatio; // Maintain width, adjust height
-                    
-                    // Reset crop and pan values as they are invalid for the new image asset
+                    layerToUpdate.height = layerToUpdate.width / aspectRatio;
                     layerToUpdate.crop = { x: 0, y: 0, width: newImageElement.naturalWidth, height: newImageElement.naturalHeight };
                     layerToUpdate.scale = layerToUpdate.width / newImageElement.naturalWidth;
                     layerToUpdate.offsetX = 0;
                     layerToUpdate.offsetY = 0;
                 }
             }, true);
-
         } catch (e) {
             console.error("BG Removal Failed:", e);
             const message = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
-            setError(`A remoção do fundo falhou. Por favor, tente novamente. Detalhes: ${message}`);
+            setError(`A remoção do fundo falhou. Tente novamente. Detalhes: ${message}`);
         } finally {
             setIsLoadingAI(false);
         }
+    };
+
+    const handleApplyBgRemoval = async (newImageUrl: string) => {
+        if (!bgRemoverState.layerId) return;
+
+        const newImageElement = await loadMedia(newImageUrl, 'image') as HTMLImageElement;
+
+        updateProject(draft => {
+            const page = draft.pages[activePageIndex];
+            const layerToUpdate = page.layers.find(l => l.id === bgRemoverState.layerId) as ImageLayer;
+
+            if (layerToUpdate) {
+                layerToUpdate.src = newImageUrl;
+                layerToUpdate._imageElement = newImageElement;
+                layerToUpdate.mediaNaturalWidth = newImageElement.naturalWidth;
+                layerToUpdate.mediaNaturalHeight = newImageElement.naturalHeight;
+                const aspectRatio = newImageElement.naturalWidth / newImageElement.naturalHeight;
+                layerToUpdate.height = layerToUpdate.width / aspectRatio;
+                layerToUpdate.crop = { x: 0, y: 0, width: newImageElement.naturalWidth, height: newImageElement.naturalHeight };
+                layerToUpdate.scale = layerToUpdate.width / newImageElement.naturalWidth;
+                layerToUpdate.offsetX = 0;
+                layerToUpdate.offsetY = 0;
+            }
+        }, true);
+        setBgRemoverState({ isOpen: false, imageWithTransparency: null, originalImage: null, layerId: null });
     };
     
     const toggleVideoPlayback = useCallback((layerId: string) => {
@@ -475,6 +484,17 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
         const { x, y } = getCoords(e);
         const clickedLayer = getLayerAtPoint(x, y);
+
+        if (clickedLayer?.type === 'image' && (clickedLayer as ImageLayer).originalSrc) {
+            const imageLayer = clickedLayer as ImageLayer;
+            setBgRemoverState({
+                isOpen: true,
+                imageWithTransparency: imageLayer.src,
+                originalImage: imageLayer.originalSrc!,
+                layerId: imageLayer.id
+            });
+            return;
+        }
 
         if (clickedLayer?.type === 'text') {
             setEditingTextLayerId(clickedLayer.id);
@@ -979,6 +999,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     return (
         <div className="h-full w-full flex flex-col bg-brand-accent text-white">
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
+            <BackgroundRemoverModal
+                isOpen={bgRemoverState.isOpen}
+                onClose={() => setBgRemoverState({ isOpen: false, imageWithTransparency: null, originalImage: null, layerId: null })}
+                imageWithTransparency={bgRemoverState.imageWithTransparency}
+                originalImage={bgRemoverState.originalImage}
+                onApply={handleApplyBgRemoval}
+            />
             <CreativeEditorHeader
                 projectName={project.name}
                 onProjectNameChange={name => updateProject(draft => { draft.name = name; }, false)}

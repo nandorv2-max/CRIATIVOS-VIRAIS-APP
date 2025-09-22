@@ -84,9 +84,23 @@ const PublicAssetGridItem: React.FC<{
             default: return <IconPlus className="w-8 h-8 text-white"/>;
         }
     };
+    
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+        if (!['image', 'video'].includes(asset.asset_type)) {
+            e.preventDefault();
+            return;
+        }
+        e.dataTransfer.setData('application/json', JSON.stringify(asset));
+        e.dataTransfer.effectAllowed = 'copy';
+    };
 
     return (
-        <div className="relative aspect-square cursor-pointer group bg-brand-light rounded-md flex-shrink-0 w-32" onClick={onClick}>
+        <div 
+            className="relative aspect-square cursor-pointer group bg-brand-light rounded-md flex-shrink-0 w-32" 
+            onClick={onClick}
+            draggable={['image', 'video'].includes(asset.asset_type)}
+            onDragStart={handleDragStart}
+        >
             {asset.asset_type === 'image' || asset.asset_type === 'video' ? (
                  <img src={asset.thumbnail_url || asset.asset_url} alt={asset.name} className="w-full h-full object-cover rounded-md" />
             ) : (
@@ -120,9 +134,23 @@ const UserAssetGridItem: React.FC<{asset: UploadedAsset, onClick: () => void}> =
             default: return <IconPlus className="w-8 h-8 text-white"/>;
         }
     };
+    
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+        if (!['image', 'video'].includes(asset.type)) {
+            e.preventDefault();
+            return;
+        }
+        e.dataTransfer.setData('application/json', JSON.stringify(asset));
+        e.dataTransfer.effectAllowed = 'copy';
+    };
 
     return (
-        <div className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" onClick={onClick}>
+        <div 
+            className="relative aspect-square cursor-pointer group bg-brand-light rounded-md" 
+            onClick={onClick}
+            draggable={['image', 'video'].includes(asset.type)}
+            onDragStart={handleDragStart}
+        >
             {asset.type === 'image' || asset.type === 'video' ? (
                  <img src={asset.thumbnail} alt={asset.name} className="w-full h-full object-cover rounded-md" />
             ) : (

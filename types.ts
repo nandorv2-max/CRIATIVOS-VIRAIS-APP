@@ -253,13 +253,13 @@ export interface Creation {
 
 export type UserRole = 'admin' | 'starter' | 'premium' | 'professional';
 
+// CRITICAL FIX: Reverted UserProfile to match the v19.0 database schema.
+// Removed `status` and `plan_id` to prevent the "column does not exist" startup crash.
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
   credits: number;
-  status: 'active' | 'pending_approval';
-  plan_id: string | null;
 }
 
 export interface Folder {
@@ -288,6 +288,13 @@ export interface Adjustments {
     vignette: number;
     sharpness: number;
 }
+
+export interface Preset {
+    name: string;
+    adjustments: Partial<Adjustments>;
+    sourceAssetId?: string;
+}
+
 
 // New types for Plans and Permissions
 export interface Plan {
@@ -320,28 +327,3 @@ export interface AssetContextType {
     refetchAssets: () => Promise<void>;
 }
 export const AssetContext = createContext<AssetContextType | undefined>(undefined);
-
-// Types and Context for Professional Editor
-export type AdjustmentKey = keyof Adjustments;
-
-export const DEFAULT_ADJUSTMENTS: Adjustments = {
-    exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
-    temperature: 0, tint: 0, saturation: 0, vibrance: 0,
-    texture: 0, clarity: 0, dehaze: 0, grain: 0, vignette: 0, sharpness: 0,
-};
-
-export interface ProfessionalEditorContextType {
-    image: HTMLImageElement | null;
-    setImage: (image: HTMLImageElement | null) => void;
-    liveAdjustments: Adjustments;
-    setLiveAdjustments: React.Dispatch<React.SetStateAction<Adjustments>>;
-    history: { snapshots: Adjustments[], currentIndex: number };
-    undo: () => void;
-    redo: () => void;
-    pushHistory: (newState: Adjustments) => void;
-    resetHistory: (adjustments?: Adjustments) => void;
-}
-
-export const ProfessionalEditorContext = createContext<ProfessionalEditorContextType | undefined>(undefined);
-
-// ====== END: Moved from App.tsx ======

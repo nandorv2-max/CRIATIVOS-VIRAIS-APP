@@ -35,6 +35,19 @@ const createVideoThumbnail = async (videoFile: File): Promise<File> => {
     });
 };
 
+// **NEW UTILITY FUNCTION**
+// Generates a fresh signed URL for a user asset path. This is key to fixing the stale URL issue.
+export const createSignedUrlForPath = async (path: string): Promise<string> => {
+    const { data, error } = await supabase.storage
+        .from('user_assets')
+        .createSignedUrl(path, 300); // 5-minute validity, more than enough for immediate use
+    if (error) {
+        console.error(`Error creating signed URL for ${path}:`, error);
+        throw new Error('Não foi possível obter um URL seguro para o recurso.');
+    }
+    return data.signedUrl;
+};
+
 // Fetch user assets with signed URLs
 export const getUserAssets = async (): Promise<UploadedAsset[]> => {
     const userId = await getUserId();
@@ -45,47 +58,48 @@ export const getUserAssets = async (): Promise<UploadedAsset[]> => {
         .order('created_at', { ascending: false });
 
     if (error) {
-        if (error.code === '42P01') {
-            throw new Error("USER_ASSETS_SETUP_REQUIRED: A tabela 'user_assets' não foi encontrada.");
+        if (error.code === '42P01' || error.message.includes('permission denied')) {
+            throw new Error("USER_ASSETS_SETUP_REQUIRED: A tabela 'user_assets' não foi encontrada ou o acesso foi negado.");
         }
         console.error("Error fetching user assets:", error);
         throw error;
     }
 
     const assetsWithSignedUrls = await Promise.all(data.map(async (asset) => {
-        let signedUrl = asset.url;
         let signedThumbnailUrl = asset.thumbnail_url;
-        const oneHour = 3600;
-
-        if (asset.storage_path) {
-            const { data: urlData, error: urlError } = await supabase.storage
-                .from('user_assets')
-                .createSignedUrl(asset.storage_path, oneHour);
-            if (urlError) console.error(`Error creating signed URL for ${asset.storage_path}:`, urlError);
-            else signedUrl = urlData.signedUrl;
-        }
-
+        
+        // **IMPORTANT**: We now only generate a thumbnail URL here for display in the gallery.
+        // The main asset URL will be generated on-demand when the asset is actually used.
         if (asset.thumbnail_storage_path) {
-            const { data: thumbData, error: thumbError } = await supabase.storage
-                .from('user_assets')
-                .createSignedUrl(asset.thumbnail_storage_path, oneHour);
-            if (thumbError) console.error(`Error creating signed thumb URL for ${asset.thumbnail_storage_path}:`, thumbError);
-            else signedThumbnailUrl = thumbData.signedUrl;
+            signedThumbnailUrl = await createSignedUrlForPath(asset.thumbnail_storage_path);
         } else if (asset.storage_path && asset.asset_type === 'image') {
-            // Fallback for images where thumbnail is the same as main image
-            signedThumbnailUrl = signedUrl;
+            // For images without a separate thumbnail, generate a signed URL for the main image for the thumb display.
+             try {
+                signedThumbnailUrl = await createSignedUrlForPath(asset.storage_path);
+             } catch (e) {
+                 console.warn(`Could not generate initial thumbnail URL for ${asset.name}`);
+                 signedThumbnailUrl = ''; // Fallback to an empty string if it fails
+             }
         }
+
+        // DEFINITIVE FIX: Destructure to remove the original 'asset_type' property,
+        // which was causing user assets to be misidentified as public assets.
+        const { asset_type, ...restOfAsset } = asset;
 
         return {
-            ...asset,
-            type: asset.asset_type as UploadedAsset['type'],
-            url: signedUrl,
+            ...restOfAsset,
+            type: asset_type as UploadedAsset['type'], // Correctly map asset_type to type
+            // The `url` field now holds the original storage path, which is more stable.
+            // The `thumbnail` is the only signed URL we pre-fetch.
+            url: asset.storage_path, // We will use storage_path to get a fresh URL later
             thumbnail: signedThumbnailUrl || '',
+            storage_path: asset.storage_path, // Ensure storage_path is always present
         };
     }));
 
     return assetsWithSignedUrls;
 };
+
 
 // Upload a user asset
 export const uploadUserAsset = async (file: File, folderId: string | null = null): Promise<UploadedAsset> => {
@@ -141,7 +155,6 @@ export const uploadUserAsset = async (file: File, folderId: string | null = null
             url: placeholderUrl, // Store the base path, not the public URL
             thumbnail_url: thumbnailUrl,
             thumbnail_storage_path: thumbnailPath,
-            folder_id: folderId,
         })
         .select()
         .single();
@@ -220,13 +233,12 @@ export const adminGetAllUserProfiles = async (): Promise<UserProfile[]> => {
     return data;
 };
 
-export const adminUpdateUserDetails = async (userId: string, updates: Partial<Pick<UserProfile, 'role' | 'credits' | 'status' | 'plan_id'>>): Promise<void> => {
-    const { error } = await supabase.rpc('admin_update_user_details', {
+// FIX: Aligned function with v19.0 database schema. Removed 'status' and 'plan_id' parameters, updated the RPC name to 'admin_update_user', and corrected the 'updates' type to prevent a startup crash.
+export const adminUpdateUserDetails = async (userId: string, updates: Partial<Pick<UserProfile, 'role' | 'credits'>>): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_user', {
         p_user_id: userId,
         p_role: updates.role,
-        p_credits: updates.credits,
-        p_status: updates.status,
-        p_plan_id: updates.plan_id
+        p_credits: updates.credits
     });
     if (error) throw error;
 };

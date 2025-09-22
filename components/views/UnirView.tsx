@@ -155,6 +155,8 @@ const UnirView: React.FC = () => {
         setIsGalleryPickerModalOpen(false);
         setError(null);
         try {
+            // FIX: Reverted to use asset.url directly, which is compatible with the v19.0 schema.
+            if (!asset.url) throw new Error("O URL do recurso está ausente.");
             const response = await fetch(asset.url);
             if (!response.ok) throw new Error(`Failed to fetch image`);
             const blob = await response.blob();

@@ -4,7 +4,7 @@ import Button from './Button.tsx';
 import { IconUpload, IconX, IconImage, IconDownload, IconImageIcon } from './Icons.tsx';
 import { toBase64, base64ToFile, blobToBase64 } from '../utils/imageUtils.ts';
 import { generateImageWithRetry, getModelInstruction } from '../geminiService.ts';
-import { uploadUserAsset } from '../services/databaseService.ts';
+import { uploadUserAsset, createSignedUrlForPath } from '../services/databaseService.ts';
 import { nanoid } from 'nanoid';
 import { Prompt, UploadedAsset } from '../types.ts';
 import UploadOptionsModal from './UploadOptionsModal.tsx';
@@ -42,8 +42,10 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
 
     const handleSelectFromGallery = async (asset: UploadedAsset) => {
         setIsGalleryPickerModalOpen(false);
+        setError(null);
         try {
-            const response = await fetch(asset.url);
+            const signedUrl = await createSignedUrlForPath(asset.storage_path);
+            const response = await fetch(signedUrl);
             if (!response.ok) throw new Error('Falha ao buscar imagem da galeria.');
             const blob = await response.blob();
             const base64 = await blobToBase64(blob);

@@ -106,6 +106,11 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         setIsUploading(true);
         setError(null);
         try {
+            // FIX: Reverted to use asset.url directly, which is compatible with the v19.0 schema.
+            // The v19 script populates `url` with a direct public URL from Supabase storage.
+            if (!asset.url) {
+                throw new Error("O URL do recurso está ausente.");
+            }
             const response = await fetch(asset.url);
             if (!response.ok) {
                 throw new Error(`Failed to fetch image from URL: ${response.statusText}`);

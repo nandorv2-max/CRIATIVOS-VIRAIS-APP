@@ -15,25 +15,32 @@ import BackgroundRemoverModal from '../BackgroundRemoverModal.tsx';
 import ProjectBrowserModal from '../ProjectBrowserModal.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer,
-    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext
+    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext, DownloadJob
 } from '../../types.ts';
-import { blobToBase64 } from '../../utils/imageUtils.ts';
+import { blobToBase64, toBase64 } from '../../utils/imageUtils.ts';
 import { setItem, getItem, removeItem } from '../../utils/db.ts';
 import SelectionBox from '../SelectionBox.tsx';
-import { uploadUserAsset, getPublicAssets, adminUploadPublicAsset } from '../../services/databaseService.ts';
+import { uploadUserAsset, getPublicAssets, adminUploadPublicAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
 import { generateImageFromPrompt } from '../../services/geminiService.ts';
 import { IconMinus, IconPlus, IconMaximize } from '../Icons.tsx';
 import type { User } from '@supabase/gotrue-js';
+import DownloadManager from '../DownloadManager.tsx';
+import JSZip from 'jszip';
 
 
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
     return new Promise((resolve, reject) => {
+        // FIX: Add a guard to prevent calling methods on a null or undefined src, which would crash the app.
+        if (!src || typeof src !== 'string') {
+            return reject(new Error('Fonte de mídia inválida ou ausente.'));
+        }
+
         if (type === 'image') {
             const element = new Image();
             element.crossOrigin = 'anonymous';
             element.onload = () => resolve(element);
-            element.onerror = (err) => reject(new Error(`Failed to load media: ${src.substring(0, 100)}...`));
+            element.onerror = (err) => reject(new Error(`Falha ao carregar a mídia: ${src.substring(0, 100)}...`));
             element.src = src;
         } else { // video
             const element = document.createElement('video');
@@ -50,14 +57,14 @@ const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageEleme
                     element.currentTime = 0; // Ensure it's at the start
                     resolve(element);
                 }).catch(e => {
-                    console.warn("Autoplay was prevented for video loading, but proceeding.", e);
+                    console.warn("A reprodução automática foi impedida para o carregamento do vídeo, mas a continuar.", e);
                     // Even if autoplay fails, the video element is likely ready.
                     resolve(element);
                 });
             };
             
             element.addEventListener('canplay', onCanPlay);
-            element.onerror = (err) => reject(new Error(`Failed to load media: ${src.substring(0, 100)}...`));
+            element.onerror = (err) => reject(new Error(`Falha ao carregar a mídia: ${src.substring(0, 100)}...`));
             element.src = src;
             element.load();
         }
@@ -96,50 +103,41 @@ interface CreativeEditorViewProps {
     userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
 }
 
-const calculateRequiredHeight = (ctx: CanvasRenderingContext2D, text: string, fontSize: number, layerWidth: number, fontFamily: string, fontWeight: 'normal' | 'bold', lineHeightMultiplier: number): number => {
-    if (!text || fontSize <= 0) return 0;
-    ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`;
-    const words = text.split(' ');
-    let currentLine = '';
-    let lineCount = 1;
+// Custom deep clone that preserves runtime elements (_imageElement, _videoElement) by reference
+const deepCloneWithElements = <T extends any>(obj: T, visited = new WeakMap()): T => {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+    
+    // Handle DOM elements by returning them directly (by reference)
+    if (obj instanceof HTMLElement) {
+        return obj;
+    }
 
-    for (let i = 0; i < words.length; i++) {
-        const testLine = currentLine.length > 0 ? currentLine + ' ' + words[i] : words[i];
-        
-        if (ctx.measureText(testLine).width > layerWidth && i > 0 && currentLine.length > 0) {
-            lineCount++;
-            currentLine = words[i];
-        } else {
-            currentLine = testLine;
+    // Handle circular references
+    if (visited.has(obj)) {
+        return visited.get(obj);
+    }
+    
+    if (Array.isArray(obj)) {
+        const newArr: any[] = [];
+        visited.set(obj, newArr);
+        obj.forEach(item => {
+            newArr.push(deepCloneWithElements(item, visited));
+        });
+        return newArr as any;
+    }
+
+    const newObj: { [key: string]: any } = {};
+    visited.set(obj, newObj);
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            newObj[key] = deepCloneWithElements((obj as any)[key], visited);
         }
     }
-    return lineCount * fontSize * lineHeightMultiplier;
+    return newObj as T;
 };
 
-const findOptimalFontSize = (
-    ctx: CanvasRenderingContext2D, 
-    text: string, 
-    layer: Omit<TextLayer, 'id' | 'name' | 'type' | 'x' | 'y' | 'rotation' | 'opacity' | 'isLocked' | 'isVisible'>
-): number => {
-    let minFont = 1;
-    let maxFont = Math.max(layer.height, 300);
-    let bestSize = 8; // A default minimum
-
-    while (minFont <= maxFont) {
-        let midFont = Math.floor((minFont + maxFont) / 2);
-        if (midFont <= 0) return 1;
-        
-        const requiredHeight = calculateRequiredHeight(ctx, text, midFont, layer.width, layer.fontFamily, layer.fontWeight, layer.lineHeight);
-        
-        if (requiredHeight <= layer.height && requiredHeight > 0) {
-            bestSize = midFont;
-            minFont = midFont + 1;
-        } else {
-            maxFont = midFont - 1;
-        }
-    }
-    return bestSize;
-};
 
 const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) => {
     const [project, setProject] = useState<ProjectState>(INITIAL_PROJECT);
@@ -148,6 +146,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(true);
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
     const [isLoadProjectModalOpen, setIsLoadProjectModalOpen] = useState(false);
+    const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
     const [zoom, setZoom] = useState(1);
     const [isLoadingAI, setIsLoadingAI] = useState<'remove-bg' | false>(false);
     const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -162,6 +161,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [bgRemoverState, setBgRemoverState] = useState<{ isOpen: boolean; imageWithTransparency: string | null; originalImage: string | null; layerId: string | null; }>({ isOpen: false, imageWithTransparency: null, originalImage: null, layerId: null });
+    const [isDraggingOver, setIsDraggingOver] = useState(false);
 
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -177,6 +177,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const assetContext = useContext(AssetContext);
     const activePage = project.pages[activePageIndex];
     const selectedLayers = activePage ? activePage.layers.filter(l => selectedLayerIds.includes(l.id)) : [];
+    
+    const hasVideoOrAudio = useMemo(() => {
+        return project.pages.some(p => p.layers.some(l => l.type === 'video')) || project.audioTracks.length > 0;
+    }, [project]);
     
     useEffect(() => {
         getPublicAssets().then(assets => {
@@ -208,7 +212,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             pages: project.pages.map(page => ({
                 ...page,
                 layers: page.layers.map(layer => {
-                    const { _imageElement, _videoElement, ...rest } = layer as any;
+                    const { _imageElement, _videoElement, originalImage, ...rest } = layer as any;
                     return rest;
                 })
             }))
@@ -248,23 +252,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     const updateProject = useCallback((updater: (draft: ProjectState) => void, commit = false) => {
         setProject(currentProject => {
-            const draft = JSON.parse(JSON.stringify(currentProject));
-
-            draft.pages.forEach((page: Page, pageIndex: number) => {
-                page.layers.forEach((layer: AnyLayer, layerIndex: number) => {
-                    const originalLayer = currentProject.pages[pageIndex]?.layers[layerIndex];
-                    if (originalLayer && originalLayer.id === layer.id) {
-                        if (layer.type === 'image' && originalLayer.type === 'image') {
-                            layer._imageElement = originalLayer._imageElement;
-                        } else if (layer.type === 'video' && originalLayer.type === 'video') {
-                            layer._videoElement = originalLayer._videoElement;
-                        }
-                    }
-                });
-            });
-
+            const draft = deepCloneWithElements(currentProject);
             updater(draft);
-
             if (commit) {
                 commitToHistory(draft);
             }
@@ -296,7 +285,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         let finalState = { ...newState, pages: loadedPages };
   
         if (finalState.pages.length === 0) {
-            finalState.pages = [JSON.parse(JSON.stringify(DEFAULT_PAGE))];
+            finalState.pages = [deepCloneWithElements(DEFAULT_PAGE)];
         }
         
         setProject(finalState);
@@ -325,7 +314,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     const handleNewProject = () => {
         if (window.confirm("Tem certeza que deseja limpar a tela e iniciar um novo projeto? Seu trabalho salvo automaticamente será removido.")) {
-            loadProjectState(JSON.parse(JSON.stringify(INITIAL_PROJECT)), false);
+            loadProjectState(deepCloneWithElements(INITIAL_PROJECT), false);
         }
     };
 
@@ -347,7 +336,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             const pageToUpdate = draft.pages[activePageIndex];
             const layersToDuplicate = pageToUpdate.layers.filter(l => selectedLayerIds.includes(l.id));
             const newLayers = layersToDuplicate.map(layer => {
-                const newLayer = JSON.parse(JSON.stringify(layer));
+                const newLayer = deepCloneWithElements(layer);
                 return { ...newLayer, id: nanoid(), name: `${layer.name} Cópia`, x: layer.x + 20, y: layer.y + 20 };
             });
             pageToUpdate.layers.push(...newLayers);
@@ -373,7 +362,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const onStartCrop = () => {
         if (selectedLayers.length === 1) {
             const layer = selectedLayers[0];
-            setInitialCropState(JSON.parse(JSON.stringify(layer)));
+            setInitialCropState(deepCloneWithElements(layer));
             setCropLayerId(layer.id);
         }
     };
@@ -392,12 +381,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 if (layerIndex !== -1) {
                     const originalLayer = page.layers[layerIndex];
                     const runtimeElements: { _imageElement?: HTMLImageElement; _videoElement?: HTMLVideoElement } = {};
-                    if (originalLayer.type === 'image' && initialCropState.type === 'image') {
-                        runtimeElements._imageElement = originalLayer._imageElement;
-                    } else if (originalLayer.type === 'video' && initialCropState.type === 'video') {
-                        runtimeElements._videoElement = originalLayer._videoElement;
+                    // FIX: Ensure _imageElement and _videoElement are preserved from the current state in the draft.
+                    if (originalLayer.type === 'image' && 'src' in originalLayer) {
+                        runtimeElements._imageElement = (originalLayer as ImageLayer)._imageElement;
+                    } else if (originalLayer.type === 'video' && 'src' in originalLayer) {
+                        runtimeElements._videoElement = (originalLayer as VideoLayer)._videoElement;
                     }
-                    page.layers[layerIndex] = { ...initialCropState, ...runtimeElements };
+                    page.layers[layerIndex] = { ...deepCloneWithElements(initialCropState), ...runtimeElements };
                 }
             }, false); 
         }
@@ -414,11 +404,19 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const addLayer = useCallback((newLayer: Partial<AnyLayer>) => {
         const layerDefaults = { id: nanoid(), name: 'Nova Camada', x: 50, y: 50, rotation: 0, opacity: 1, isLocked: false, isVisible: true, width: 200, height: 200 };
         const finalLayer = { ...layerDefaults, ...newLayer } as AnyLayer;
-        updateProject(draft => {
-            draft.pages[activePageIndex].layers.push(finalLayer);
-        }, true);
+        
+        setProject(currentProject => {
+            const newProject = deepCloneWithElements(currentProject);
+            const newPages = [...newProject.pages];
+            const newLayers = [...newPages[activePageIndex].layers, finalLayer];
+            newPages[activePageIndex] = { ...newPages[activePageIndex], layers: newLayers };
+            const finalState = { ...newProject, pages: newPages };
+            commitToHistory(finalState);
+            return finalState;
+        });
+
         setSelectedLayerIds([finalLayer.id]);
-    }, [updateProject, activePageIndex]);
+    }, [activePageIndex, commitToHistory]);
 
     const updateSelectedLayers = (update: Partial<AnyLayer>, commit: boolean = false) => {
          updateProject(draft => {
@@ -438,72 +436,96 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         addLayer({ type: 'shape', name: shape === 'rectangle' ? 'Retângulo' : 'Elipse', shape, fill: '#CCCCCC', stroke: '#000000', strokeWidth: 0 } as Partial<ShapeLayer>);
     };
     
-    const handleAddAssetToCanvas = async (asset: UploadedAsset | PublicAsset) => {
+    const handleAddAssetToCanvas = async (asset: UploadedAsset | PublicAsset, dropCoords?: { x: number, y: number }) => {
         const isPublic = 'asset_type' in asset;
         const type = isPublic ? asset.asset_type : asset.type;
-        const url = isPublic ? asset.asset_url : asset.url;
-        
-        if (type === 'font') {
-            const fontName = asset.name.replace(/\.[^/.]+$/, "");
-            if (selectedLayers.length > 0 && selectedLayers.every(l => l.type === 'text')) {
-                updateSelectedLayers({ fontFamily: fontName }, true);
+    
+        if (type === 'font' || type === 'brmp' || type === 'audio') {
+             // Logic for these types remains the same...
+            if (type === 'font') {
+                const fontName = asset.name.replace(/\.[^/.]+$/, "");
+                if (selectedLayers.length > 0 && selectedLayers.every(l => l.type === 'text')) {
+                    updateSelectedLayers({ fontFamily: fontName }, true);
+                }
+                return;
             }
-            return;
-        }
-
-        if (type === 'brmp') {
-            try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error("Failed to fetch project file.");
-                const projectJson = await response.json();
-                await loadProjectState(projectJson);
-            } catch (err) {
-                console.error("Failed to load project:", err);
-                setError("Não foi possível carregar o ficheiro do projeto.");
+            if (type === 'brmp') {
+                const url = isPublic ? asset.asset_url : asset.storage_path;
+                try {
+                    if (!url || typeof url !== 'string') throw new Error("URL do projeto inválido.");
+                    let projectUrl = isPublic ? url : await createSignedUrlForPath(url);
+                    const response = await fetch(projectUrl);
+                    if (!response.ok) throw new Error("Falha ao buscar o arquivo do projeto.");
+                    const projectJson = await response.json();
+                    await loadProjectState(projectJson);
+                } catch (err) {
+                    console.error("Failed to load project:", err);
+                    setError("Não foi possível carregar o ficheiro do projeto.");
+                }
+                return;
             }
-            return;
+            if (type === 'audio') {
+                setError('A funcionalidade de adicionar áudio ainda não foi implementada na tela.');
+                return;
+            }
         }
-
+    
+        let base64Src: string;
         try {
-            const mediaElement = await loadMedia(url, type === 'video' ? 'video' : 'image');
+            // New Robust Pipeline:
+            // 1. Get a fetchable URL.
+            // 2. Fetch it to get a blob.
+            // 3. Convert blob to base64.
+            let mediaUrlToFetch: string;
+    
+            if ('asset_type' in asset) { // Public Asset
+                if (!asset.asset_url) throw new Error("O URL do recurso público está ausente.");
+                mediaUrlToFetch = asset.asset_url;
+            } else { // User Asset
+                const userAsset = asset as UploadedAsset;
+                if (!userAsset.storage_path) throw new Error("O caminho de armazenamento para o recurso do utilizador está ausente.");
+                mediaUrlToFetch = await createSignedUrlForPath(userAsset.storage_path);
+            }
+    
+            if (!mediaUrlToFetch) {
+                throw new Error("URL do recurso é inválido ou está ausente.");
+            }
+    
+            const response = await fetch(mediaUrlToFetch);
+            if (!response.ok) {
+                throw new Error(`Falha ao buscar o recurso (status: ${response.status}). O URL pode ter expirado ou ser inválido.`);
+            }
+            const blob = await response.blob();
+            base64Src = await blobToBase64(blob);
+    
+            // Continue with the rest of the logic...
+            const mediaElement = await loadMedia(base64Src, type === 'video' ? 'video' : 'image');
             
             let naturalWidth: number, naturalHeight: number, duration: number | undefined;
             if (mediaElement instanceof HTMLVideoElement) {
                 naturalWidth = mediaElement.videoWidth;
                 naturalHeight = mediaElement.videoHeight;
                 duration = mediaElement.duration;
-            } else if (mediaElement instanceof HTMLImageElement) {
+            } else {
                 naturalWidth = mediaElement.naturalWidth;
                 naturalHeight = mediaElement.naturalHeight;
-            } else {
-                return;
             }
-
+    
             const canvasWidth = activePage.width;
             const canvasHeight = activePage.height;
-            
-            let scaleToFit = 1;
-            if (naturalWidth > canvasWidth || naturalHeight > canvasHeight) {
-                const widthRatio = canvasWidth / naturalWidth;
-                const heightRatio = canvasHeight / naturalHeight;
-                scaleToFit = Math.min(widthRatio, heightRatio) * 0.9; // Add some padding
-            }
-
+            let scaleToFit = Math.min(canvasWidth / naturalWidth, canvasHeight / naturalHeight) * 0.9;
+            if (scaleToFit > 1) scaleToFit = 1;
+    
             const layerWidth = naturalWidth * scaleToFit;
             const layerHeight = naturalHeight * scaleToFit;
             
             const newLayerBase = { 
-                name: asset.name, 
-                src: mediaElement.src, 
-                x: (canvasWidth - layerWidth) / 2,
-                y: (canvasHeight - layerHeight) / 2,
-                width: layerWidth, 
-                height: layerHeight, 
-                mediaNaturalWidth: naturalWidth, 
-                mediaNaturalHeight: naturalHeight, 
-                scale: scaleToFit,
-                offsetX: 0,
-                offsetY: 0,
+                name: asset.name, src: base64Src, assetId: asset.id,
+                x: dropCoords ? dropCoords.x - layerWidth / 2 : (canvasWidth - layerWidth) / 2,
+                y: dropCoords ? dropCoords.y - layerHeight / 2 : (canvasHeight - layerHeight) / 2,
+                width: layerWidth, height: layerHeight, 
+                mediaNaturalWidth: naturalWidth, mediaNaturalHeight: naturalHeight, 
+                scale: scaleToFit, offsetX: 0, offsetY: 0,
                 crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight } 
             };
             
@@ -514,7 +536,11 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                  const newLayer: ImageLayer = { ...newLayerBase, type: 'image', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, _imageElement: mediaElement as HTMLImageElement };
                  addLayer(newLayer);
             }
-        } catch (e) { console.error("Failed to load asset media", e); }
+        } catch (e) {
+            console.error("Falha ao carregar a mídia do recurso", e);
+            const message = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
+            setError(`Não foi possível carregar o recurso '${asset.name}'. Detalhes: ${message}`);
+        }
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -647,13 +673,15 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             const newSet = new Set<string>();
             const layerToToggle = activePage.layers.find(l => l.id === layerId) as VideoLayer;
     
-            if (!layerToToggle?._videoElement) {
+            // This check is critical. An invalid clone can make _videoElement a plain object.
+            if (!layerToToggle?._videoElement || typeof layerToToggle._videoElement.play !== 'function') {
+                console.error("Tentativa de reproduzir um elemento de vídeo inválido. Verifique o estado do projeto.");
                 return prev;
             }
     
             prev.forEach(id => {
                 const oldLayer = activePage.layers.find(l => l.id === id) as VideoLayer;
-                if (oldLayer?._videoElement) {
+                if (oldLayer?._videoElement && typeof oldLayer._videoElement.pause === 'function') {
                     oldLayer._videoElement.pause();
                 }
             });
@@ -661,14 +689,14 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             if (!prev.has(layerId)) {
                 newSet.add(layerId);
                 layerToToggle._videoElement.muted = false; 
-                layerToToggle._videoElement.play().catch(e => console.error("Video play failed:", e));
+                layerToToggle._videoElement.play().catch(e => console.error("A reprodução do vídeo falhou:", e));
             }
             
             return newSet;
         });
     }, [activePage]);
 
-    const getCoords = useCallback((e: React.MouseEvent<HTMLDivElement> | MouseEvent): { x: number, y: number } => {
+    const getCoords = useCallback((e: React.MouseEvent<HTMLDivElement> | MouseEvent | React.DragEvent<HTMLDivElement>): { x: number, y: number } => {
         const canvasWrapper = canvasContainerRef.current?.querySelector('.relative.shadow-2xl');
         if (!canvasWrapper) return { x: 0, y: 0 };
         const rect = canvasWrapper.getBoundingClientRect();
@@ -804,51 +832,128 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 const rdy = -dx * sin + dy * cos;
                 const minSize = 20;
                 
-                let { x: ox, y: oy, width: ow, height: oh } = initialLayer;
-                let newX = ox, newY = oy, newW = ow, newH = oh;
-
-                if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
-                if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
-                if (handle.includes('b')) newH = Math.max(minSize, oh + rdy);
-                if (handle.includes('t')) newH = Math.max(minSize, oh - rdy);
+                const { x: ox, y: oy, width: ow, height: oh } = initialLayer;
                 
-                if (e.shiftKey || !handle.includes('m')) { // Corner handles or shift key
-                    const originalAspectRatio = ow / oh;
-                    if (handle.includes('l') || handle.includes('r')) {
-                        newH = newW / originalAspectRatio;
-                    } else {
-                        newW = newH * originalAspectRatio;
-                    }
-                }
+                // FIX: Cast updates object to a more specific partial type to allow assignment of properties
+                // like 'scale', 'offsetX', and 'offsetY' that do not exist on all layer types in the AnyLayer union.
+                // This is safe because these assignments are within logic branches that have already confirmed
+                // the layer is of a type that supports these properties (ImageLayer or VideoLayer).
+                const updates: Partial<AnyLayer & { scale: number, offsetX: number, offsetY: number }> = {};
+                
+                if (['tl', 'tr', 'bl', 'br'].includes(handle)) { // Corner handles -> Proportional Scale
+                    let newW = ow;
+                    if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
+                    if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
 
-                const dw = newW - ow; const dh = newH - oh;
-                const d_center_local_x = (handle.includes('l') ? -dw / 2 : dw / 2);
-                const d_center_local_y = (handle.includes('t') ? -dh / 2 : dh / 2);
-                const d_center_x = d_center_local_x * cos - d_center_local_y * sin;
-                const d_center_y = d_center_local_x * sin + d_center_local_y * cos;
+                    const aspectRatio = ow / oh;
+                    const newH = newW / aspectRatio;
+                    const dw = newW - ow;
+                    const dh = newH - oh;
+                    
+                    let newX = ox, newY = oy;
+                    if (handle.includes('l')) newX -= dw;
+                    if (handle.includes('t')) newY -= dh;
 
-                const old_center_x = ox + ow / 2; const old_center_y = oy + oh / 2;
-                newX = old_center_x + d_center_x - newW / 2;
-                newY = old_center_y + d_center_y - newH / 2;
-
-                const updates: any = { x: newX, y: newY, width: newW, height: newH };
-
-                if (initialLayer.type === 'text') {
-                     const ctx = canvasRef.current?.getContext('2d');
-                     if(ctx) updates.fontSize = findOptimalFontSize(ctx, initialLayer.text, { ...initialLayer, width: newW, height: newH });
-                } else if (initialLayer.type === 'image' || initialLayer.type === 'video') {
-                    const mediaLayer = initialLayer as ImageLayer | VideoLayer;
-                    if (cropLayerId === mediaLayer.id) {
-                        const dx_layer = newX - ox; const dy_layer = newY - oy;
-                        const unrotated_dx = dx_layer * cos + dy_layer * sin; const unrotated_dy = -dx_layer * sin + dy_layer * cos;
-                        updates.scale = mediaLayer.scale;
-                        updates.offsetX = mediaLayer.offsetX - unrotated_dx;
-                        updates.offsetY = mediaLayer.offsetY - unrotated_dy;
-                    } else {
-                        const newScale = newW / mediaLayer.mediaNaturalWidth;
+                    const center_dx = (newX + newW/2) - (ox + ow/2);
+                    const center_dy = (newY + newH/2) - (oy + oh/2);
+                    
+                    updates.x = (ox + ow/2) + (center_dx * cos - center_dy * sin) - newW / 2;
+                    updates.y = (oy + oh/2) + (center_dx * sin + center_dy * cos) - newH / 2;
+                    updates.width = newW;
+                    updates.height = newH;
+                    
+                    if (initialLayer.type === 'image' || initialLayer.type === 'video') {
+                        const mediaLayer = initialLayer as ImageLayer | VideoLayer;
+                        const newScale = newW / (mediaLayer.crop.width || mediaLayer.mediaNaturalWidth);
                         updates.scale = newScale;
-                        updates.offsetX = (newW - mediaLayer.mediaNaturalWidth * newScale) / 2;
-                        updates.offsetY = (newH - mediaLayer.mediaNaturalHeight * newScale) / 2;
+                    }
+                } else { // Side handles for crop/reveal/scale
+                     const isMediaLayer = initialLayer.type === 'image' || initialLayer.type === 'video';
+                     if (!isMediaLayer) { // Non-proportional scale for shapes
+                        updates.width = Math.max(minSize, ow + (handle.includes('l') || handle.includes('r') ? rdx : 0));
+                        updates.height = Math.max(minSize, oh + (handle.includes('t') || handle.includes('b') ? rdy : 0));
+                        // Position adjustment for left/top handles
+                     } else {
+                        const mediaLayer = initialLayer as ImageLayer | VideoLayer;
+                        const deltaX = handle === 'ml' ? -rdx : (handle === 'mr' ? rdx : 0);
+                        const deltaY = handle === 'tm' ? -rdy : (handle === 'bm' ? rdy : 0);
+                        
+                        if (deltaX !== 0) { // Horizontal Drag
+                            if (deltaX < 0) { // Crop
+                                const cropAmount = Math.abs(deltaX);
+                                updates.width = Math.max(minSize, ow - cropAmount);
+                                const actualCrop = ow - updates.width;
+                                if (handle === 'ml') {
+                                    updates.x = ox + actualCrop * cos; updates.y = oy + actualCrop * sin;
+                                    updates.offsetX = mediaLayer.offsetX + actualCrop;
+                                }
+                            } else { // Expand
+                                const revealable = handle === 'ml' ? mediaLayer.offsetX : (mediaLayer.mediaNaturalWidth * mediaLayer.scale) - (mediaLayer.offsetX + ow);
+                                const revealAmount = Math.min(deltaX, revealable);
+                                const scaleAmount = deltaX - revealAmount;
+                                
+                                updates.width = ow + revealAmount;
+                                if (handle === 'ml') {
+                                    const dx_local = -revealAmount;
+                                    updates.x = ox + dx_local * cos; updates.y = oy + dx_local * sin;
+                                    updates.offsetX = mediaLayer.offsetX - revealAmount;
+                                }
+                                if (scaleAmount > 0) {
+                                    const scaleFactor = (updates.width + scaleAmount) / updates.width;
+                                    const finalW = updates.width * scaleFactor; const finalH = oh * scaleFactor;
+                                    const total_dw = finalW - ow; const total_dh = finalH - oh;
+                                    updates.width = finalW; updates.height = finalH;
+                                    updates.scale = mediaLayer.scale * scaleFactor;
+                                    updates.offsetX = (updates.offsetX ?? mediaLayer.offsetX) * scaleFactor;
+                                    updates.offsetY = mediaLayer.offsetY * scaleFactor;
+                                    if (handle === 'ml') {
+                                        const local_dx = -total_dw; updates.x = ox + local_dx * cos; updates.y = oy + local_dx * sin;
+                                        updates.y = oy + (local_dx * sin) - (total_dh / 2 * cos);
+                                    } else {
+                                        updates.y = oy - (total_dh / 2 * cos);
+                                    }
+                                }
+                            }
+                        } else if (deltaY !== 0) { // Vertical Drag
+                             if (deltaY < 0) { // Crop
+                                const cropAmount = Math.abs(deltaY);
+                                updates.height = Math.max(minSize, oh - cropAmount);
+                                const actualCrop = oh - updates.height;
+                                if (handle === 'tm') {
+                                    updates.x = ox - actualCrop * sin; updates.y = oy + actualCrop * cos;
+                                    updates.offsetY = mediaLayer.offsetY + actualCrop;
+                                }
+                            } else { // Expand
+                                const revealable = handle === 'tm' ? mediaLayer.offsetY : (mediaLayer.mediaNaturalHeight * mediaLayer.scale) - (mediaLayer.offsetY + oh);
+                                const revealAmount = Math.min(deltaY, revealable);
+                                const scaleAmount = deltaY - revealAmount;
+
+                                updates.height = oh + revealAmount;
+                                if (handle === 'tm') {
+                                    const dy_local = -revealAmount;
+                                    updates.x = ox - dy_local * sin; updates.y = oy + dy_local * cos;
+                                    updates.offsetY = mediaLayer.offsetY - revealAmount;
+                                }
+                                if (scaleAmount > 0) {
+                                    const scaleFactor = (updates.height + scaleAmount) / updates.height;
+                                    const finalW = ow * scaleFactor; const finalH = updates.height * scaleFactor;
+                                    const total_dw = finalW - ow; const total_dh = finalH - oh;
+                                    updates.width = finalW; updates.height = finalH;
+                                    updates.scale = mediaLayer.scale * scaleFactor;
+                                    updates.offsetX = mediaLayer.offsetX * scaleFactor;
+                                    updates.offsetY = (updates.offsetY ?? mediaLayer.offsetY) * scaleFactor;
+
+                                    if (handle === 'tm') {
+                                        const local_dy = -total_dh;
+                                        updates.x = ox - (local_dy * sin) - (total_dw / 2 * cos);
+                                        updates.y = oy + (local_dy * cos) - (total_dw / 2 * sin);
+                                    } else {
+                                         updates.x = ox - (total_dw / 2 * cos);
+                                         updates.y = oy - (total_dw / 2 * sin);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -905,100 +1010,101 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         }
     };
 
-    const drawScene = useCallback(() => {
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        const currentPage = project.pages[activePageIndex];
-        if (!ctx || !canvas || !currentPage) return;
-    
-        canvas.width = currentPage.width;
-        canvas.height = currentPage.height;
-        ctx.fillStyle = currentPage.backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-        currentPage.layers.forEach(layer => {
-            if (!layer.isVisible) return;
+    const drawPageToCanvas = useCallback(async (page: Page, canvas: HTMLCanvasElement, options: { transparent: boolean, time?: number }) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Could not get canvas context for export.");
 
-            if (layer.id === editingTextLayerId) return;
-    
-            ctx.save();
-            ctx.globalAlpha = layer.opacity;
-            ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2);
-            ctx.rotate(layer.rotation * Math.PI / 180);
-            
-            const drawX = -layer.width / 2;
-            const drawY = -layer.height / 2;
-            
-            if (layer.type === 'text') {
-                ctx.font = `${layer.fontStyle} ${layer.fontWeight} ${layer.fontSize}px "${layer.fontFamily}"`;
-                ctx.fillStyle = layer.color;
-                ctx.textAlign = layer.textAlign;
-                ctx.textBaseline = 'top';
-                ctx.letterSpacing = `${layer.letterSpacing || 0}px`;
-                
-                let textToDraw = layer.text;
-                if (layer.textTransform === 'uppercase') {
-                    textToDraw = textToDraw.toUpperCase();
-                } else if (layer.textTransform === 'lowercase') {
-                    textToDraw = textToDraw.toLowerCase();
-                }
+        canvas.width = page.width;
+        canvas.height = page.height;
 
-                let textDrawX = drawX;
-                if (layer.textAlign === 'center') textDrawX += layer.width / 2;
-                else if (layer.textAlign === 'right') textDrawX += layer.width;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!options.transparent) {
+            ctx.fillStyle = page.backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
-                const words = textToDraw.split(' ');
-                let line = '';
-                let currentY = drawY;
-                const lineHeight = layer.fontSize * layer.lineHeight;
+        for (const layer of page.layers) {
+             if (!layer.isVisible) continue;
+             
+             ctx.save();
+             ctx.globalAlpha = layer.opacity;
+             ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2);
+             ctx.rotate(layer.rotation * Math.PI / 180);
+             const drawX = -layer.width / 2;
+             const drawY = -layer.height / 2;
 
-                for (let n = 0; n < words.length; n++) {
-                    const testLine = line + words[n] + ' ';
-                    const metrics = ctx.measureText(testLine);
-                    const testWidth = metrics.width;
-                    if (testWidth > layer.width && n > 0) {
-                        ctx.fillText(line, textDrawX, currentY);
-                        line = words[n] + ' ';
-                        currentY += lineHeight;
-                    } else {
-                        line = testLine;
-                    }
-                }
-                ctx.fillText(line, textDrawX, currentY);
-
-            } else if (layer.type === 'shape') {
-                ctx.fillStyle = layer.fill;
-                if(layer.shape === 'rectangle') ctx.fillRect(drawX, drawY, layer.width, layer.height);
-                else { ctx.beginPath(); ctx.ellipse(0, 0, layer.width / 2, layer.height / 2, 0, 0, 2 * Math.PI); ctx.fill(); }
-            } else if (layer.type === 'image' || layer.type === 'video') {
+            if (layer.type === 'image' || layer.type === 'video') {
                 const mediaLayer = layer as ImageLayer | VideoLayer;
-                const mediaElement = mediaLayer.type === 'image' ? mediaLayer._imageElement : mediaLayer._videoElement;
-    
-                let isReady = false;
-    
-                if (mediaElement) {
-                    if (mediaElement instanceof HTMLImageElement) {
-                        isReady = mediaElement.complete && mediaElement.naturalWidth > 0;
-                    } else if (mediaElement instanceof HTMLVideoElement) {
-                        isReady = mediaElement.readyState >= 2;
-                    }
+                // FIX: Type-check to correctly access _videoElement or _imageElement from the union type, resolving "Property does not exist on type" errors.
+                let mediaElement = mediaLayer.type === 'video' ? mediaLayer._videoElement : mediaLayer._imageElement;
+                if (!mediaElement) {
+                    mediaElement = await loadMedia(mediaLayer.src, mediaLayer.type);
                 }
-    
-                if (isReady) {
-                    ctx.beginPath();
-                    ctx.rect(drawX, drawY, layer.width, layer.height);
-                    ctx.clip();
+                
+                if (mediaElement instanceof HTMLVideoElement && options.time !== undefined) {
+                    const videoTime = (options.time / 1000) % mediaElement.duration;
+                    mediaElement.currentTime = videoTime;
+                    await new Promise(res => setTimeout(res, 50)); // Give it a moment to seek
+                }
+
+                ctx.beginPath();
+                ctx.rect(drawX, drawY, layer.width, layer.height);
+                ctx.clip();
+                
+                const contentWidth = mediaLayer.mediaNaturalWidth * mediaLayer.scale;
+                const contentHeight = mediaLayer.mediaNaturalHeight * mediaLayer.scale;
+                
+                ctx.drawImage(mediaElement, drawX - mediaLayer.offsetX, drawY - mediaLayer.offsetY, contentWidth, contentHeight);
+            } else {
+                 // Reuse existing drawing logic for non-media layers
+                if (layer.type === 'text') {
+                    ctx.font = `${layer.fontStyle} ${layer.fontWeight} ${layer.fontSize}px "${layer.fontFamily}"`;
+                    ctx.fillStyle = layer.color;
+                    ctx.textAlign = layer.textAlign;
+                    ctx.textBaseline = 'top';
+                    ctx.letterSpacing = `${layer.letterSpacing || 0}px`;
                     
-                    const contentWidth = mediaLayer.mediaNaturalWidth * mediaLayer.scale;
-                    const contentHeight = mediaLayer.mediaNaturalHeight * mediaLayer.scale;
-                    
-                    ctx.drawImage(mediaElement, drawX + mediaLayer.offsetX, drawY + mediaLayer.offsetY, contentWidth, contentHeight);
+                    let textToDraw = layer.text;
+                    if (layer.textTransform === 'uppercase') textToDraw = textToDraw.toUpperCase();
+                    else if (layer.textTransform === 'lowercase') textToDraw = textToDraw.toLowerCase();
+
+                    let textDrawX = drawX;
+                    if (layer.textAlign === 'center') textDrawX += layer.width / 2;
+                    else if (layer.textAlign === 'right') textDrawX += layer.width;
+
+                    const words = textToDraw.split(' ');
+                    let line = '';
+                    let currentY = drawY;
+                    const lineHeight = layer.fontSize * layer.lineHeight;
+
+                    for (let n = 0; n < words.length; n++) {
+                        const testLine = line + words[n] + ' ';
+                        const metrics = ctx.measureText(testLine);
+                        if (metrics.width > layer.width && n > 0) {
+                            ctx.fillText(line, textDrawX, currentY);
+                            line = words[n] + ' ';
+                            currentY += lineHeight;
+                        } else {
+                            line = testLine;
+                        }
+                    }
+                    ctx.fillText(line, textDrawX, currentY);
+
+                } else if (layer.type === 'shape') {
+                    ctx.fillStyle = layer.fill;
+                    if(layer.shape === 'rectangle') ctx.fillRect(drawX, drawY, layer.width, layer.height);
+                    else { ctx.beginPath(); ctx.ellipse(0, 0, layer.width / 2, layer.height / 2, 0, 0, 2 * Math.PI); ctx.fill(); }
                 }
             }
             ctx.restore();
-        });
-    }, [project, activePageIndex, editingTextLayerId]);
-    
+        }
+    }, []);
+
+    const drawScene = useCallback(() => {
+        if (!activePage || !canvasRef.current) return;
+        drawPageToCanvas(activePage, canvasRef.current!, { transparent: false });
+    }, [activePage, drawPageToCanvas]);
+
     useEffect(() => {
         const renderLoop = () => {
             drawScene();
@@ -1026,7 +1132,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     useEffect(() => {
         activePage?.layers.forEach(layer => {
-            if (layer.type === 'image' && (!layer._imageElement || layer._imageElement.src !== layer.src)) {
+            if (layer.type === 'image' && layer.src && (!layer._imageElement || layer._imageElement.src !== layer.src)) {
                 loadMedia(layer.src, 'image').then(img => {
                     updateProject(draft => {
                         const l = draft.pages[activePageIndex]?.layers.find(l => l.id === layer.id);
@@ -1036,8 +1142,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                            l.mediaNaturalHeight = (img as HTMLImageElement).naturalHeight;
                         }
                     }, false)
-                });
-            } else if (layer.type === 'video' && (!layer._videoElement || layer._videoElement.src !== layer.src)) {
+                }).catch(err => console.error(`Failed to lazy-load image for layer ${layer.id}:`, err));
+            } else if (layer.type === 'video' && layer.src && (!layer._videoElement || layer._videoElement.src !== layer.src)) {
                 loadMedia(layer.src, 'video').then(vid => {
                     updateProject(draft => {
                         const l = draft.pages[activePageIndex]?.layers.find(l => l.id === layer.id);
@@ -1047,7 +1153,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                             l.mediaNaturalHeight = (vid as HTMLVideoElement).videoHeight;
                         }
                     }, false)
-                });
+                }).catch(err => console.error(`Failed to lazy-load video for layer ${layer.id}:`, err));
             }
         })
     }, [activePage?.layers, updateProject, activePageIndex]);
@@ -1106,7 +1212,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(a.href);
     };
 
     const handleSaveProjectAsPublic = async () => {
@@ -1146,7 +1252,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             const pageToDuplicate = draft.pages[index];
             if (pageToDuplicate) {
                 const newPage: Page = {
-                    ...JSON.parse(JSON.stringify(pageToDuplicate)),
+                    ...deepCloneWithElements(pageToDuplicate),
                     id: nanoid(),
                     name: `${pageToDuplicate.name} Cópia`,
                 };
@@ -1156,8 +1262,181 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         }, true);
     };
 
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.types.includes('application/json')) {
+            e.dataTransfer.dropEffect = 'copy';
+            setIsDraggingOver(true);
+        }
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    };
+
+    const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    
+        const dropCoords = getCoords(e);
+        
+        // Handle sidebar drop
+        const assetJson = e.dataTransfer.getData('application/json');
+        if (assetJson) {
+            try {
+                const asset = JSON.parse(assetJson);
+                handleAddAssetToCanvas(asset, dropCoords);
+            } catch (error) {
+                console.error("Failed to parse dropped asset data:", error);
+                setError("Falha ao adicionar o recurso arrastado.");
+            }
+            return;
+        }
+    };
+    
+    const exportImages = useCallback(async (options: DownloadOptions, job: DownloadJob) => {
+        const offscreenCanvas = document.createElement('canvas');
+        const updateJob = (update: Partial<DownloadJob>) => setDownloadJobs(prev => prev.map(j => j.id === job.id ? {...j, ...update} : j));
+
+        try {
+            const pagesToExport = options.pageIndexes.map(i => project.pages[i]);
+            
+            if (pagesToExport.length === 1) { // Single image download
+                const page = pagesToExport[0];
+                updateJob({ statusText: `Renderizando ${page.name}...` });
+                await drawPageToCanvas(page, offscreenCanvas, { transparent: options.transparent });
+                const blob = await new Promise<Blob | null>(resolve => offscreenCanvas.toBlob(resolve, `image/${options.format}`, 0.95));
+                if (!blob) throw new Error("Falha ao criar blob da imagem.");
+                const url = URL.createObjectURL(blob);
+                updateJob({ status: 'done', resultUrl: url, progress: 100 });
+            } else { // Multiple images -> ZIP
+                const zip = new JSZip();
+                for (let i = 0; i < pagesToExport.length; i++) {
+                    const page = pagesToExport[i];
+                    updateJob({ statusText: `Compactando ${page.name} (${i+1}/${pagesToExport.length})...`, progress: (i / pagesToExport.length) * 100 });
+                    await drawPageToCanvas(page, offscreenCanvas, { transparent: options.transparent });
+                    const blob = await new Promise<Blob | null>(resolve => offscreenCanvas.toBlob(resolve, `image/${options.format}`, 0.95));
+                    if(blob) zip.file(`${page.name}.${options.format}`, blob);
+                }
+                updateJob({ statusText: 'Finalizando zip...', progress: 99 });
+                const zipBlob = await zip.generateAsync({ type: 'blob' });
+                const url = URL.createObjectURL(zipBlob);
+                updateJob({ status: 'done', resultUrl: url, progress: 100, fileName: `${project.name}.zip` });
+            }
+        } catch (err) {
+            console.error("Image export failed:", err);
+            const message = err instanceof Error ? err.message : "Erro desconhecido.";
+            updateJob({ status: 'error', error: `Falha na exportação: ${message}` });
+        }
+    }, [project.name, project.pages, drawPageToCanvas]);
+
+    const exportVideo = useCallback(async (options: DownloadOptions, job: DownloadJob) => {
+        const updateJob = (update: Partial<DownloadJob>) => setDownloadJobs(prev => prev.map(j => j.id === job.id ? {...j, ...update} : j));
+        
+        let audioWorker: Worker | null = null;
+        let videoWorker: Worker | null = null;
+
+        try {
+             // 1. Prepare Audio
+            updateJob({ statusText: 'Preparando áudio...' });
+            const audioSources = project.audioTracks.map(t => t.src);
+            const totalDuration = project.pages.reduce((acc, p) => acc + p.duration / 1000, 0);
+
+            let mixedAudio: any = null;
+            if (audioSources.length > 0) {
+                 audioWorker = new Worker(new URL('../../services/audio.worker.ts', import.meta.url), { type: 'module' });
+                 mixedAudio = await new Promise((resolve, reject) => {
+                     audioWorker!.onmessage = e => e.data.type === 'done' ? resolve(e.data.payload) : reject(new Error(e.data.payload.message));
+                     audioWorker!.onerror = e => reject(e);
+                     audioWorker!.postMessage({ type: 'process', payload: { audioSources, maxDuration: totalDuration } });
+                 });
+                 audioWorker.terminate();
+            }
+             updateJob({ status: 'rendering', statusText: 'Configurando codificador de vídeo...' });
+
+             // 2. Prepare Video
+             const exportWidth = activePage.width;
+             const exportHeight = activePage.height;
+             const offscreenCanvas = new OffscreenCanvas(exportWidth, exportHeight);
+
+             videoWorker = new Worker(new URL('../../services/videoRenderer.worker.ts', import.meta.url), { type: 'module' });
+             const finalBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+                 videoWorker!.onmessage = async (e) => {
+                    if (e.data.type === 'ready') {
+                        const totalFrames = Math.ceil(totalDuration * options.frameRate);
+                        let framesEncoded = 0;
+                        let pageStartTime = 0;
+
+                        for (const page of project.pages) {
+                            const pageEndTime = pageStartTime + page.duration;
+                            for (let time = pageStartTime; time < pageEndTime; time += 1000 / options.frameRate) {
+                                await drawPageToCanvas(page, offscreenCanvas as any, { transparent: false, time });
+                                const frame = new (window as any).VideoFrame(offscreenCanvas, { timestamp: time * 1000 });
+                                videoWorker!.postMessage({ type: 'frame', payload: { frame } }, [frame]);
+                                framesEncoded++;
+                                updateJob({ progress: (framesEncoded / totalFrames) * 100, statusText: `Codificando frame ${framesEncoded} de ${totalFrames}` });
+                            }
+                            pageStartTime = pageEndTime;
+                        }
+                        videoWorker!.postMessage({ type: 'finish' });
+                    } else if (e.data.type === 'done') {
+                        resolve(e.data.payload);
+                    } else if (e.data.type === 'error') {
+                        reject(new Error(e.data.payload.message));
+                    }
+                 };
+                videoWorker!.onerror = e => reject(e);
+                videoWorker!.postMessage({ type: 'start', payload: { exportWidth, exportHeight, options, audio: mixedAudio } });
+            });
+            
+            const blob = new Blob([finalBuffer], { type: 'video/mp4' });
+            const url = URL.createObjectURL(blob);
+            updateJob({ status: 'done', resultUrl: url, progress: 100 });
+        
+        } catch(err) {
+            console.error("Video export failed:", err);
+            const message = err instanceof Error ? err.message : "Erro desconhecido.";
+            updateJob({ status: 'error', error: `Falha na exportação de vídeo: ${message}` });
+        } finally {
+            audioWorker?.terminate();
+            videoWorker?.terminate();
+        }
+    }, [project.audioTracks, project.pages, activePage, drawPageToCanvas]);
+
+    const handleExport = useCallback(async (options: DownloadOptions) => {
+        const jobId = nanoid();
+        const thumbnailCanvas = document.createElement('canvas');
+        await drawPageToCanvas(activePage, thumbnailCanvas, { transparent: false });
+        const thumbnail = thumbnailCanvas.toDataURL('image/jpeg', 0.5);
+
+        const newJob: DownloadJob = {
+            id: jobId,
+            fileName: `${project.name}.${options.format}`,
+            status: 'preparing',
+            progress: 0,
+            statusText: 'A iniciar...',
+            thumbnail,
+        };
+        setDownloadJobs(prev => [...prev, newJob]);
+
+        // Use a timeout to allow the UI to update before starting heavy work
+        setTimeout(() => {
+            if (options.format === 'mp4') {
+                exportVideo(options, newJob);
+            } else {
+                exportImages(options, newJob);
+            }
+        }, 100);
+
+    }, [project.name, activePage, drawPageToCanvas, exportImages, exportVideo]);
+
     return (
         <div className="h-full w-full flex flex-col bg-brand-accent text-white">
+            <DownloadManager jobs={downloadJobs} setJobs={setDownloadJobs} />
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
             <BackgroundRemoverModal
                 isOpen={bgRemoverState.isOpen}
@@ -1170,6 +1449,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 isOpen={isLoadProjectModalOpen}
                 onClose={() => setIsLoadProjectModalOpen(false)}
                 onLoadProject={(p) => loadProjectState(p, false)}
+            />
+             <DownloadModal
+                isOpen={isDownloadModalOpen}
+                onClose={() => setIsDownloadModalOpen(false)}
+                onDownload={handleExport}
+                hasVideoOrAudio={hasVideoOrAudio}
+                pageCount={project.pages.length}
             />
             <CreativeEditorHeader
                 projectName={project.name}
@@ -1199,7 +1485,11 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                     onGenerateImage={handleGenerateImage}
                     isGeneratingImage={isGeneratingImage}
                 />
-                <main ref={canvasContainerRef} className="flex-grow flex items-center justify-center p-8 bg-gray-800 relative overflow-hidden">
+                <main ref={canvasContainerRef} className="flex-grow flex items-center justify-center p-8 bg-gray-800 relative overflow-hidden"
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
                     {activePage && (
                         <div className="relative shadow-2xl" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
                             <canvas ref={canvasRef} />
@@ -1254,6 +1544,18 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                             </div>
                         </div>
                     )}
+                    <AnimatePresence>
+                    {isDraggingOver && (
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-brand-primary/20 border-4 border-dashed border-brand-primary rounded-lg pointer-events-none z-50 flex items-center justify-center"
+                        >
+                            <p className="text-white text-2xl font-bold">Solte aqui para adicionar</p>
+                        </motion.div>
+                    )}
+                    </AnimatePresence>
                      <div className="absolute bottom-4 right-4 z-10 bg-brand-dark/80 backdrop-blur-sm rounded-lg text-white flex items-center p-1 shadow-lg">
                         <button onClick={handleZoomOut} className="p-2 hover:bg-brand-light rounded-md" title="Diminuir zoom"><IconMinus className="w-5 h-5"/></button>
                         <button onClick={() => setZoom(1)} className="px-3 text-sm font-semibold" title="Redefinir para 100%">{Math.round(zoom * 100)}%</button>

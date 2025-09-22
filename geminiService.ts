@@ -1,17 +1,9 @@
 import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from './types.ts';
 import { delay } from './utils/imageUtils.ts';
-import { supabase } from './services/supabaseClient.ts';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
-
-// This list should ideally be managed in a central config, but defining here for service-level logic
-const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
-
-export const AI_PROMPTS = {
-    MAGIC_EXPAND: `CRITICAL TASK: You are a professional photo editor. The user has provided an image and wants to expand it. Your task is to intelligently fill the new, empty areas around the original image content. The generated areas must seamlessly blend with the original image in terms of style, lighting, texture, and content. The expansion should feel like a natural continuation of the scene.`
-};
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {

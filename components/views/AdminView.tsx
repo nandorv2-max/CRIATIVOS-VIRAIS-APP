@@ -299,9 +299,7 @@ const AdminView: React.FC = () => {
                         <thead className="bg-brand-light">
                              <tr>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Email</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Role</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Plano</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Créditos</th>
                                 <th scope="col" className="relative px-6 py-3"><span className="sr-only">Editar</span></th>
                             </tr>
@@ -310,13 +308,7 @@ const AdminView: React.FC = () => {
                             {users.map((user) => (
                                 <tr key={user.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{user.email}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                            {user.status === 'active' ? 'Ativo' : 'Pendente'}
-                                        </span>
-                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{user.role}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{plans.find(p => p.id === user.plan_id)?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{user.credits}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <Button onClick={() => setEditingUser(user)} className="!px-3 !py-1 text-xs">Editar</Button>

@@ -8,7 +8,7 @@ import { IconUpload, IconCamera, IconImageIcon } from './Icons.tsx';
 import CameraModal from './CameraModal.tsx';
 import UploadOptionsModal from './UploadOptionsModal.tsx';
 import GalleryPickerModal from './GalleryPickerModal.tsx';
-import { uploadUserAsset } from '../services/databaseService.ts';
+import { uploadUserAsset, createSignedUrlForPath } from '../services/databaseService.ts';
 import type { UploadedAsset, UserProfile } from '../types.ts';
 import { showGoogleDrivePicker } from '../services/googleDriveService.ts';
 
@@ -54,7 +54,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile }) => {
         setIsUploading(true);
         setError(null);
         try {
-            const response = await fetch(asset.url);
+            const signedUrl = await createSignedUrlForPath(asset.storage_path);
+            const response = await fetch(signedUrl);
             if (!response.ok) {
                 throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
             }

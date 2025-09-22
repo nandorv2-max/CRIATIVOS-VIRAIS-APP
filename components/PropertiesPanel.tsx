@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { AnyLayer, TextLayer, ShapeLayer, UserProfile } from '../types.ts';
 import Button from './Button.tsx';
 import { IconDownload, IconFolder, IconSave, IconCrop, IconRocket, IconFile } from './Icons.tsx';
@@ -56,7 +57,19 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     userProfile, onSaveProjectAsPublic, onSaveProjectToComputer, onNewProject
 }) => {
     
+    const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
+    const saveMenuRef = useRef<HTMLDivElement>(null);
     const selectedPresetName = SIZE_PRESETS.find(p => p.width === canvasWidth && p.height === canvasHeight)?.name || 'Personalizado';
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (saveMenuRef.current && !saveMenuRef.current.contains(event.target as Node)) {
+                setIsSaveMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selected = SIZE_PRESETS.find(p => p.name === e.target.value);
@@ -86,17 +99,35 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <Button onClick={onNewProject} className="w-full">
                     <div className="flex items-center gap-2"><IconFile className="w-5 h-5" /> Novo Projeto</div>
                 </Button>
-                 <Button onClick={onSaveProject} className="w-full">
-                    <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar nos Meus Recursos</div>
-                </Button>
-                <Button onClick={onSaveProjectToComputer} className="w-full">
-                    <div className="flex items-center gap-2"><IconDownload className="w-5 h-5" /> Salvar no Computador</div>
-                </Button>
-                {userProfile?.isAdmin && (
-                    <Button onClick={onSaveProjectAsPublic} className="w-full">
-                        <div className="flex items-center gap-2"><IconRocket className="w-5 h-5"/> Salvar como Modelo Público</div>
+
+                <div className="relative" ref={saveMenuRef}>
+                    <Button onClick={() => setIsSaveMenuOpen(prev => !prev)} className="w-full">
+                        <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar Projeto</div>
                     </Button>
-                )}
+                    <AnimatePresence>
+                        {isSaveMenuOpen && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                className="absolute bottom-full left-0 w-full mb-2 bg-brand-light rounded-lg shadow-2xl p-2 border border-brand-accent z-10"
+                            >
+                                <button onClick={() => { onSaveProject(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                    <IconSave className="w-5 h-5" /> Salvar nos Meus Recursos
+                                </button>
+                                <button onClick={() => { onSaveProjectToComputer(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                    <IconDownload className="w-5 h-5" /> Salvar no Computador
+                                </button>
+                                {userProfile?.isAdmin && (
+                                     <button onClick={() => { onSaveProjectAsPublic(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                        <IconRocket className="w-5 h-5"/> Salvar como Modelo Público
+                                    </button>
+                                )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+                
                 <Button onClick={onLoadProject} className="w-full">
                     <div className="flex items-center gap-2"><IconFolder className="w-5 h-5"/> Carregar Projeto</div>
                 </Button>

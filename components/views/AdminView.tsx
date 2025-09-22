@@ -23,7 +23,7 @@ import type { UserProfile, Plan, PublicAsset, Category, Feature, CreditCost, Ass
 import EditUserModal from '../EditUserModal.tsx';
 import Button from '../Button.tsx';
 import AdminSetupInstructions from '../AdminSetupInstructions.tsx';
-import { IconTrash, IconEdit } from '../Icons.tsx';
+import { IconTrash, IconEdit, IconRocket } from '../Icons.tsx';
 import EditAssetModal from '../EditAssetModal.tsx';
 
 type AdminTab = 'users' | 'media' | 'fonts' | 'presets' | 'plans';
@@ -129,7 +129,14 @@ const AssetGallery: React.FC<{
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {filteredAssets.map(asset => (
                     <div key={asset.id} className="relative group aspect-square bg-brand-light rounded-lg">
-                        <img src={asset.thumbnail_url || asset.asset_url} alt={asset.name} className="w-full h-full object-contain p-2" />
+                         {['image', 'video'].includes(asset.asset_type) ? (
+                            <img src={asset.thumbnail_url || asset.asset_url} alt={asset.name} className="w-full h-full object-contain p-2" />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 p-2">
+                                <IconRocket className="w-12 h-12" />
+                                <span className="text-xs mt-2 text-center break-all">{asset.name.replace('.brmp', '')}</span>
+                            </div>
+                        )}
                         <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
                             <p className="text-xs text-white truncate">{asset.name}</p>
                             <div className="flex justify-end gap-2">

@@ -1,7 +1,7 @@
 import React from 'react';
 import Button from './Button.tsx';
 
-const SQL_SCRIPT = `-- SCRIPT DE CONFIGURAÇÃO MESTRE UNIFICADO v19.0 (VERSÃO FUNCIONAL RESTAURADA)
+const SQL_SCRIPT = `-- SCRIPT DE CONFIGURAÇÃO MESTRE UNIFICADO v19.1 (CORRIGE EDIÇÃO DE RECURSOS PÚBLICOS)
 -- Este script APAGA a configuração antiga e cria TUDO do zero.
 -- É a única coisa que precisa de ser executada no seu Editor SQL do Supabase.
 
@@ -17,6 +17,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.admin_get_all_users() CASCADE;
 DROP FUNCTION IF EXISTS public.admin_get_all_assets() CASCADE;
 DROP FUNCTION IF EXISTS public.admin_add_public_asset(text, text, text, text, text, text, uuid, uuid) CASCADE;
+DROP FUNCTION IF EXISTS public.admin_update_public_asset(uuid, text, uuid) CASCADE;
 DROP FUNCTION IF EXISTS public.admin_update_user(uuid, text, integer) CASCADE;
 DROP FUNCTION IF EXISTS public.admin_delete_user(uuid) CASCADE;
 DROP FUNCTION IF EXISTS public.admin_delete_public_asset(uuid) CASCADE;
@@ -125,6 +126,24 @@ BEGIN
     RETURN;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION public.admin_update_public_asset(p_asset_id uuid, p_new_name text, p_new_category_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$
+DECLARE
+    v_invoker_uid uuid := auth.uid();
+    v_invoker_is_admin boolean;
+BEGIN
+    SELECT role = 'admin' INTO v_invoker_is_admin FROM public.user_profiles WHERE id = v_invoker_uid;
+    IF NOT COALESCE(v_invoker_is_admin, false) THEN RAISE EXCEPTION 'PERMISSION_DENIED'; END IF;
+
+    UPDATE public.public_assets
+    SET
+        name = p_new_name,
+        category_id = p_new_category_id
+    WHERE id = p_asset_id;
+END;
+$$;
+
 
 -- ======= PARTE 7: CRIAR POLÍTICAS DE ARMAZENAMENTO (STORAGE) =======
 CREATE POLICY "Acesso público de leitura para public_assets" ON storage.objects FOR SELECT USING ( bucket_id = 'public_assets' );

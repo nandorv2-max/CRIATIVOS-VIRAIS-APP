@@ -1449,6 +1449,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 isOpen={isLoadProjectModalOpen}
                 onClose={() => setIsLoadProjectModalOpen(false)}
                 onLoadProject={(p) => loadProjectState(p, false)}
+                userProfile={userProfile}
             />
              <DownloadModal
                 isOpen={isDownloadModalOpen}

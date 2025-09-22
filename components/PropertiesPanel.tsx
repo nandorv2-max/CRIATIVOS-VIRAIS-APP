@@ -1,7 +1,9 @@
 import React from 'react';
-import type { AnyLayer, TextLayer, ShapeLayer } from '../types.ts';
+import type { AnyLayer, TextLayer, ShapeLayer, UserProfile } from '../types.ts';
 import Button from './Button.tsx';
-import { IconDownload, IconFolder, IconSave } from './Icons.tsx';
+import { IconDownload, IconFolder, IconSave, IconCrop, IconRocket, IconFile } from './Icons.tsx';
+import type { User } from '@supabase/gotrue-js';
+
 
 interface PropertiesPanelProps {
     selectedLayers: AnyLayer[];
@@ -13,6 +15,14 @@ interface PropertiesPanelProps {
     onSaveProject: () => void;
     onLoadProject: () => void;
     onDownload: () => void;
+    cropLayerId: string | null;
+    onStartCrop: () => void;
+    onApplyCrop: () => void;
+    onCancelCrop: () => void;
+    userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
+    onSaveProjectAsPublic: () => void;
+    onSaveProjectToComputer: () => void;
+    onNewProject: () => void;
 }
 
 const SIZE_PRESETS = [
@@ -42,7 +52,8 @@ const SliderInput: React.FC<{label: string, value: number, onChange: (v: number)
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     selectedLayers, onUpdateLayers, onCommitHistory, canvasWidth, canvasHeight, onCanvasSizeChange,
-    onSaveProject, onLoadProject, onDownload
+    onSaveProject, onLoadProject, onDownload, cropLayerId, onStartCrop, onApplyCrop, onCancelCrop,
+    userProfile, onSaveProjectAsPublic, onSaveProjectToComputer, onNewProject
 }) => {
     
     const selectedPresetName = SIZE_PRESETS.find(p => p.width === canvasWidth && p.height === canvasHeight)?.name || 'Personalizado';
@@ -72,9 +83,20 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
             )}
             <div className="pt-4 border-t border-brand-accent/50 space-y-2">
-                 <Button onClick={onSaveProject} className="w-full">
-                    <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar Projeto</div>
+                <Button onClick={onNewProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconFile className="w-5 h-5" /> Novo Projeto</div>
                 </Button>
+                 <Button onClick={onSaveProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar nos Meus Recursos</div>
+                </Button>
+                <Button onClick={onSaveProjectToComputer} className="w-full">
+                    <div className="flex items-center gap-2"><IconDownload className="w-5 h-5" /> Salvar no Computador</div>
+                </Button>
+                {userProfile?.isAdmin && (
+                    <Button onClick={onSaveProjectAsPublic} className="w-full">
+                        <div className="flex items-center gap-2"><IconRocket className="w-5 h-5"/> Salvar como Modelo Público</div>
+                    </Button>
+                )}
                 <Button onClick={onLoadProject} className="w-full">
                     <div className="flex items-center gap-2"><IconFolder className="w-5 h-5"/> Carregar Projeto</div>
                 </Button>
@@ -88,6 +110,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     const renderLayerProperties = () => {
          const layer = selectedLayers[0];
          if (!layer) return null;
+
+         const canCrop = selectedLayers.length === 1 && (layer.type === 'image' || layer.type === 'video');
+         const isCropping = canCrop && cropLayerId === layer.id;
 
          const renderTextProperties = (l: TextLayer) => (
             <>
@@ -111,39 +136,62 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
              </>
          );
 
-
          return (
              <div className="p-4 space-y-4">
                 <h3 className="text-lg font-bold text-white truncate">{selectedLayers.length > 1 ? `${selectedLayers.length} Camadas` : layer.name}</h3>
                 
-                {/* Transform Properties */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-gray-300">Transformar</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                        <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v})} onBlur={onCommitHistory} />
-                        <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v})} onBlur={onCommitHistory} />
-                        <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v})} onBlur={onCommitHistory} />
-                        <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v})} onBlur={onCommitHistory} />
+                {!isCropping && (
+                    <>
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-bold text-gray-300">Transformar</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v})} onBlur={onCommitHistory} />
+                                <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v})} onBlur={onCommitHistory} />
+                                <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v})} onBlur={onCommitHistory} />
+                                <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v})} onBlur={onCommitHistory} />
+                            </div>
+                            <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v})} onBlur={onCommitHistory} />
+                        </div>
+
+                        <div className="pt-4 border-t border-brand-accent/50 space-y-3">
+                            <h4 className="text-sm font-bold text-gray-300">Aparência</h4>
+                            <SliderInput 
+                                label="Opacidade" 
+                                value={Math.round((layer.opacity ?? 1) * 100)} 
+                                onChange={v => onUpdateLayers({ opacity: v / 100 })} 
+                                onBlur={onCommitHistory} 
+                                min={0} 
+                                max={100} 
+                                step={1} 
+                            />
+                        </div>
+                    </>
+                )}
+                
+                {canCrop && (
+                    <div className="pt-4 border-t border-brand-accent/50">
+                        {isCropping ? (
+                        <div className="flex flex-col gap-2">
+                            <p className="text-sm text-gray-300 text-center mb-2">Ajuste as alças para cortar a sua mídia.</p>
+                            <div className="flex gap-2">
+                                <Button onClick={onCancelCrop} className="w-full">Cancelar</Button>
+                                <Button onClick={onApplyCrop} primary className="w-full">Aplicar</Button>
+                            </div>
+                        </div>
+                        ) : (
+                        <Button onClick={onStartCrop} className="w-full">
+                            <div className="flex items-center justify-center gap-2"><IconCrop className="w-5 h-5"/> Cortar</div>
+                        </Button>
+                        )}
                     </div>
-                    <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v})} onBlur={onCommitHistory} />
-                </div>
+                )}
 
-                {/* Appearance Properties */}
-                <div className="pt-4 border-t border-brand-accent/50 space-y-3">
-                    <h4 className="text-sm font-bold text-gray-300">Aparência</h4>
-                    <SliderInput 
-                        label="Opacidade" 
-                        value={Math.round((layer.opacity ?? 1) * 100)} 
-                        onChange={v => onUpdateLayers({ opacity: v / 100 })} 
-                        onBlur={onCommitHistory} 
-                        min={0} 
-                        max={100} 
-                        step={1} 
-                    />
-                </div>
-
-                {selectedLayers.length === 1 && layer.type === 'text' && renderTextProperties(layer as TextLayer)}
-                {selectedLayers.length === 1 && layer.type === 'shape' && renderShapeProperties(layer as ShapeLayer)}
+                {selectedLayers.length === 1 && !isCropping && (
+                    <>
+                        {layer.type === 'text' && renderTextProperties(layer as TextLayer)}
+                        {layer.type === 'shape' && renderShapeProperties(layer as ShapeLayer)}
+                    </>
+                )}
              </div>
          );
     };

@@ -1,29 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import type { UserProfile, UserRole } from '../types.ts';
+import type { UserProfile, UserRole, Plan } from '../types.ts';
 import Button from './Button.tsx';
 import { IconX } from './Icons.tsx';
 
 interface EditUserModalProps {
     user: UserProfile | null;
+    plans: Plan[];
     onClose: () => void;
-    onSave: (userId: string, updates: { role: UserRole; credits: number }) => void;
+    onSave: (userId: string, updates: { role: UserRole; credits: number, status: 'active' | 'pending_approval', plan_id: string | null }) => void;
 }
 
-const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) => {
+const EditUserModal: React.FC<EditUserModalProps> = ({ user, plans, onClose, onSave }) => {
     const [role, setRole] = useState<UserRole>('starter');
     const [credits, setCredits] = useState(0);
+    const [status, setStatus] = useState<'active' | 'pending_approval'>('pending_approval');
+    const [planId, setPlanId] = useState<string | null>(null);
+
 
     useEffect(() => {
         if (user) {
             setRole(user.role);
             setCredits(user.credits);
+            setStatus(user.status || 'pending_approval');
+            setPlanId(user.plan_id || null);
         }
     }, [user]);
 
     const handleSave = () => {
         if (user) {
-            onSave(user.id, { role, credits: Number(credits) });
+            onSave(user.id, { role, credits: Number(credits), status, plan_id: planId });
         }
     };
 
@@ -40,8 +46,32 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) 
                 <p className="text-sm text-gray-400 mb-6 text-center truncate">{user.email}</p>
                 
                 <div className="space-y-4">
-                    <div>
+                     <div>
                         <label className="block text-sm font-medium text-gray-300 mb-1">Plano</label>
+                        <select 
+                            value={planId || ''} 
+                            onChange={(e) => setPlanId(e.target.value || null)}
+                            className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                        >
+                            <option value="">Nenhum Plano</option>
+                            {plans.map(plan => (
+                                <option key={plan.id} value={plan.id}>{plan.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Status</label>
+                        <select 
+                            value={status} 
+                            onChange={(e) => setStatus(e.target.value as any)}
+                            className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                        >
+                            <option value="active">Ativo</option>
+                            <option value="pending_approval">Aprovação Pendente</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Role (Função)</label>
                         <select 
                             value={role} 
                             onChange={(e) => setRole(e.target.value as UserRole)}

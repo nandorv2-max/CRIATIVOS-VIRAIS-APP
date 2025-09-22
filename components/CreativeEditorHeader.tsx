@@ -22,13 +22,14 @@ interface CreativeEditorHeaderProps {
     backgroundColor: string;
     onBackgroundColorChange: (color: string) => void;
     customFonts: string[];
+    publicFonts: string[];
     onTriggerFontUpload: () => void;
 }
 
 const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
     projectName, onProjectNameChange, onUndo, onRedo, canUndo, canRedo,
     selectedLayers, onUpdateSelectedLayers, onCommitHistory, onDeleteLayers, onDuplicateLayers, onReorderLayers,
-    backgroundColor, onBackgroundColorChange, customFonts, onTriggerFontUpload
+    backgroundColor, onBackgroundColorChange, customFonts, publicFonts, onTriggerFontUpload
 }) => {
     
     const singleSelectedLayer = selectedLayers.length === 1 ? selectedLayers[0] : null;
@@ -59,12 +60,19 @@ const CreativeEditorHeader: React.FC<CreativeEditorHeaderProps> = ({
                 onCommitHistory();
             };
             const systemFonts = ['Inter', 'Arial', 'Verdana', 'Caveat'];
-            const allFonts = [...systemFonts, ...customFonts];
 
             return (
                 <div className="flex items-center gap-2">
                     <select value={layer.fontFamily} onChange={e => handleTextUpdate({ fontFamily: e.target.value })} className="bg-brand-accent text-white p-2 rounded-md h-9 text-sm">
-                        {allFonts.map(font => <option key={font} value={font}>{font}</option>)}
+                        <optgroup label="Suas Fontes">
+                            {customFonts.map(font => <option key={font} value={font}>{font}</option>)}
+                        </optgroup>
+                         <optgroup label="Fontes Públicas">
+                            {publicFonts.map(font => <option key={font} value={font}>{font}</option>)}
+                        </optgroup>
+                        <optgroup label="Fontes do Sistema">
+                            {systemFonts.map(font => <option key={font} value={font}>{font}</option>)}
+                        </optgroup>
                     </select>
                     <button onClick={onTriggerFontUpload} className="p-2 h-9 rounded bg-brand-accent hover:bg-brand-light" title="Adicionar Fonte"><IconType/></button>
                     <ColorPicker color={layer.color} onChange={(c) => onUpdateSelectedLayers({ color: c })} onInteractionEnd={onCommitHistory} />

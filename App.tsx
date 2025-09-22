@@ -4,10 +4,113 @@ import type { Session, User } from '@supabase/gotrue-js';
 import LoginScreen from './components/LoginScreen.tsx';
 import MainDashboard from './components/MainDashboard.tsx';
 import ApiKeyPrompt from './components/ApiKeyPrompt.tsx';
+import PendingApprovalView from './components/views/PendingApprovalView.tsx';
 import { supabase } from './services/supabaseClient.ts';
-import { initializeGeminiClient } from './geminiService.ts';
-import type { UserProfile } from './types.ts';
+import { initializeGeminiClient } from './services/geminiService.ts';
+import type { UserProfile, UploadedAsset, Adjustments } from './types.ts';
 import { MASTER_USERS } from './constants.ts';
+import { getUserAssets } from './services/databaseService.ts';
+import { AssetContext, ProfessionalEditorContext, DEFAULT_ADJUSTMENTS, AssetContextType, ProfessionalEditorContextType } from './types.ts';
+
+
+const AssetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [assets, setAssets] = useState<UploadedAsset[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [requiresSetup, setRequiresSetup] = useState(false);
+
+    const fetchAssets = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        setRequiresSetup(false);
+        try {
+            const userAssets = await getUserAssets();
+            setAssets(userAssets);
+        } catch (err: any) {
+            if (err.message?.startsWith('USER_ASSETS_SETUP_REQUIRED')) {
+                setRequiresSetup(true);
+                setError(err.message);
+            } else {
+                setError("Falha ao carregar os seus recursos.");
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchAssets();
+    }, [fetchAssets]);
+
+    const value: AssetContextType = { assets, setAssets, isLoading, error, requiresSetup, refetchAssets: fetchAssets };
+
+    return <AssetContext.Provider value={value}>{children}</AssetContext.Provider>;
+};
+
+const ProfessionalEditorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [image, setImageState] = useState<HTMLImageElement | null>(null);
+    const [history, setHistory] = useState({
+        snapshots: [DEFAULT_ADJUSTMENTS],
+        currentIndex: 0,
+    });
+    const [liveAdjustments, setLiveAdjustments] = useState<Adjustments>(DEFAULT_ADJUSTMENTS);
+
+    const pushHistory = useCallback((newState: Adjustments) => {
+        setHistory(prevHistory => {
+            const { snapshots, currentIndex } = prevHistory;
+            const lastCommittedState = snapshots[currentIndex];
+            if (JSON.stringify(lastCommittedState) === JSON.stringify(newState)) {
+                return prevHistory;
+            }
+            let newSnapshots = snapshots.slice(0, currentIndex + 1);
+            newSnapshots.push(newState);
+            if (newSnapshots.length > 50) {
+                newSnapshots = newSnapshots.slice(newSnapshots.length - 50);
+            }
+            return {
+                snapshots: newSnapshots,
+                currentIndex: newSnapshots.length - 1
+            };
+        });
+    }, []);
+
+    const undo = useCallback(() => {
+        setHistory(prev => {
+            if (prev.currentIndex > 0) {
+                const newIndex = prev.currentIndex - 1;
+                setLiveAdjustments(prev.snapshots[newIndex]);
+                return { ...prev, currentIndex: newIndex };
+            }
+            return prev;
+        });
+    }, []);
+
+    const redo = useCallback(() => {
+        setHistory(prev => {
+            if (prev.currentIndex < prev.snapshots.length - 1) {
+                const newIndex = prev.currentIndex + 1;
+                setLiveAdjustments(prev.snapshots[newIndex]);
+                return { ...prev, currentIndex: newIndex };
+            }
+            return prev;
+        });
+    }, []);
+    
+    const resetHistory = useCallback((adjustments = DEFAULT_ADJUSTMENTS) => {
+        const newHistory = { snapshots: [adjustments], currentIndex: 0 };
+        setHistory(newHistory);
+        setLiveAdjustments(adjustments);
+    }, []);
+    
+    const setImage = (newImage: HTMLImageElement | null) => {
+        setImageState(newImage);
+        resetHistory();
+    };
+
+    const value: ProfessionalEditorContextType = { image, setImage, liveAdjustments, setLiveAdjustments, history, undo, redo, pushHistory, resetHistory };
+
+    return <ProfessionalEditorContext.Provider value={value}>{children}</ProfessionalEditorContext.Provider>;
+};
 
 const App: React.FC = () => {
     const [session, setSession] = useState<Session | null>(null);
@@ -18,7 +121,7 @@ const App: React.FC = () => {
     const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
         const isAdmin = MASTER_USERS.includes(user.email ?? '');
         
-        const { data, error } = await supabase.from('user_profiles').select('role, credits').eq('id', user.id).single();
+        const { data, error } = await supabase.from('user_profiles').select('role, credits, status, plan_id').eq('id', user.id).single();
 
         if (error) {
             console.error("Error fetching user profile, using defaults:", error.message);
@@ -28,6 +131,8 @@ const App: React.FC = () => {
                 email: user.email ?? '',
                 role: isAdmin ? 'admin' : 'starter',
                 credits: 0,
+                status: 'pending_approval',
+                plan_id: null,
                 isAdmin,
             };
         } else {
@@ -37,6 +142,8 @@ const App: React.FC = () => {
                 email: user.email ?? '',
                 role: data.role,
                 credits: data.credits,
+                status: data.status,
+                plan_id: data.plan_id,
                 isAdmin,
             };
         }
@@ -133,6 +240,14 @@ const App: React.FC = () => {
                 </motion.div>
             );
         }
+        
+        if (userProfile.status === 'pending_approval' && !userProfile.isAdmin) {
+             return (
+                <motion.div key="pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <PendingApprovalView />
+                </motion.div>
+            );
+        }
 
         if (apiKeyStatus === 'error') {
              return (
@@ -157,7 +272,11 @@ const App: React.FC = () => {
         if (apiKeyStatus === 'set') {
             return (
                  <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
-                    <MainDashboard userProfile={userProfile} />
+                    <AssetProvider>
+                        <ProfessionalEditorProvider>
+                            <MainDashboard userProfile={userProfile} />
+                        </ProfessionalEditorProvider>
+                    </AssetProvider>
                 </motion.div>
             );
         }

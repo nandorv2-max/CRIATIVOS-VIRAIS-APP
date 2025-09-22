@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { createContext } from 'react';
 
 export interface Prompt {
     id: string;
@@ -204,6 +204,13 @@ export interface UploadedAsset {
     projectId?: string; // For compatibility with new editor
 }
 
+export interface Category {
+    id: string;
+    name: string;
+    created_at: string;
+    category_type: 'media' | 'font' | 'preset';
+}
+
 export interface PublicAsset {
     id: string;
     name: string;
@@ -214,6 +221,8 @@ export interface PublicAsset {
     visibility: AssetVisibility;
     created_at: string;
     owner_id: string;
+    category_id: string | null;
+    public_asset_categories: { name: string } | null;
 }
 
 export interface DownloadJob {
@@ -249,6 +258,8 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   credits: number;
+  status: 'active' | 'pending_approval';
+  plan_id: string | null;
 }
 
 export interface Folder {
@@ -258,3 +269,79 @@ export interface Folder {
     parent_id: string | null;
     created_at: string;
 }
+
+export interface Adjustments {
+    exposure: number;
+    contrast: number;
+    highlights: number;
+    shadows: number;
+    whites: number;
+    blacks: number;
+    temperature: number;
+    tint: number;
+    saturation: number;
+    vibrance: number;
+    texture: number;
+    clarity: number;
+    dehaze: number;
+    grain: number;
+    vignette: number;
+    sharpness: number;
+}
+
+// New types for Plans and Permissions
+export interface Plan {
+    id: string;
+    name: string;
+    stripe_payment_link: string | null;
+    initial_credits: number;
+}
+
+export interface Feature {
+    id: string;
+    name: string;
+    description: string;
+}
+
+export interface CreditCost {
+    action: string; // Corresponds to a feature ID
+    cost: number;
+}
+
+// ====== START: Moved from App.tsx to break circular dependency ======
+
+// Asset Context for Caching
+export interface AssetContextType {
+    assets: UploadedAsset[];
+    setAssets: React.Dispatch<React.SetStateAction<UploadedAsset[]>>;
+    isLoading: boolean;
+    error: string | null;
+    requiresSetup: boolean;
+    refetchAssets: () => Promise<void>;
+}
+export const AssetContext = createContext<AssetContextType | undefined>(undefined);
+
+// Types and Context for Professional Editor
+export type AdjustmentKey = keyof Adjustments;
+
+export const DEFAULT_ADJUSTMENTS: Adjustments = {
+    exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
+    temperature: 0, tint: 0, saturation: 0, vibrance: 0,
+    texture: 0, clarity: 0, dehaze: 0, grain: 0, vignette: 0, sharpness: 0,
+};
+
+export interface ProfessionalEditorContextType {
+    image: HTMLImageElement | null;
+    setImage: (image: HTMLImageElement | null) => void;
+    liveAdjustments: Adjustments;
+    setLiveAdjustments: React.Dispatch<React.SetStateAction<Adjustments>>;
+    history: { snapshots: Adjustments[], currentIndex: number };
+    undo: () => void;
+    redo: () => void;
+    pushHistory: (newState: Adjustments) => void;
+    resetHistory: (adjustments?: Adjustments) => void;
+}
+
+export const ProfessionalEditorContext = createContext<ProfessionalEditorContextType | undefined>(undefined);
+
+// ====== END: Moved from App.tsx ======

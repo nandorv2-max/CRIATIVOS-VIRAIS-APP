@@ -12,15 +12,18 @@ import Timeline from '../Timeline.tsx';
 import DownloadModal, { DownloadOptions } from '../DownloadModal.tsx';
 import ErrorNotification from '../ErrorNotification.tsx';
 import BackgroundRemoverModal from '../BackgroundRemoverModal.tsx';
-import { AssetContext } from '../MainDashboard.tsx';
+import ProjectBrowserModal from '../ProjectBrowserModal.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer,
-    UploadedAsset, PublicAsset, Project
+    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext
 } from '../../types.ts';
 import { blobToBase64 } from '../../utils/imageUtils.ts';
+import { setItem, getItem, removeItem } from '../../utils/db.ts';
 import SelectionBox from '../SelectionBox.tsx';
-import { uploadUserAsset } from '../../services/databaseService.ts';
+import { uploadUserAsset, getPublicAssets, adminUploadPublicAsset } from '../../services/databaseService.ts';
+import { generateImageFromPrompt } from '../../services/geminiService.ts';
 import { IconMinus, IconPlus, IconMaximize } from '../Icons.tsx';
+import type { User } from '@supabase/gotrue-js';
 
 
 // Helper function to load media and return an HTML element
@@ -73,6 +76,9 @@ const INITIAL_PROJECT: ProjectState = {
     name: 'Projeto sem Título', pages: [DEFAULT_PAGE], audioTracks: [],
 };
 
+const AUTOSAVE_KEY = 'autosave-creative-editor';
+
+
 interface InteractionState {
     type: InteractionType;
     layerIds: string[];
@@ -87,8 +93,7 @@ interface InteractionState {
 }
 
 interface CreativeEditorViewProps {
-    setSaveProjectTrigger: React.Dispatch<React.SetStateAction<{ trigger: () => void; }>>;
-    setLoadProjectTrigger: React.Dispatch<React.SetStateAction<{ trigger: (project: Project) => void; }>>;
+    userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
 }
 
 const calculateRequiredHeight = (ctx: CanvasRenderingContext2D, text: string, fontSize: number, layerWidth: number, fontFamily: string, fontWeight: 'normal' | 'bold', lineHeightMultiplier: number): number => {
@@ -136,19 +141,23 @@ const findOptimalFontSize = (
     return bestSize;
 };
 
-const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectTrigger, setLoadProjectTrigger }) => {
+const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) => {
     const [project, setProject] = useState<ProjectState>(INITIAL_PROJECT);
     const [activePageIndex, setActivePageIndex] = useState(0);
     const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
     const [isLayersPanelOpen, setIsLayersPanelOpen] = useState(true);
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+    const [isLoadProjectModalOpen, setIsLoadProjectModalOpen] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [isLoadingAI, setIsLoadingAI] = useState<'remove-bg' | false>(false);
+    const [isGeneratingImage, setIsGeneratingImage] = useState(false);
     const [interaction, setInteraction] = useState<InteractionState | null>(null);
     const [history, setHistory] = useState<ProjectState[]>([INITIAL_PROJECT]);
     const [historyIndex, setHistoryIndex] = useState(0);
+    const [publicFonts, setPublicFonts] = useState<PublicAsset[]>([]);
     const [customFonts, setCustomFonts] = useState<string[]>([]);
     const [cropLayerId, setCropLayerId] = useState<string | null>(null);
+    const [initialCropState, setInitialCropState] = useState<AnyLayer | null>(null);
     const [playingVideoIds, setPlayingVideoIds] = useState<Set<string>>(new Set());
     const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -161,12 +170,72 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     const fontUploadRef = useRef<HTMLInputElement>(null);
     const animationFrameRef = useRef<number | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const debounceTimer = useRef<number | null>(null);
+    const isInitialMount = useRef(true);
 
 
     const assetContext = useContext(AssetContext);
     const activePage = project.pages[activePageIndex];
-    const selectedLayers = activePage.layers.filter(l => selectedLayerIds.includes(l.id));
+    const selectedLayers = activePage ? activePage.layers.filter(l => selectedLayerIds.includes(l.id)) : [];
     
+    useEffect(() => {
+        getPublicAssets().then(assets => {
+            const fonts = assets.filter(a => a.asset_type === 'font');
+            setPublicFonts(fonts);
+            
+            const styleId = 'genia-public-fonts';
+            let styleEl = document.getElementById(styleId) as HTMLStyleElement;
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = styleId;
+                document.head.appendChild(styleEl);
+            }
+            
+            let css = '';
+            fonts.forEach(font => {
+                const fontName = font.name.replace(/\.[^/.]+$/, "");
+                css += `@font-face { font-family: '${fontName}'; src: url('${font.asset_url}'); }\n`;
+            });
+            styleEl.innerHTML = css;
+        });
+    }, []);
+    
+    const getSerializableProject = useCallback((name: string): [ProjectState, string] => {
+        const projectName = name.trim();
+        const projectToSave: ProjectState = {
+            ...project,
+            name: projectName,
+            pages: project.pages.map(page => ({
+                ...page,
+                layers: page.layers.map(layer => {
+                    const { _imageElement, _videoElement, ...rest } = layer as any;
+                    return rest;
+                })
+            }))
+        };
+        return [projectToSave, projectName];
+    }, [project]);
+
+    // Auto-saving logic
+    useEffect(() => {
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        
+        debounceTimer.current = window.setTimeout(() => {
+            if (JSON.stringify(project) !== JSON.stringify(INITIAL_PROJECT)) {
+                const [serializableProject] = getSerializableProject(project.name);
+                setItem(AUTOSAVE_KEY, serializableProject);
+            }
+        }, 1000);
+
+        return () => {
+            if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        };
+    }, [project, getSerializableProject]);
+
     const commitToHistory = useCallback((newState: ProjectState) => {
         const newHistory = history.slice(0, historyIndex + 1);
         if (newHistory.length > 0 && JSON.stringify(newHistory[newHistory.length - 1]) === JSON.stringify(newState)) {
@@ -203,6 +272,62 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         });
     }, [commitToHistory]);
 
+    const loadProjectState = useCallback(async (newState: ProjectState, isAutoSave = false) => {
+        setIsLoadProjectModalOpen(false);
+        const pagesToLoad = newState.pages || [];
+        
+        const loadedPages = await Promise.all(pagesToLoad.map(async (page: Page) => {
+          const loadedLayers = await Promise.all(page.layers.map(async (layer: AnyLayer) => {
+            if ((layer.type === 'image' || layer.type === 'video') && layer.src) {
+              try {
+                const mediaElement = await loadMedia(layer.src, layer.type);
+                if (layer.type === 'image') (layer as ImageLayer)._imageElement = mediaElement as HTMLImageElement;
+                else if (layer.type === 'video') (layer as VideoLayer)._videoElement = mediaElement as HTMLVideoElement;
+              } catch (e) { 
+                  console.error(`Failed to load media for layer ${layer.id}`, e);
+                  setError(`Falha ao carregar mídia para a camada: ${layer.name}`);
+              }
+            }
+            return layer;
+          }));
+          return { ...page, layers: loadedLayers };
+        }));
+        
+        let finalState = { ...newState, pages: loadedPages };
+  
+        if (finalState.pages.length === 0) {
+            finalState.pages = [JSON.parse(JSON.stringify(DEFAULT_PAGE))];
+        }
+        
+        setProject(finalState);
+        setHistory([finalState]);
+        setHistoryIndex(0);
+        setSelectedLayerIds([]);
+        setActivePageIndex(0);
+
+        if (!isAutoSave) {
+            await removeItem(AUTOSAVE_KEY);
+        }
+
+    }, [setError]);
+
+    // Load auto-saved project on mount
+    useEffect(() => {
+        const loadAutoSavedProject = async () => {
+            const savedState = await getItem<ProjectState>(AUTOSAVE_KEY);
+            if (savedState) {
+                console.log("Restoring auto-saved project...");
+                await loadProjectState(savedState, true);
+            }
+        };
+        loadAutoSavedProject();
+    }, [loadProjectState]);
+
+    const handleNewProject = () => {
+        if (window.confirm("Tem certeza que deseja limpar a tela e iniciar um novo projeto? Seu trabalho salvo automaticamente será removido.")) {
+            loadProjectState(JSON.parse(JSON.stringify(INITIAL_PROJECT)), false);
+        }
+    };
 
     const handleUndo = useCallback(() => { if (historyIndex > 0) { const newIndex = historyIndex - 1; setHistoryIndex(newIndex); setProject(history[newIndex]); }}, [history, historyIndex]);
     const handleRedo = useCallback(() => { if (historyIndex < history.length - 1) { const newIndex = historyIndex + 1; setHistoryIndex(newIndex); setProject(history[newIndex]); }}, [history, historyIndex]);
@@ -244,11 +369,46 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             pageToUpdate.layers = newLayers;
         }, true);
     }, [selectedLayerIds, updateProject, activePageIndex]);
+
+    const onStartCrop = () => {
+        if (selectedLayers.length === 1) {
+            const layer = selectedLayers[0];
+            setInitialCropState(JSON.parse(JSON.stringify(layer)));
+            setCropLayerId(layer.id);
+        }
+    };
+
+    const onApplyCrop = () => {
+        setCropLayerId(null);
+        setInitialCropState(null);
+        commitToHistory(project);
+    };
+
+    const onCancelCrop = () => {
+        if (initialCropState) {
+            updateProject(draft => {
+                const page = draft.pages[activePageIndex];
+                const layerIndex = page.layers.findIndex(l => l.id === initialCropState.id);
+                if (layerIndex !== -1) {
+                    const originalLayer = page.layers[layerIndex];
+                    const runtimeElements: { _imageElement?: HTMLImageElement; _videoElement?: HTMLVideoElement } = {};
+                    if (originalLayer.type === 'image' && initialCropState.type === 'image') {
+                        runtimeElements._imageElement = originalLayer._imageElement;
+                    } else if (originalLayer.type === 'video' && initialCropState.type === 'video') {
+                        runtimeElements._videoElement = originalLayer._videoElement;
+                    }
+                    page.layers[layerIndex] = { ...initialCropState, ...runtimeElements };
+                }
+            }, false); 
+        }
+        setCropLayerId(null);
+        setInitialCropState(null);
+    };
     
     useHotkeys('ctrl+z, meta+z', (event) => { event.preventDefault(); handleUndo(); }, { enableOnContentEditable: true });
     useHotkeys('ctrl+y, meta+y, ctrl+shift+z, meta+shift+z', (event) => { event.preventDefault(); handleRedo(); }, { enableOnContentEditable: true });
     useHotkeys('backspace, delete', () => { if (!cropLayerId && !editingTextLayerId) deleteSelectedLayers(); });
-    useHotkeys('escape', () => { if (cropLayerId) setCropLayerId(null); if(editingTextLayerId) textareaRef.current?.blur(); });
+    useHotkeys('escape', () => { if (cropLayerId) onCancelCrop(); if(editingTextLayerId) textareaRef.current?.blur(); });
     useHotkeys('ctrl+d, meta+d', (event) => { event.preventDefault(); onDuplicateLayers(); });
 
     const addLayer = useCallback((newLayer: Partial<AnyLayer>) => {
@@ -279,10 +439,32 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     };
     
     const handleAddAssetToCanvas = async (asset: UploadedAsset | PublicAsset) => {
+        const isPublic = 'asset_type' in asset;
+        const type = isPublic ? asset.asset_type : asset.type;
+        const url = isPublic ? asset.asset_url : asset.url;
+        
+        if (type === 'font') {
+            const fontName = asset.name.replace(/\.[^/.]+$/, "");
+            if (selectedLayers.length > 0 && selectedLayers.every(l => l.type === 'text')) {
+                updateSelectedLayers({ fontFamily: fontName }, true);
+            }
+            return;
+        }
+
+        if (type === 'brmp') {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Failed to fetch project file.");
+                const projectJson = await response.json();
+                await loadProjectState(projectJson);
+            } catch (err) {
+                console.error("Failed to load project:", err);
+                setError("Não foi possível carregar o ficheiro do projeto.");
+            }
+            return;
+        }
+
         try {
-            const isPublic = 'asset_type' in asset;
-            const url = isPublic ? asset.asset_url : asset.url;
-            const type = isPublic ? asset.asset_type : asset.type;
             const mediaElement = await loadMedia(url, type === 'video' ? 'video' : 'image');
             
             let naturalWidth: number, naturalHeight: number, duration: number | undefined;
@@ -345,7 +527,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             await assetContext.refetchAssets();
         } catch (err) {
             console.error("Upload failed:", err);
-            // Optionally show an error to the user via a notification component
+            setError('Falha no upload do ficheiro.');
         } finally {
             if (e.target) e.target.value = '';
         }
@@ -375,9 +557,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         setError(null);
 
         try {
-            // FIX: The default export of `@imgly/background-removal` is not being resolved correctly as a function.
-            // Accessing it via the module namespace (`remove.default`) provides a robust workaround for this common
-            // module interoperability issue. The cast to `any` is a safeguard against potentially incorrect typings.
             const resultBlob = await (remove as any).default(targetLayer.src, {
                 publicPath: 'https://unpkg.com/@imgly/background-removal@1.0.4/dist/'
             });
@@ -410,6 +589,33 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         }
     };
 
+    const handleGenerateImage = async (prompt: string) => {
+        setIsGeneratingImage(true);
+        setError(null);
+        try {
+            const base64Image = await generateImageFromPrompt(prompt);
+            const tempAsset: PublicAsset = {
+                id: nanoid(),
+                name: prompt.substring(0, 30),
+                asset_type: 'image',
+                asset_url: base64Image,
+                storage_path: '',
+                visibility: 'Public',
+                created_at: new Date().toISOString(),
+                owner_id: '',
+                category_id: null,
+                public_asset_categories: null,
+            };
+            await handleAddAssetToCanvas(tempAsset);
+        } catch (e) {
+            console.error("Image generation failed:", e);
+            const message = e instanceof Error ? e.message : "Ocorreu um erro desconhecido.";
+            setError(`A geração da imagem falhou. Detalhes: ${message}`);
+        } finally {
+            setIsGeneratingImage(false);
+        }
+    };
+
     const handleApplyBgRemoval = async (newImageUrl: string) => {
         if (!bgRemoverState.layerId) return;
 
@@ -436,6 +642,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     };
     
     const toggleVideoPlayback = useCallback((layerId: string) => {
+        if (!activePage) return;
         setPlayingVideoIds(prev => {
             const newSet = new Set<string>();
             const layerToToggle = activePage.layers.find(l => l.id === layerId) as VideoLayer;
@@ -444,7 +651,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 return prev;
             }
     
-            // Pause all videos that were playing before
             prev.forEach(id => {
                 const oldLayer = activePage.layers.find(l => l.id === id) as VideoLayer;
                 if (oldLayer?._videoElement) {
@@ -452,17 +658,15 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 }
             });
             
-            // If the clicked layer was NOT the one playing, we start it.
-            // If it WAS playing, this logic will effectively stop it, as newSet is empty.
             if (!prev.has(layerId)) {
                 newSet.add(layerId);
-                layerToToggle._videoElement.muted = false; // Unmute
+                layerToToggle._videoElement.muted = false; 
                 layerToToggle._videoElement.play().catch(e => console.error("Video play failed:", e));
             }
             
             return newSet;
         });
-    }, [activePage.layers]);
+    }, [activePage]);
 
     const getCoords = useCallback((e: React.MouseEvent<HTMLDivElement> | MouseEvent): { x: number, y: number } => {
         const canvasWrapper = canvasContainerRef.current?.querySelector('.relative.shadow-2xl');
@@ -507,13 +711,12 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         }
         
         if (clickedLayer && (clickedLayer.type === 'image' || clickedLayer.type === 'video')) {
-            setCropLayerId(clickedLayer.id);
-            setSelectedLayerIds([clickedLayer.id]);
+            onStartCrop();
         }
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (editingTextLayerId) return;
+        if (editingTextLayerId || !activePage) return;
         
         const handle = (e.target as HTMLElement).dataset.handle as Handle;
         const { x, y } = getCoords(e);
@@ -521,8 +724,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         if (cropLayerId) {
             const layer = selectedLayers[0];
             const initialLayerStates = new Map<string, AnyLayer>([[layer.id, {...layer}]]);
-            setInteraction({ type: 'pan', layerIds: [layer.id], startX: e.clientX, startY: e.clientY, initialLayerStates });
-            return;
+            if (!handle) {
+                setInteraction({ type: 'pan', layerIds: [layer.id], startX: e.clientX, startY: e.clientY, initialLayerStates });
+                return;
+            }
         }
 
         if (handle === 'rotate' && selectedLayers.length === 1) {
@@ -546,7 +751,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
 
         const clickedLayer = getLayerAtPoint(x, y);
         if (clickedLayer) {
-             if (cropLayerId && cropLayerId !== clickedLayer.id) setCropLayerId(null);
+             if (cropLayerId && cropLayerId !== clickedLayer.id) onCancelCrop();
             const isSelected = selectedLayerIds.includes(clickedLayer.id);
             const newSelectedIds = e.shiftKey ? (isSelected ? selectedLayerIds.filter(id => id !== clickedLayer.id) : [...selectedLayerIds, clickedLayer.id]) : (isSelected && selectedLayerIds.length > 1 ? selectedLayerIds : [clickedLayer.id]);
             setSelectedLayerIds(newSelectedIds);
@@ -554,14 +759,14 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
             project.pages[activePageIndex].layers.forEach(l => { if (newSelectedIds.includes(l.id)) initialLayerStates.set(l.id, {...l}); });
             setInteraction({ type: 'move', layerIds: newSelectedIds, startX: x, startY: y, initialLayerStates });
         } else {
-             if (cropLayerId) setCropLayerId(null);
+            if (cropLayerId) onCancelCrop();
             setSelectedLayerIds([]);
         }
     };
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
-            if (!interaction) return;
+            if (!interaction || !activePage) return;
             e.preventDefault();
             
             if (interaction.type === 'move') {
@@ -598,192 +803,67 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 const rdx = dx * cos + dy * sin;
                 const rdy = -dx * sin + dy * cos;
                 const minSize = 20;
+                
+                let { x: ox, y: oy, width: ow, height: oh } = initialLayer;
+                let newX = ox, newY = oy, newW = ow, newH = oh;
+
+                if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
+                if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
+                if (handle.includes('b')) newH = Math.max(minSize, oh + rdy);
+                if (handle.includes('t')) newH = Math.max(minSize, oh - rdy);
+                
+                if (e.shiftKey || !handle.includes('m')) { // Corner handles or shift key
+                    const originalAspectRatio = ow / oh;
+                    if (handle.includes('l') || handle.includes('r')) {
+                        newH = newW / originalAspectRatio;
+                    } else {
+                        newW = newH * originalAspectRatio;
+                    }
+                }
+
+                const dw = newW - ow; const dh = newH - oh;
+                const d_center_local_x = (handle.includes('l') ? -dw / 2 : dw / 2);
+                const d_center_local_y = (handle.includes('t') ? -dh / 2 : dh / 2);
+                const d_center_x = d_center_local_x * cos - d_center_local_y * sin;
+                const d_center_y = d_center_local_x * sin + d_center_local_y * cos;
+
+                const old_center_x = ox + ow / 2; const old_center_y = oy + oh / 2;
+                newX = old_center_x + d_center_x - newW / 2;
+                newY = old_center_y + d_center_y - newH / 2;
+
+                const updates: any = { x: newX, y: newY, width: newW, height: newH };
 
                 if (initialLayer.type === 'text') {
-                    const { x: ox, y: oy, width: ow, height: oh, rotation, fontSize: ofs } = initialLayer as TextLayer;
-                    let newW = ow, newH = oh, newX = ox, newY = oy, newFS = ofs;
-                    const aspectRatio = ow / oh;
-
-                    if (!handle.includes('m')) { // Corner handles
-                        let potentialW, potentialH;
-                        if (handle.includes('r')) potentialW = ow + rdx; else potentialW = ow - rdx;
-                        if (handle.includes('b')) potentialH = oh + rdy; else potentialH = oh - rdy;
-
-                        if (e.shiftKey) { newW = potentialW; newH = newW/aspectRatio; } 
-                        else {
-                           if (Math.abs(rdx / aspectRatio) > Math.abs(rdy)) { newW = potentialW; newH = newW / aspectRatio; } 
-                           else { newH = potentialH; newW = newH * aspectRatio; }
-                        }
-
-                        newW = Math.max(minSize, newW);
-                        newH = Math.max(minSize, newH);
-                        const scaleFactor = newW / ow;
-                        newFS = ofs * scaleFactor;
-
-                        const dw = newW - ow; const dh = newH - oh;
-                        let dx_local = 0, dy_local = 0;
-                        if(handle.includes('l')) dx_local = -dw/2; else dx_local = dw/2;
-                        if(handle.includes('t')) dy_local = -dh/2; else dy_local = dh/2;
-                        
-                        const rotated_dx = dx_local * cos - dy_local * sin;
-                        const rotated_dy = dx_local * sin + dy_local * cos;
-
-                        const original_center = { x: ox + ow/2, y: oy + oh/2 };
-                        newX = original_center.x + rotated_dx - newW/2;
-                        newY = original_center.y + rotated_dy - newH/2;
-                        
-                    } else { // Side handles
-                        if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
-                        if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
-                        if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
-                        if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
-                        
-                        const dw = newW - ow; const dh = newH - oh;
-                        let d_center_x = 0; let d_center_y = 0;
-
-                        if (dw !== 0) { const d_center_local_x = (handle === 'ml' ? -dw / 2 : dw / 2); d_center_x = d_center_local_x * cos; d_center_y = d_center_local_x * sin; } 
-                        else if (dh !== 0) { const d_center_local_y = (handle === 'tm' ? -dh / 2 : dh / 2); d_center_x = d_center_local_y * -sin; d_center_y = d_center_local_y * cos; }
-                        
-                        const old_center_x = ox + ow / 2; const old_center_y = oy + oh / 2;
-                        const new_center_x = old_center_x + d_center_x; const new_center_y = old_center_y + d_center_y;
-                        newX = new_center_x - newW / 2; newY = new_center_y - newH / 2;
-                        
-                        const ctx = canvasRef.current?.getContext('2d');
-                        if (ctx) newFS = findOptimalFontSize(ctx, initialLayer.text, { ...initialLayer, width: newW, height: newH });
-                    }
-
-                    updateProject(draft => {
-                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id) as TextLayer;
-                        if (l) { l.x = newX; l.y = newY; l.width = newW; l.height = newH; l.fontSize = newFS; }
-                    }, false);
-                } else { // Image and Video resizing
-                    const { x: ox, y: oy, width: ow, height: oh, rotation } = initialLayer;
+                     const ctx = canvasRef.current?.getContext('2d');
+                     if(ctx) updates.fontSize = findOptimalFontSize(ctx, initialLayer.text, { ...initialLayer, width: newW, height: newH });
+                } else if (initialLayer.type === 'image' || initialLayer.type === 'video') {
                     const mediaLayer = initialLayer as ImageLayer | VideoLayer;
-                    const updates: any = {};
-                    const aspectRatio = ow / oh;
-
-                    const isCorner = !handle.includes('m');
-
-                    if (isCorner) { // Proportional Scaling
-                        let newW, newH;
-                         if (Math.abs(rdx / aspectRatio) > Math.abs(rdy)) {
-                            newW = handle.includes('l') ? ow - rdx : ow + rdx;
-                            newH = newW / aspectRatio;
-                        } else {
-                            newH = handle.includes('t') ? oh - rdy : oh + rdy;
-                            newW = newH * aspectRatio;
-                        }
-                        
-                        newW = Math.max(minSize, newW);
-                        newH = Math.max(minSize, newH);
-
-                        const dw = newW - ow;
-                        const dh = newH - oh;
-                        
-                        let dx_local = 0, dy_local = 0;
-                        if (handle.includes('l')) dx_local = -dw/2; else dx_local = dw/2;
-                        if (handle.includes('t')) dy_local = -dh/2; else dy_local = dh/2;
-                        
-                        const rotated_dx = dx_local * cos - dy_local * sin;
-                        const rotated_dy = dx_local * sin + dy_local * cos;
-
-                        const original_center = { x: ox + ow/2, y: oy + oh/2 };
-                        
-                        updates.width = newW;
-                        updates.height = newH;
-                        updates.x = original_center.x + rotated_dx - newW/2;
-                        updates.y = original_center.y + rotated_dy - newH/2;
-                        
+                    if (cropLayerId === mediaLayer.id) {
+                        const dx_layer = newX - ox; const dy_layer = newY - oy;
+                        const unrotated_dx = dx_layer * cos + dy_layer * sin; const unrotated_dy = -dx_layer * sin + dy_layer * cos;
+                        updates.scale = mediaLayer.scale;
+                        updates.offsetX = mediaLayer.offsetX - unrotated_dx;
+                        updates.offsetY = mediaLayer.offsetY - unrotated_dy;
+                    } else {
                         const newScale = newW / mediaLayer.mediaNaturalWidth;
                         updates.scale = newScale;
                         updates.offsetX = (newW - mediaLayer.mediaNaturalWidth * newScale) / 2;
                         updates.offsetY = (newH - mediaLayer.mediaNaturalHeight * newScale) / 2;
-                    } else { // Side Handles
-                        const isDraggingOutward = 
-                            (handle === 'mr' && rdx > 0) || (handle === 'ml' && rdx < 0) ||
-                            (handle === 'bm' && rdy > 0) || (handle === 'tm' && rdy < 0);
-
-                        if (isDraggingOutward) { // Proportional Scale Outward
-                            let newW, newH;
-                            if (handle === 'ml' || handle === 'mr') {
-                                newW = handle === 'ml' ? ow - rdx : ow + rdx;
-                                newH = newW / aspectRatio;
-                            } else {
-                                newH = handle === 'tm' ? oh - rdy : oh + rdy;
-                                newW = newH * aspectRatio;
-                            }
-                            
-                            newW = Math.max(minSize, newW);
-                            newH = Math.max(minSize, newH);
-
-                            const dw = newW - ow;
-                            const dh = newH - oh;
-                            
-                            let d_center_local_x = 0, d_center_local_y = 0;
-                            if (handle === 'ml') d_center_local_x = -dw/2;
-                            if (handle === 'mr') d_center_local_x = dw/2;
-                            if (handle === 'tm') d_center_local_y = -dh/2;
-                            if (handle === 'bm') d_center_local_y = dh/2;
-
-                            const rotated_center_dx = d_center_local_x * cos - d_center_local_y * sin;
-                            const rotated_center_dy = d_center_local_x * sin + d_center_local_y * cos;
-                            
-                            const original_center = { x: ox + ow/2, y: oy + oh/2 };
-                            
-                            updates.width = newW;
-                            updates.height = newH;
-                            updates.x = original_center.x + rotated_center_dx - newW/2;
-                            updates.y = original_center.y + rotated_center_dy - newH/2;
-
-                            const newScale = newW / mediaLayer.mediaNaturalWidth;
-                            updates.scale = newScale;
-                            updates.offsetX = (newW - mediaLayer.mediaNaturalWidth * newScale) / 2;
-                            updates.offsetY = (newH - mediaLayer.mediaNaturalHeight * newScale) / 2;
-                        } else { // Crop Inward
-                            let newW = ow, newH = oh;
-                            if (handle === 'mr') newW = Math.max(minSize, ow + rdx);
-                            if (handle === 'ml') newW = Math.max(minSize, ow - rdx);
-                            if (handle === 'bm') newH = Math.max(minSize, oh + rdy);
-                            if (handle === 'tm') newH = Math.max(minSize, oh - rdy);
-                            
-                            const dw = newW - ow;
-                            const dh = newH - oh;
-
-                            let d_center_local_x = 0, d_center_local_y = 0;
-                            if (handle === 'ml') d_center_local_x = -dw/2;
-                            if (handle === 'mr') d_center_local_x = dw/2;
-                            if (handle === 'tm') d_center_local_y = -dh/2;
-                            if (handle === 'bm') d_center_local_y = dh/2;
-
-                            const rotated_d_center_x = d_center_local_x * cos - d_center_local_y * sin;
-                            const rotated_d_center_y = d_center_local_x * sin + d_center_local_y * cos;
-                            
-                            const original_center = { x: ox + ow/2, y: oy + oh/2 };
-
-                            updates.width = newW;
-                            updates.height = newH;
-                            updates.x = original_center.x + rotated_d_center_x - newW/2;
-                            updates.y = original_center.y + rotated_d_center_y - newH/2;
-                            
-                            const dx_layer = updates.x - ox;
-                            const dy_layer = updates.y - oy;
-                            
-                            const unrotated_dx = dx_layer * cos + dy_layer * sin;
-                            const unrotated_dy = -dx_layer * sin + dy_layer * cos;
-
-                            updates.offsetX = mediaLayer.offsetX - unrotated_dx;
-                            updates.offsetY = mediaLayer.offsetY - unrotated_dy;
-                        }
                     }
-                    updateProject(draft => {
-                        const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
-                        if (l && !l.isLocked) Object.assign(l, updates);
-                    }, false);
                 }
+                
+                updateProject(draft => {
+                    const l = draft.pages[activePageIndex].layers.find(l => l.id === initialLayer.id);
+                    if (l && !l.isLocked) Object.assign(l, updates);
+                }, false);
             }
         };
         const handleMouseUp = () => {
-             if (interaction) commitToHistory(project);
+             if (interaction) {
+                if(interaction.type !== 'resize' || cropLayerId === null) {
+                    commitToHistory(project);
+                }
+             }
             setInteraction(null);
         };
 
@@ -795,7 +875,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 window.removeEventListener('mouseup', handleMouseUp);
             };
         }
-    }, [interaction, updateProject, commitToHistory, zoom, activePageIndex, project, getCoords]);
+    }, [interaction, updateProject, commitToHistory, zoom, activePageIndex, project, getCoords, cropLayerId, onCancelCrop, activePage]);
 
     const editingLayer = useMemo(() => {
         if (!editingTextLayerId || !activePage) return null;
@@ -839,7 +919,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         currentPage.layers.forEach(layer => {
             if (!layer.isVisible) return;
 
-            // Hide the canvas version of the text if it's being edited
             if (layer.id === editingTextLayerId) return;
     
             ctx.save();
@@ -868,7 +947,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 if (layer.textAlign === 'center') textDrawX += layer.width / 2;
                 else if (layer.textAlign === 'right') textDrawX += layer.width;
 
-                // Manual text wrapping
                 const words = textToDraw.split(' ');
                 let line = '';
                 let currentY = drawY;
@@ -932,7 +1010,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
         };
     }, [drawScene]);
     
-    // Stop videos when changing pages
     useEffect(() => {
         playingVideoIds.forEach(id => {
             project.pages.forEach(p => {
@@ -991,23 +1068,93 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
     
     useEffect(() => {
         calculateFitZoom();
-    
         const container = canvasContainerRef.current;
         if (!container) return;
-    
-        const resizeObserver = new ResizeObserver(() => {
-            calculateFitZoom();
-        });
-    
+        const resizeObserver = new ResizeObserver(() => calculateFitZoom());
         resizeObserver.observe(container);
-    
-        return () => {
-            resizeObserver.disconnect();
-        };
+        return () => resizeObserver.disconnect();
     }, [calculateFitZoom]);
 
     const handleZoomIn = () => setZoom(z => Math.min(z + 0.1, 3));
     const handleZoomOut = () => setZoom(z => Math.max(z - 0.1, 0.1));
+
+    const handleSaveProject = useCallback(async () => {
+        const name = prompt("Digite o nome do projeto:", project.name);
+        if (!name) return;
+        const [projectToSave, projectName] = getSerializableProject(name);
+        const projectJson = JSON.stringify(projectToSave);
+        const file = new File([projectJson], `${projectName}.brmp`, { type: 'application/json' });
+
+        try {
+            await uploadUserAsset(file, null);
+            alert('Projeto salvo com sucesso nos seus recursos!');
+            assetContext?.refetchAssets();
+        } catch (err) {
+            console.error(err);
+            setError('Falha ao salvar o projeto.');
+        }
+    }, [assetContext, getSerializableProject, project.name]);
+    
+    const handleSaveProjectToComputer = () => {
+        const [projectToSave, projectName] = getSerializableProject(project.name || 'Projeto sem Título');
+        const projectJson = JSON.stringify(projectToSave, null, 2);
+        const blob = new Blob([projectJson], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${projectName}.brmp`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleSaveProjectAsPublic = async () => {
+        if (!userProfile?.isAdmin) {
+            setError("Apenas administradores podem salvar modelos públicos.");
+            return;
+        }
+        const name = prompt("Digite o nome do modelo público:", project.name);
+        if (!name) return;
+
+        const [projectToSave, projectName] = getSerializableProject(name);
+        const projectJson = JSON.stringify(projectToSave);
+        const file = new File([projectJson], `${projectName}.brmp`, { type: 'application/json' });
+        
+        try {
+            await adminUploadPublicAsset(file, 'Public', null);
+            alert('Modelo de projeto salvo publicamente com sucesso!');
+        } catch (err) {
+            console.error(err);
+            setError('Falha ao salvar o modelo público.');
+        }
+    };
+    
+    const handleDeletePage = (index: number) => {
+        if (project.pages.length <= 1) {
+            alert("Não é possível apagar a última página.");
+            return;
+        }
+        updateProject(draft => {
+            draft.pages.splice(index, 1);
+        }, true);
+        setActivePageIndex(prev => Math.max(0, Math.min(prev, project.pages.length - 2)));
+    };
+    
+    const handleDuplicatePage = (index: number) => {
+        updateProject(draft => {
+            const pageToDuplicate = draft.pages[index];
+            if (pageToDuplicate) {
+                const newPage: Page = {
+                    ...JSON.parse(JSON.stringify(pageToDuplicate)),
+                    id: nanoid(),
+                    name: `${pageToDuplicate.name} Cópia`,
+                };
+                draft.pages.splice(index + 1, 0, newPage);
+                setActivePageIndex(index + 1);
+            }
+        }, true);
+    };
 
     return (
         <div className="h-full w-full flex flex-col bg-brand-accent text-white">
@@ -1019,6 +1166,11 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 originalImage={bgRemoverState.originalImage}
                 onApply={handleApplyBgRemoval}
             />
+            <ProjectBrowserModal
+                isOpen={isLoadProjectModalOpen}
+                onClose={() => setIsLoadProjectModalOpen(false)}
+                onLoadProject={(p) => loadProjectState(p, false)}
+            />
             <CreativeEditorHeader
                 projectName={project.name}
                 onProjectNameChange={name => updateProject(draft => { draft.name = name; }, false)}
@@ -1027,9 +1179,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                 onUpdateSelectedLayers={(update) => updateSelectedLayers(update, false)}
                 onCommitHistory={() => commitToHistory(project)}
                 onDeleteLayers={deleteSelectedLayers} onDuplicateLayers={onDuplicateLayers} onReorderLayers={onReorderLayers}
-                backgroundColor={activePage.backgroundColor}
+                backgroundColor={activePage?.backgroundColor || '#FFFFFF'}
                 onBackgroundColorChange={color => updateProject(draft => { const p = draft.pages[activePageIndex]; if(p) p.backgroundColor = color; }, false)}
                 customFonts={customFonts}
+                publicFonts={publicFonts.map(f => f.name.replace(/\.[^/.]+$/, ""))}
                 onTriggerFontUpload={() => fontUploadRef.current?.click()}
             />
             <div className="flex-grow flex min-h-0">
@@ -1039,62 +1192,68 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     uploadedAssets={assetContext?.assets || []}
                     onAddAssetToCanvas={handleAddAssetToCanvas}
                     onToggleLayersPanel={() => setIsLayersPanelOpen(p => !p)}
-                    onSaveProject={() => {}} onLoadProject={() => {}} onAITool={handleAITool}
+                    onSaveProject={handleSaveProject} 
+                    onLoadProject={() => setIsLoadProjectModalOpen(true)} 
+                    onAITool={handleAITool}
                     isLoadingAI={isLoadingAI} selectedLayers={selectedLayers}
+                    onGenerateImage={handleGenerateImage}
+                    isGeneratingImage={isGeneratingImage}
                 />
                 <main ref={canvasContainerRef} className="flex-grow flex items-center justify-center p-8 bg-gray-800 relative overflow-hidden">
-                    <div className="relative shadow-2xl" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
-                        <canvas ref={canvasRef} />
-                        <div className="absolute top-0 left-0 w-full h-full" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
-                           <SelectionBox 
-                                layers={selectedLayers} 
-                                zoom={zoom} 
-                                cropLayerId={cropLayerId}
-                                playingVideoIds={playingVideoIds}
-                                onToggleVideoPlayback={toggleVideoPlayback}
-                            />
-                             {editingLayer && (
-                                <div
-                                    style={{
-                                        position: 'absolute',
-                                        left: editingLayer.x,
-                                        top: editingLayer.y,
-                                        width: editingLayer.width,
-                                        height: editingLayer.height,
-                                        transform: `rotate(${editingLayer.rotation}deg)`,
-                                        transformOrigin: 'center center',
-                                    }}
-                                >
-                                    <textarea
-                                        ref={textareaRef}
-                                        value={editingLayer.text}
-                                        onChange={handleTextChange}
-                                        onBlur={handleTextBlur}
-                                        onMouseDown={e => e.stopPropagation()}
+                    {activePage && (
+                        <div className="relative shadow-2xl" style={{ width: activePage.width, height: activePage.height, transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
+                            <canvas ref={canvasRef} />
+                            <div className="absolute top-0 left-0 w-full h-full" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
+                               <SelectionBox 
+                                    layers={selectedLayers} 
+                                    zoom={zoom} 
+                                    cropLayerId={cropLayerId}
+                                    playingVideoIds={playingVideoIds}
+                                    onToggleVideoPlayback={toggleVideoPlayback}
+                                />
+                                 {editingLayer && (
+                                    <div
                                         style={{
-                                            width: '100%',
-                                            height: '100%',
-                                            background: 'transparent',
-                                            border: '1px dashed rgba(255, 255, 255, 0.7)',
-                                            outline: 'none',
-                                            resize: 'none',
-                                            overflow: 'hidden',
-                                            padding: 0,
-                                            color: editingLayer.color,
-                                            fontFamily: `"${editingLayer.fontFamily}"`,
-                                            fontSize: editingLayer.fontSize,
-                                            fontWeight: editingLayer.fontWeight,
-                                            fontStyle: editingLayer.fontStyle,
-                                            textAlign: editingLayer.textAlign,
-                                            lineHeight: editingLayer.lineHeight,
-                                            letterSpacing: `${editingLayer.letterSpacing}px`,
-                                            textTransform: editingLayer.textTransform,
+                                            position: 'absolute',
+                                            left: editingLayer.x,
+                                            top: editingLayer.y,
+                                            width: editingLayer.width,
+                                            height: editingLayer.height,
+                                            transform: `rotate(${editingLayer.rotation}deg)`,
+                                            transformOrigin: 'center center',
                                         }}
-                                    />
-                                </div>
-                            )}
+                                    >
+                                        <textarea
+                                            ref={textareaRef}
+                                            value={editingLayer.text}
+                                            onChange={handleTextChange}
+                                            onBlur={handleTextBlur}
+                                            onMouseDown={e => e.stopPropagation()}
+                                            style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                background: 'transparent',
+                                                border: '1px dashed rgba(255, 255, 255, 0.7)',
+                                                outline: 'none',
+                                                resize: 'none',
+                                                overflow: 'hidden',
+                                                padding: 0,
+                                                color: editingLayer.color,
+                                                fontFamily: `"${editingLayer.fontFamily}"`,
+                                                fontSize: editingLayer.fontSize,
+                                                fontWeight: editingLayer.fontWeight,
+                                                fontStyle: editingLayer.fontStyle,
+                                                textAlign: editingLayer.textAlign,
+                                                lineHeight: editingLayer.lineHeight,
+                                                letterSpacing: `${editingLayer.letterSpacing}px`,
+                                                textTransform: editingLayer.textTransform,
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                      <div className="absolute bottom-4 right-4 z-10 bg-brand-dark/80 backdrop-blur-sm rounded-lg text-white flex items-center p-1 shadow-lg">
                         <button onClick={handleZoomOut} className="p-2 hover:bg-brand-light rounded-md" title="Diminuir zoom"><IconMinus className="w-5 h-5"/></button>
                         <button onClick={() => setZoom(1)} className="px-3 text-sm font-semibold" title="Redefinir para 100%">{Math.round(zoom * 100)}%</button>
@@ -1107,15 +1266,23 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     selectedLayers={selectedLayers}
                     onUpdateLayers={(update) => updateSelectedLayers(update, false)}
                     onCommitHistory={() => commitToHistory(project)}
-                    canvasWidth={activePage.width}
-                    canvasHeight={activePage.height}
+                    canvasWidth={activePage?.width || 1080}
+                    canvasHeight={activePage?.height || 1080}
                     onCanvasSizeChange={(w, h) => updateProject(draft => { const p = draft.pages[activePageIndex]; if(p) {p.width = w; p.height = h;} }, true)}
-                    onSaveProject={() => {}}
-                    onLoadProject={() => {}}
+                    onSaveProject={handleSaveProject}
+                    onLoadProject={() => setIsLoadProjectModalOpen(true)}
                     onDownload={() => setIsDownloadModalOpen(true)}
+                    cropLayerId={cropLayerId}
+                    onStartCrop={onStartCrop}
+                    onApplyCrop={onApplyCrop}
+                    onCancelCrop={onCancelCrop}
+                    userProfile={userProfile}
+                    onSaveProjectAsPublic={handleSaveProjectAsPublic}
+                    onSaveProjectToComputer={handleSaveProjectToComputer}
+                    onNewProject={handleNewProject}
                 />
                 <AnimatePresence>
-                    {isLayersPanelOpen && (
+                    {isLayersPanelOpen && activePage && (
                         <LayersPanel
                             isOpen={isLayersPanelOpen} onClose={() => setIsLayersPanelOpen(false)} layers={activePage.layers} selectedLayerIds={selectedLayerIds}
                             onSelectLayer={(id, shiftKey) => setSelectedLayerIds(prev => shiftKey ? (prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]) : [id])}
@@ -1137,10 +1304,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ setSaveProjectT
                     draft.pages.push(newPage);
                     setActivePageIndex(draft.pages.length - 1);
                 }, true)} 
-                onDeletePage={(index) => {}} 
-                onDuplicatePage={(index) => {}} 
-                onReorderPages={(pages) => {}} 
-                onPageDurationChange={() => {}} 
+                onDeletePage={handleDeletePage} 
+                onDuplicatePage={handleDuplicatePage} 
+                onReorderPages={(pages) => updateProject(draft => { draft.pages = pages; }, true)}
+                onPageDurationChange={(index, duration) => updateProject(draft => { const p = draft.pages[index]; if(p) p.duration = duration; }, false)} 
                 projectTime={0} 
                 isPlaying={false} 
                 onPlayPause={() => {}} 

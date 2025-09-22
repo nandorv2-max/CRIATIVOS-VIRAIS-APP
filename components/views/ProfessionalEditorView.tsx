@@ -7,9 +7,9 @@ import { generateImageWithRetry, translateText } from '../../geminiService.ts';
 import { parseDngPreset } from '../../utils/dngPresetParser.ts';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
-import { uploadUserAsset, getUserAssets, deleteUserAsset, renameUserAsset } from '../../services/databaseService.ts';
-import type { UploadedAsset } from '../../types.ts';
-import { ProfessionalEditorContext, Adjustments, AdjustmentKey, DEFAULT_ADJUSTMENTS } from '../MainDashboard.tsx';
+import { uploadUserAsset, getUserAssets, deleteUserAsset, renameUserAsset, getPublicAssets } from '../../services/databaseService.ts';
+import type { UploadedAsset, PublicAsset } from '../../types.ts';
+import { ProfessionalEditorContext, Adjustments, AdjustmentKey, DEFAULT_ADJUSTMENTS } from '../../types.ts';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
 
 type AdjustmentPanel = 'Luz' | 'Cor' | 'Efeitos';
@@ -48,6 +48,7 @@ const ProfessionalEditorView: React.FC = () => {
     const [isLoading, setIsLoading] = useState<'upload' | 'ai' | 'upscale' | 'gallery' | null>(null);
     const [activeTab, setActiveTab] = useState<'Ajustes' | 'Predefinições'>('Ajustes');
     const [userPresets, setUserPresets] = useState<UploadedAsset[]>([]);
+    const [publicPresets, setPublicPresets] = useState<PublicAsset[]>([]);
     const [renamingPresetId, setRenamingPresetId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
 
@@ -57,20 +58,25 @@ const ProfessionalEditorView: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dngFileInputRef = useRef<HTMLInputElement>(null);
 
-    const loadUserPresets = async () => {
+    const loadPresets = async () => {
+        setIsLoading('gallery');
         try {
-            const allAssets = await getUserAssets();
-            const presetAssets = allAssets.filter(asset => asset.type === 'brmp');
-            setUserPresets(presetAssets);
+            const [allUserAssets, allPublicAssets] = await Promise.all([getUserAssets(), getPublicAssets()]);
+            const userPresetAssets = allUserAssets.filter(asset => asset.type === 'dng' || asset.type === 'brmp');
+            setUserPresets(userPresetAssets);
+            const publicPresetAssets = allPublicAssets.filter(asset => asset.asset_type === 'dng' || asset.asset_type === 'brmp');
+            setPublicPresets(publicPresetAssets);
         } catch (e) {
-            console.error("Failed to load user presets from gallery", e);
-            alert("Não foi possível carregar as suas predefinições da galeria.");
+            console.error("Failed to load presets", e);
+            alert("Não foi possível carregar as predefinições.");
+        } finally {
+            setIsLoading(null);
         }
     };
 
     useEffect(() => {
         if(activeTab === 'Predefinições') {
-            loadUserPresets();
+            loadPresets();
         }
     }, [activeTab]);
 
@@ -131,7 +137,6 @@ const ProfessionalEditorView: React.FC = () => {
         img.src = asset.url;
     };
 
-    // FIX: Added handler for Google Drive uploads.
     const handleGoogleDriveUpload = async () => {
         setIsUploadOptionsModalOpen(false);
         setIsLoading('upload');
@@ -198,14 +203,14 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
         if (!file) return;
     
         const saveAndReload = async (presetAdjustments: any, fileName: string) => {
-            setIsLoading('gallery'); // Mostra o estado de carregamento para salvar/recarregar
+            setIsLoading('gallery');
             try {
                 const presetContent = JSON.stringify(presetAdjustments);
                 const newPresetName = fileName.replace(/\.[^/.]+$/, "") + ".brmp";
                 const presetFile = new File([presetContent], newPresetName, { type: 'application/json' });
                 
                 await uploadUserAsset(presetFile);
-                await loadUserPresets();
+                await loadPresets();
             } catch (err) {
                 console.error("Failed to save preset to gallery:", err);
                 alert("Falha ao salvar a predefinição na galeria.");
@@ -228,12 +233,10 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
                 return;
             }
     
-            // Aplica o efeito imediatamente
             const newAdjustments = {...DEFAULT_ADJUSTMENTS, ...presetAdjustments} as Adjustments;
             setLiveAdjustments(newAdjustments);
             pushHistory(newAdjustments);
     
-            // Inicia o salvamento em segundo plano
             saveAndReload(presetAdjustments, file.name);
     
         } catch (err) {
@@ -246,9 +249,10 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
         }
     };
 
-    const applyPreset = async (preset: UploadedAsset) => {
+    const applyPreset = async (preset: UploadedAsset | PublicAsset) => {
+        const url = 'asset_url' in preset ? preset.asset_url : preset.url;
         try {
-            const response = await fetch(preset.url);
+            const response = await fetch(url);
             if (!response.ok) throw new Error('Network response was not ok');
             const adjustments = await response.json();
             const newAdjustments = { ...DEFAULT_ADJUSTMENTS, ...adjustments };
@@ -352,7 +356,6 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
                 setIsUploadOptionsModalOpen(false);
                 setIsGalleryPickerModalOpen(true);
             }}
-            // FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface.
             onGoogleDriveUpload={handleGoogleDriveUpload}
             galleryEnabled={true}
         />
@@ -444,6 +447,20 @@ You are an advanced AI inpainting tool. Your function is to execute a user's edi
                                             <button onClick={() => handleStartRename(preset)} className="p-1 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><IconEdit className="w-4 h-4" /></button>
                                             <button onClick={() => deletePreset(preset)} className="p-1 text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"><IconTrash className="w-4 h-4" /></button>
                                         </div>
+                                    </div>
+                                ))}
+                            </div>
+                            }
+                        </div>
+                        <div className="space-y-2 pt-2 border-t border-brand-accent/50 flex-grow flex flex-col min-h-0">
+                            <h4 className="font-semibold text-gray-300">Predefinições Públicas</h4>
+                            {isLoading === 'gallery' ? <p className="text-xs text-gray-500">Carregando...</p> : publicPresets.length === 0 ? <p className="text-xs text-gray-500 flex-grow flex items-center justify-center">Nenhuma predefinição pública disponível.</p> :
+                            <div className="flex-grow overflow-y-auto pr-1 space-y-1">
+                                {publicPresets.map(preset => (
+                                    <div key={preset.id} className="flex items-center justify-between p-2 rounded-md hover:bg-brand-accent/50 group bg-brand-dark/50 border border-brand-accent/30">
+                                        <button onClick={() => applyPreset(preset)} className="text-left flex-grow text-sm truncate">
+                                            {preset.name.replace('.brmp', '').replace('.dng', '')}
+                                        </button>
                                     </div>
                                 ))}
                             </div>

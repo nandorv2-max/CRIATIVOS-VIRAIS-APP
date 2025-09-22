@@ -6,17 +6,12 @@ import { IconUser, IconLogout, IconKey, IconLogo, IconFolder } from './Icons.tsx
 import { supabase } from '../services/supabaseClient.ts';
 import { initializeGeminiClient } from '../geminiService.ts';
 import ApiKeyManagerModal from './ApiKeyManagerModal.tsx';
-// FIX: Added Project and UserProfile types for the updated props interface.
-import type { Template, Project, UserProfile } from '../types.ts';
+import type { Template, UserProfile } from '../types.ts';
 
 interface SidebarProps {
     activeView: string | null;
     setActiveView: (view: string | null) => void;
-    // FIX: Updated userProfile type to match the parent component's more specific type.
     userProfile: (User & UserProfile & { isAdmin: boolean }) | null;
-    // FIX: Added saveProjectTrigger and loadProjectTrigger to match the props being passed from MainDashboard.
-    saveProjectTrigger: { trigger: () => void };
-    loadProjectTrigger: { trigger: (project: Project) => void };
 }
 
 const NavItem: React.FC<{

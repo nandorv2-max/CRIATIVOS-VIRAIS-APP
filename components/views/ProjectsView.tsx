@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useContext } from 'react';
 import { motion } from 'framer-motion';
-import { IconPlus } from '../Icons.tsx';
+import { IconPlus, IconHeart } from '../Icons.tsx';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import { uploadUserAsset, toggleAssetFavorite, deleteUserAsset, renameUserAsset } from '../../services/databaseService.ts';
 import type { UploadedAsset } from '../../types.ts';
@@ -8,7 +8,7 @@ import UserAssetsSetupInstructions from '../UserAssetsSetupInstructions.tsx';
 import AssetCard from '../AssetCard.tsx';
 import AssetPreviewModal from '../AssetPreviewModal.tsx';
 import ErrorNotification from '../ErrorNotification.tsx';
-import { AssetContext } from '../MainDashboard.tsx';
+import { AssetContext } from '../../types.ts';
 import Button from '../Button.tsx';
 import SkeletonLoader from '../SkeletonLoader.tsx';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
@@ -50,7 +50,6 @@ const ProjectsView: React.FC = () => {
         }
     };
     
-    // FIX: Added handler for Google Drive uploads.
     const handleGoogleDriveUpload = async () => {
         setIsUploadModalOpen(false);
         try {
@@ -164,8 +163,14 @@ const ProjectsView: React.FC = () => {
         <>
             <ErrorNotification message={localError || (globalError && !requiresSetup ? "Falha ao carregar os seus recursos." : null)} onDismiss={() => setLocalError(null)} />
             <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
-            {/* FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface. */}
-            <UploadOptionsModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onLocalUpload={handleLocalUpload} onGalleryUpload={() => { alert("A galeria será adicionada em breve!"); setIsUploadModalOpen(false); }} onGoogleDriveUpload={handleGoogleDriveUpload} />
+            <UploadOptionsModal 
+                isOpen={isUploadModalOpen} 
+                onClose={() => setIsUploadModalOpen(false)} 
+                onLocalUpload={handleLocalUpload} 
+                onGalleryUpload={() => {}} 
+                onGoogleDriveUpload={handleGoogleDriveUpload}
+                galleryEnabled={false} 
+            />
             <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" accept="image/*,video/*,.dng,.brmp,.otf,.ttf" />
             
             <div className="h-full w-full flex flex-col p-8 bg-brand-dark text-white">

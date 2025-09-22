@@ -1,460 +1,337 @@
 import { supabase } from './supabaseClient.ts';
-import type { UserProfile, PublicAsset, AssetVisibility, UploadedAssetType, UploadedAsset, UserRole, Folder } from '../types.ts';
+import type { UploadedAsset, PublicAsset, UserProfile, Plan, UserRole, Category, Feature, CreditCost, AssetVisibility, UploadedAssetType } from '../types.ts';
 import { nanoid } from 'nanoid';
-import { base64ToFile, extractLastFrame } from '../utils/imageUtils.ts';
 
-// User Management (Admin Only)
-export async function adminGetUsers(): Promise<UserProfile[]> {
-    const { data, error } = await supabase.rpc('admin_get_all_users');
-    if (error) {
-        console.error('Error fetching users (admin):', error);
-        if (error.message.includes('function public.admin_get_all_users() does not exist')) {
-            throw new Error('SETUP_REQUIRED: A função `admin_get_all_users` está em falta na base de dados.');
-        }
-        throw error;
-    }
-    return data as UserProfile[];
-}
+// Helper to get user ID
+const getUserId = async (): Promise<string> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("User not authenticated.");
+    return user.id;
+};
 
-export async function adminUpdateUser(userId: string, updates: { role?: UserRole; credits?: number }): Promise<void> {
-    const { error } = await supabase.rpc('admin_update_user', {
-        p_user_id: userId,
-        p_role: updates.role,
-        p_credits: updates.credits,
+// Helper to create a video thumbnail
+const createVideoThumbnail = async (videoFile: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.src = URL.createObjectURL(videoFile);
+        video.onloadedmetadata = () => {
+            video.currentTime = 1; // Seek to 1 second in
+        };
+        video.onseeked = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Could not get canvas context'));
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(blob => {
+                if (!blob) return reject(new Error('Could not create blob from canvas'));
+                resolve(new File([blob], `thumb_${nanoid(8)}.jpg`, { type: 'image/jpeg' }));
+                URL.revokeObjectURL(video.src);
+            }, 'image/jpeg', 0.8);
+        };
+        video.onerror = (e) => reject(new Error('Failed to load video for thumbnail generation.'));
     });
-    if (error) {
-        console.error('Error updating user (admin):', error);
-        throw error;
-    }
-}
+};
 
-export async function adminDeleteUser(userId: string): Promise<void> {
-    const { error } = await supabase.rpc('admin_delete_user', { p_user_id: userId });
-    if (error) {
-        console.error('Error deleting user (admin):', error);
-        throw error;
-    }
-}
-
-
-// Public Asset Management (For regular users - fetches only public assets)
-export async function getPublicAssets(): Promise<PublicAsset[]> {
+// Fetch user assets with signed URLs
+export const getUserAssets = async (): Promise<UploadedAsset[]> => {
+    const userId = await getUserId();
     const { data, error } = await supabase
-        .from('public_assets')
+        .from('user_assets')
         .select('*')
-        .eq('visibility', 'Public')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
     if (error) {
-        console.error('Error fetching public assets:', error);
-        // This could fail if RLS is misconfigured or the table doesn't exist
-        if (error.message.includes('relation "public.public_assets" does not exist')) {
-             throw new Error('SETUP_REQUIRED: A tabela `public_assets` está em falta na base de dados.');
+        if (error.code === '42P01') {
+            throw new Error("USER_ASSETS_SETUP_REQUIRED: A tabela 'user_assets' não foi encontrada.");
         }
+        console.error("Error fetching user assets:", error);
         throw error;
     }
-    return data;
-}
 
-// Public Asset Management (Admin Only - fetches all assets)
-export async function adminGetAllAssets(): Promise<PublicAsset[]> {
-    const { data, error } = await supabase.rpc('admin_get_all_assets');
-     if (error) {
-        console.error('Error fetching all assets (admin):', error);
-         if (error.message.includes('function public.admin_get_all_assets() does not exist')) {
-            throw new Error('SETUP_REQUIRED: A função `admin_get_all_assets` está em falta na base de dados.');
+    const assetsWithSignedUrls = await Promise.all(data.map(async (asset) => {
+        let signedUrl = asset.url;
+        let signedThumbnailUrl = asset.thumbnail_url;
+        const oneHour = 3600;
+
+        if (asset.storage_path) {
+            const { data: urlData, error: urlError } = await supabase.storage
+                .from('user_assets')
+                .createSignedUrl(asset.storage_path, oneHour);
+            if (urlError) console.error(`Error creating signed URL for ${asset.storage_path}:`, urlError);
+            else signedUrl = urlData.signedUrl;
         }
-        throw error;
-    }
-    return data;
-}
 
-export async function uploadPublicAsset(file: File, visibility: AssetVisibility): Promise<void> {
-    const user = (await supabase.auth.getUser()).data.user;
-    if (!user) throw new Error("Utilizador não autenticado.");
-
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${nanoid()}.${fileExt}`;
-    const filePath = `${user.id}/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-        .from('public_assets')
-        .upload(filePath, file);
-
-    if (uploadError) {
-        console.error('Error uploading asset to storage:', uploadError);
-        if (uploadError.message.toLowerCase().includes('bucket not found')) {
-             throw new Error('SETUP_REQUIRED: O bucket de armazenamento `public_assets` não foi encontrado.');
+        if (asset.thumbnail_storage_path) {
+            const { data: thumbData, error: thumbError } = await supabase.storage
+                .from('user_assets')
+                .createSignedUrl(asset.thumbnail_storage_path, oneHour);
+            if (thumbError) console.error(`Error creating signed thumb URL for ${asset.thumbnail_storage_path}:`, thumbError);
+            else signedThumbnailUrl = thumbData.signedUrl;
+        } else if (asset.storage_path && asset.asset_type === 'image') {
+            // Fallback for images where thumbnail is the same as main image
+            signedThumbnailUrl = signedUrl;
         }
-         if (uploadError.message.toLowerCase().includes('violates row-level security policy')) {
-            throw new Error('SETUP_REQUIRED: A sua conta não tem permissões de admin no backend. Execute o script de configuração para corrigir automaticamente as permissões de admin.');
-        }
-        throw uploadError;
-    }
 
-    const { data: publicUrlData } = supabase.storage
-        .from('public_assets')
-        .getPublicUrl(filePath);
+        return {
+            ...asset,
+            type: asset.asset_type as UploadedAsset['type'],
+            url: signedUrl,
+            thumbnail: signedThumbnailUrl || '',
+        };
+    }));
 
-    if (!publicUrlData) {
-        throw new Error("Não foi possível obter o URL público para o recurso carregado.");
-    }
+    return assetsWithSignedUrls;
+};
+
+// Upload a user asset
+export const uploadUserAsset = async (file: File, folderId: string | null = null): Promise<UploadedAsset> => {
+    const userId = await getUserId();
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
+    const fileName = `${userId}/${nanoid()}.${fileExt}`;
     
-    let assetType: UploadedAssetType = 'image';
-    if(file.type.startsWith('video/')) assetType = 'video';
-    if(file.type.startsWith('audio/')) assetType = 'audio';
-    if(file.type.startsWith('font/')) assetType = 'font';
-    if(file.name.endsWith('.dng')) assetType = 'dng';
-    if(file.name.endsWith('.brmp')) assetType = 'brmp';
-
-    const { error: dbError } = await supabase.rpc('admin_add_public_asset', {
-        p_name: file.name,
-        p_asset_type: assetType,
-        p_storage_path: filePath,
-        p_asset_url: publicUrlData.publicUrl,
-        p_thumbnail_url: publicUrlData.publicUrl,
-        p_visibility: visibility,
-        p_owner_id: user.id
-    });
-
-    if (dbError) {
-        console.error('Error saving asset metadata:', dbError);
-        if (dbError.message.includes('function public.admin_add_public_asset')) {
-            throw new Error('SETUP_REQUIRED: A função `admin_add_public_asset` está em falta na base de dados.');
-        }
-        throw dbError;
-    }
-}
-
-export async function adminUpdatePublicAsset(assetId: string, updates: { name?: string; visibility?: AssetVisibility }): Promise<void> {
-    const { error } = await supabase
-        .from('public_assets')
-        .update(updates)
-        .eq('id', assetId);
-
-    if (error) {
-        console.error('Error updating public asset:', error);
-        throw error;
-    }
-}
-
-export async function adminDeletePublicAsset(asset: PublicAsset): Promise<void> {
-    const { error } = await supabase.rpc('admin_delete_public_asset', {
-        p_asset_id: asset.id
-    });
-
-    if (error) {
-        console.error('Error deleting public asset via RPC:', error);
-        throw error;
-    }
-}
-
-
-export async function publishAssetFromBase64(base64Data: string, name: string): Promise<void> {
-    const fileName = `${name.replace(/\s/g, '_')}_${nanoid(8)}.png`;
-    const file = base64ToFile(base64Data, fileName);
-    // This function implicitly requires admin rights because the underlying RPC call does.
-    // The UI should guard against calling this for non-admins.
-    await uploadPublicAsset(file, 'Public');
-}
-
-// User-specific Asset Management
-function getAssetTypeFromFile(file: File): UploadedAssetType {
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension!)) return 'image';
-    if (['mp4', 'mov', 'webm'].includes(extension!)) return 'video';
-    if (['mp3', 'wav', 'ogg'].includes(extension!)) return 'audio';
-    if (['otf', 'ttf', 'woff'].includes(extension!)) return 'font';
-    if (extension === 'dng') return 'dng';
-    if (extension === 'brmp') return 'brmp';
-    return 'image'; // Default fallback
-}
-
-export async function uploadUserAsset(file: File, folderId: string | null = null): Promise<UploadedAsset> {
-    const user = (await supabase.auth.getUser()).data.user;
-    if (!user) throw new Error("Usuário não autenticado.");
-
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${nanoid()}.${fileExt}`;
-    const filePath = `${user.id}/${fileName}`;
-
-    // First, upload the main asset
     const { data: uploadData, error: uploadError } = await supabase.storage
         .from('user_assets')
-        .upload(filePath, file);
+        .upload(fileName, file);
+    
+    if (uploadError) throw uploadError;
 
-    if (uploadError) {
-        if (uploadError.message.toLowerCase().includes('bucket not found')) {
-            throw new Error('USER_ASSETS_SETUP_REQUIRED: O bucket de armazenamento `user_assets` não foi encontrado.');
-        }
-        throw uploadError;
-    }
+    // We don't use public URLs for user assets anymore, but we need a placeholder
+    const placeholderUrl = supabase.storage.from('user_assets').getPublicUrl(fileName).data.publicUrl;
 
-    const { data: urlData } = supabase.storage.from('user_assets').getPublicUrl(filePath);
-
-    const assetType = getAssetTypeFromFile(file);
     let thumbnailUrl: string | null = null;
-    let thumbnailStoragePath: string | null = null;
-
-    if (assetType === 'image') {
-        thumbnailUrl = urlData.publicUrl;
-        thumbnailStoragePath = uploadData.path; // For images, thumbnail is the image itself
-    } else if (assetType === 'video') {
+    let thumbnailPath: string | null = null;
+    if (file.type.startsWith('video/')) {
         try {
-            const { base64data, mimeType } = await extractLastFrame(file);
-            const thumbName = `thumb_${fileName.split('.')[0]}.jpg`;
-            const thumbPath = `${user.id}/${thumbName}`;
-            const thumbFile = base64ToFile(`data:${mimeType};base64,${base64data}`, thumbName);
-            
+            const thumbFile = await createVideoThumbnail(file);
+            const thumbFileName = `${userId}/thumbs/${nanoid()}.jpg`;
             const { data: thumbUploadData, error: thumbUploadError } = await supabase.storage
                 .from('user_assets')
-                .upload(thumbPath, thumbFile);
-
-            if (thumbUploadError) {
-                console.error('Video thumbnail upload failed:', thumbUploadError);
-            } else {
-                thumbnailUrl = supabase.storage.from('user_assets').getPublicUrl(thumbPath).data.publicUrl;
-                thumbnailStoragePath = thumbUploadData.path;
-            }
-        } catch (e) {
-            console.error('Video thumbnail generation failed:', e);
+                .upload(thumbFileName, thumbFile);
+            if (thumbUploadError) throw thumbUploadError;
+            thumbnailPath = thumbUploadData.path;
+            thumbnailUrl = supabase.storage.from('user_assets').getPublicUrl(thumbFileName).data.publicUrl;
+        } catch (thumbError) {
+            console.error("Could not generate video thumbnail:", thumbError);
         }
+    } else {
+        thumbnailUrl = placeholderUrl;
     }
 
-    const assetData: any = {
-        user_id: user.id,
-        name: file.name,
-        asset_type: assetType,
-        storage_path: uploadData.path,
-        url: urlData.publicUrl,
-        thumbnail_url: thumbnailUrl,
-        thumbnail_storage_path: thumbnailStoragePath,
+    const getAssetType = (file: File, ext: string): UploadedAssetType => {
+        const fontExtensions = ['ttf', 'otf', 'woff', 'woff2'];
+        if (ext === 'dng') return 'dng';
+        if (ext === 'brmp') return 'brmp';
+        if (fontExtensions.includes(ext)) return 'font';
+        return file.type.split('/')[0] as UploadedAssetType;
     };
-
-    if (folderId) {
-        assetData.folder_id = folderId;
-    }
     
+    const assetType = getAssetType(file, fileExt);
+
     const { data: dbData, error: dbError } = await supabase
         .from('user_assets')
-        .insert(assetData)
+        .insert({
+            user_id: userId,
+            name: file.name,
+            asset_type: assetType,
+            storage_path: uploadData.path,
+            url: placeholderUrl, // Store the base path, not the public URL
+            thumbnail_url: thumbnailUrl,
+            thumbnail_storage_path: thumbnailPath,
+            folder_id: folderId,
+        })
         .select()
         .single();
         
     if (dbError) {
-        if (dbError.message.toLowerCase().includes('relation "public.user_assets" does not exist')) {
-            throw new Error('USER_ASSETS_SETUP_REQUIRED: A tabela `user_assets` não foi encontrada.');
-        }
+        await supabase.storage.from('user_assets').remove([fileName]);
+        if (thumbnailPath) await supabase.storage.from('user_assets').remove([thumbnailPath]);
         throw dbError;
     }
     
-    return {
-        id: dbData.id,
-        name: dbData.name,
-        type: dbData.asset_type,
-        url: dbData.url,
-        thumbnail: dbData.thumbnail_url || dbData.url,
-        is_favorite: dbData.is_favorite,
-        storage_path: dbData.storage_path,
-        thumbnail_storage_path: dbData.thumbnail_storage_path,
-        folder_id: dbData.folder_id,
-    };
-}
+    return { ...dbData, type: dbData.asset_type as UploadedAsset['type'], thumbnail: dbData.thumbnail_url, url: dbData.url };
+};
 
-export async function getUserAssets(): Promise<UploadedAsset[]> {
-    const { data: assets, error } = await supabase
-        .from('user_assets')
-        .select('*')
-        .order('created_at', { ascending: false });
-        
-    if (error) {
-        if (error.message.toLowerCase().includes('relation "public.user_assets" does not exist')) {
-            throw new Error('USER_ASSETS_SETUP_REQUIRED: A tabela `user_assets` não foi encontrada.');
-        }
-        throw error;
-    }
-    
-    if (!assets || assets.length === 0) {
-        return [];
-    }
+// Delete a user asset
+export const deleteUserAsset = async (asset: UploadedAsset): Promise<void> => {
+    const { error } = await supabase.rpc('user_delete_asset', { p_asset_id: asset.id });
+    if (error) throw error;
+};
 
-    const mainPaths = assets.map(asset => asset.storage_path);
-    const thumbnailPaths = assets
-        .map(asset => asset.thumbnail_storage_path)
-        .filter((path): path is string => !!path); // Filter out null/undefined paths safely
-    const uniqueThumbnailPaths = [...new Set(thumbnailPaths)];
-    
-    const allPaths = [...new Set([...mainPaths, ...uniqueThumbnailPaths])];
-
-    if (allPaths.length === 0) return [];
-
-    const { data: signedUrls, error: urlError } = await supabase.storage
-        .from('user_assets')
-        .createSignedUrls(allPaths, 3600);
-    
-    if (urlError) {
-        console.error("Failed to get signed URLs", urlError);
-        throw urlError;
-    }
-    
-    const urlMap = new Map(signedUrls.map(item => [item.path, item.signedUrl]));
-
-    return assets.map(asset => {
-        const signedUrl = urlMap.get(asset.storage_path) || asset.url;
-        let signedThumbnailUrl = signedUrl; 
-        
-        if (asset.thumbnail_storage_path) {
-            signedThumbnailUrl = urlMap.get(asset.thumbnail_storage_path) || asset.thumbnail_url || signedUrl;
-        }
-
-        return {
-            id: asset.id,
-            name: asset.name,
-            type: asset.asset_type as UploadedAssetType,
-            url: signedUrl,
-            thumbnail: signedThumbnailUrl,
-            is_favorite: asset.is_favorite,
-            storage_path: asset.storage_path,
-            thumbnail_storage_path: asset.thumbnail_storage_path,
-            folder_id: asset.folder_id,
-        };
-    });
-}
-
-export async function renameUserAsset(assetId: string, newName: string): Promise<void> {
+// Rename asset
+export const renameUserAsset = async (assetId: string, newName: string): Promise<void> => {
     const { error } = await supabase
         .from('user_assets')
         .update({ name: newName })
         .eq('id', assetId);
+    if (error) throw error;
+};
 
-    if (error) {
-        console.error('Error renaming asset:', error);
-        throw error;
-    }
-}
-
-export async function toggleAssetFavorite(assetId: string, isFavorite: boolean): Promise<void> {
+// Toggle favorite
+export const toggleAssetFavorite = async (assetId: string, isFavorite: boolean): Promise<void> => {
     const { error } = await supabase
         .from('user_assets')
-        .update({ is_favorite: isFavorite })
+        .update({ is_favorite: !isFavorite })
         .eq('id', assetId);
-        
     if (error) throw error;
-}
+};
 
-export async function deleteUserAsset(asset: UploadedAsset): Promise<void> {
-    const { error } = await supabase.rpc('user_delete_asset', {
-        p_asset_id: asset.id
-    });
-
-    if (error) {
-        console.error('Error deleting user asset via RPC:', error);
-        throw error;
-    }
-}
-
-// FOLDER MANAGEMENT
-export async function getFolders(parentId: string | null): Promise<Folder[]> {
-    let query = supabase.from('folders').select('*');
-    if (parentId) {
-        query = query.eq('parent_id', parentId);
-    } else {
-        query = query.is('parent_id', null);
-    }
-    const { data, error } = await query.order('name');
-    if (error) throw error;
-    return data;
-}
-
-export async function getAssetsInFolder(folderId: string | null): Promise<UploadedAsset[]> {
-    let query = supabase.from('user_assets').select('*');
-    if (folderId) {
-        query = query.eq('folder_id', folderId);
-    } else {
-        query = query.is('folder_id', null);
-    }
-    const { data: assets, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    if (!assets || assets.length === 0) return [];
-
-    const allPaths = assets
-        .flatMap(asset => [asset.storage_path, asset.thumbnail_storage_path])
-        .filter((path): path is string => !!path);
-
-    const uniquePaths = [...new Set(allPaths)];
-    
-    if (uniquePaths.length === 0) {
-        return assets.map(asset => ({
-            id: asset.id,
-            name: asset.name,
-            type: asset.asset_type as UploadedAssetType,
-            url: asset.url,
-            thumbnail: asset.thumbnail_url || asset.url,
-            is_favorite: asset.is_favorite,
-            storage_path: asset.storage_path,
-            thumbnail_storage_path: asset.thumbnail_storage_path,
-            folder_id: asset.folder_id,
-        }));
-    }
-    
-    const { data: signedUrls, error: urlError } = await supabase.storage
-        .from('user_assets')
-        .createSignedUrls(uniquePaths, 3600);
-    
-    if (urlError) {
-        console.error("Failed to get signed URLs for folder assets", urlError);
-        throw urlError;
-    }
-    
-    const urlMap = new Map(signedUrls.map(item => [item.path, item.signedUrl]));
-
-    return assets.map(asset => {
-        const signedUrl = urlMap.get(asset.storage_path) || asset.url;
-        let signedThumbnailUrl = signedUrl; 
-        
-        if (asset.thumbnail_storage_path) {
-            signedThumbnailUrl = urlMap.get(asset.thumbnail_storage_path) || asset.thumbnail_url || signedUrl;
-        }
-
-        return {
-            id: asset.id,
-            name: asset.name,
-            type: asset.asset_type as UploadedAssetType,
-            url: signedUrl,
-            thumbnail: signedThumbnailUrl,
-            is_favorite: asset.is_favorite,
-            storage_path: asset.storage_path,
-            thumbnail_storage_path: asset.thumbnail_storage_path,
-            folder_id: asset.folder_id,
-        };
-    });
-}
-
-
-export async function createFolder(name: string, parentId: string | null): Promise<Folder> {
-    const user = (await supabase.auth.getUser()).data.user;
-    if (!user) throw new Error("Usuário não autenticado.");
+// PUBLIC ASSETS
+export const getPublicAssets = async (): Promise<PublicAsset[]> => {
     const { data, error } = await supabase
-        .from('folders')
-        .insert({ name, parent_id: parentId, user_id: user.id })
-        .select()
-        .single();
+        .from('public_assets')
+        .select('*, public_asset_categories(name)')
+        .order('created_at', { ascending: false });
     if (error) throw error;
     return data;
-}
+};
 
-export async function moveAssetToFolder(assetId: string, folderId: string | null): Promise<void> {
-    const { error } = await supabase
-        .from('user_assets')
-        .update({ folder_id: folderId })
-        .eq('id', assetId);
+// Favorites for public assets
+export const getFavoritePublicAssetIds = async (): Promise<string[]> => {
+    const userId = await getUserId();
+    const { data, error } = await supabase.from('user_favorite_public_assets').select('public_asset_id').eq('user_id', userId);
     if (error) throw error;
-}
+    return data.map(fav => fav.public_asset_id);
+};
 
-export async function moveFolderToFolder(folderId: string, parentId: string | null): Promise<void> {
-    const { error } = await supabase
-        .from('folders')
-        .update({ parent_id: parentId })
-        .eq('id', folderId);
+export const addFavoritePublicAsset = async (assetId: string): Promise<void> => {
+    const userId = await getUserId();
+    const { error } = await supabase.from('user_favorite_public_assets').insert({ user_id: userId, public_asset_id: assetId });
+    if (error && error.code !== '23505') throw error; // ignore duplicate errors
+};
+
+export const removeFavoritePublicAsset = async (assetId: string): Promise<void> => {
+    const userId = await getUserId();
+    const { error } = await supabase.from('user_favorite_public_assets').delete().match({ user_id: userId, public_asset_id: assetId });
     if (error) throw error;
-}
+};
+
+
+// =========================================================================================
+// ADMIN FUNCTIONS (RPC-based for security and robustness)
+// =========================================================================================
+
+export const adminGetAllUserProfiles = async (): Promise<UserProfile[]> => {
+    const { data, error } = await supabase.rpc('admin_get_all_users');
+    if (error) throw error;
+    return data;
+};
+
+export const adminUpdateUserDetails = async (userId: string, updates: Partial<Pick<UserProfile, 'role' | 'credits' | 'status' | 'plan_id'>>): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_user_details', {
+        p_user_id: userId,
+        p_role: updates.role,
+        p_credits: updates.credits,
+        p_status: updates.status,
+        p_plan_id: updates.plan_id
+    });
+    if (error) throw error;
+};
+
+export const adminGetPlans = async (): Promise<Plan[]> => {
+    const { data, error } = await supabase.rpc('admin_get_plans');
+    if (error) throw error;
+    return data;
+};
+
+export const adminGetFeatures = async (): Promise<Feature[]> => {
+    const { data, error } = await supabase.rpc('admin_get_features');
+    if (error) throw error;
+    return data;
+};
+
+export const adminGetPlanFeatures = async (planId: string): Promise<string[]> => {
+    const { data, error } = await supabase.rpc('admin_get_plan_features', { p_plan_id: planId });
+    if (error) throw error;
+    return data;
+};
+
+export const adminUpdatePlan = async (planId: string, updates: Partial<Pick<Plan, 'name' | 'stripe_payment_link' | 'initial_credits'>>): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_plan', { p_plan_id: planId, p_updates: updates });
+    if (error) throw error;
+};
+
+export const adminSetPlanFeatures = async (planId: string, featureIds: string[]): Promise<void> => {
+    const { error } = await supabase.rpc('admin_set_plan_features', { p_plan_id: planId, p_feature_ids: featureIds });
+    if (error) throw error;
+};
+
+export const adminGetCreditCosts = async (): Promise<CreditCost[]> => {
+    const { data, error } = await supabase.rpc('admin_get_credit_costs');
+    if (error) throw error;
+    return data;
+};
+
+export const adminUpdateCreditCost = async (action: string, cost: number): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_credit_cost', { p_action: action, p_cost: cost });
+    if (error) throw error;
+};
+
+export const adminGetCategories = async (type: 'media' | 'font' | 'preset'): Promise<Category[]> => {
+    const { data, error } = await supabase.rpc('admin_get_categories', { p_category_type: type });
+    if (error) throw error;
+    return data;
+};
+
+export const adminCreateCategory = async (name: string, type: 'media' | 'font' | 'preset'): Promise<void> => {
+    const { error } = await supabase.rpc('admin_create_category', { p_name: name, p_category_type: type });
+    if (error) throw error;
+};
+
+export const adminUpdateCategory = async (id: string, newName: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_category', { p_category_id: id, p_new_name: newName });
+    if (error) throw error;
+};
+
+export const adminDeleteCategory = async (id: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_delete_category', { p_category_id: id });
+    if (error) throw error;
+};
+
+export const adminUploadPublicAsset = async (file: File, visibility: AssetVisibility, categoryId: string | null): Promise<void> => {
+    const userId = await getUserId();
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    const fileName = `public/${nanoid()}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage.from('public_assets').upload(fileName, file);
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage.from('public_assets').getPublicUrl(fileName);
+    
+    let assetType: PublicAsset['asset_type'];
+    const fontExtensions = ['ttf', 'otf', 'woff', 'woff2'];
+    if (fileExt === 'dng') {
+        assetType = 'dng';
+    } else if (fileExt === 'brmp') {
+        assetType = 'brmp';
+    } else if (fontExtensions.includes(fileExt || '')) {
+        assetType = 'font';
+    } else {
+        assetType = file.type.split('/')[0] as 'image' | 'video' | 'audio';
+    }
+    
+    const { error } = await supabase.rpc('admin_add_public_asset', {
+        p_name: file.name,
+        p_asset_type: assetType,
+        p_storage_path: uploadData.path,
+        p_asset_url: publicUrl,
+        p_thumbnail_url: publicUrl,
+        p_visibility: visibility,
+        p_owner_id: userId,
+        p_category_id: categoryId,
+    });
+    if (error) throw error;
+};
+
+export const adminDeletePublicAsset = async (assetId: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_delete_public_asset', { p_asset_id: assetId });
+    if (error) throw error;
+};
+
+export const adminUpdatePublicAsset = async (assetId: string, newName: string, newCategoryId: string | null): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_public_asset', { p_asset_id: assetId, p_new_name: newName, p_new_category_id: newCategoryId });
+    if (error) throw error;
+};

@@ -2,11 +2,14 @@ import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconUpload, IconX, IconImage, IconDownload, IconImageIcon } from './Icons.tsx';
-import { toBase64, base64ToFile } from '../utils/imageUtils.ts';
+import { toBase64, base64ToFile, blobToBase64 } from '../utils/imageUtils.ts';
 import { generateImageWithRetry, getModelInstruction } from '../geminiService.ts';
 import { uploadUserAsset } from '../services/databaseService.ts';
 import { nanoid } from 'nanoid';
-import { Prompt } from '../types.ts';
+import { Prompt, UploadedAsset } from '../types.ts';
+import UploadOptionsModal from './UploadOptionsModal.tsx';
+import GalleryPickerModal from './GalleryPickerModal.tsx';
+import { showGoogleDrivePicker } from '../services/googleDriveService.ts';
 
 interface MockupDetailModalProps {
     isOpen: boolean;
@@ -24,6 +27,9 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
     const [resultImages, setResultImages] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const [isUploadOptionsModalOpen, setIsUploadOptionsModalOpen] = useState(false);
+    const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
+
     const handleArtUpload = async (file: File | null) => {
         if (!file) return;
         try {
@@ -31,6 +37,32 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
             setArtImage(base64);
         } catch (err) {
             setError("Falha ao carregar a arte.");
+        }
+    };
+
+    const handleSelectFromGallery = async (asset: UploadedAsset) => {
+        setIsGalleryPickerModalOpen(false);
+        try {
+            const response = await fetch(asset.url);
+            if (!response.ok) throw new Error('Falha ao buscar imagem da galeria.');
+            const blob = await response.blob();
+            const base64 = await blobToBase64(blob);
+            setArtImage(base64);
+        } catch (err) {
+            setError("Falha ao carregar a arte da galeria.");
+        }
+    };
+
+    const handleGoogleDriveUpload = async () => {
+        setIsUploadOptionsModalOpen(false);
+        try {
+            const images = await showGoogleDrivePicker();
+            if (images.length > 0) {
+                setArtImage(images[0]);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
+            setError(`Falha ao importar do Google Drive: ${msg}`);
         }
     };
 
@@ -94,55 +126,78 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-brand-dark rounded-2xl p-6 border border-brand-accent shadow-2xl w-full max-w-4xl relative flex gap-6 h-[80vh]">
-                {/* Left side */}
-                <div className="w-1/2 flex flex-col gap-4">
-                    <h3 className="text-xl font-semibold text-white">Gerador de Mockup de {mockupType.name}</h3>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">1. Carregue sua arte</label>
-                            <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer aspect-video w-full bg-brand-light border-2 border-dashed border-brand-accent rounded-lg flex items-center justify-center text-center text-gray-400 hover:border-brand-primary">
-                                {artImage ? <img src={artImage} className="max-w-full max-h-full object-contain p-2" /> : <div><IconUpload className="mx-auto" /><p>Clique para carregar</p><p className="text-xs">PNG, JPG, WEBP, etc.</p></div>}
+        <>
+            <UploadOptionsModal
+                isOpen={isUploadOptionsModalOpen}
+                onClose={() => setIsUploadOptionsModalOpen(false)}
+                onLocalUpload={() => {
+                    setIsUploadOptionsModalOpen(false);
+                    fileInputRef.current?.click();
+                }}
+                onGalleryUpload={() => {
+                    setIsUploadOptionsModalOpen(false);
+                    setIsGalleryPickerModalOpen(true);
+                }}
+                onGoogleDriveUpload={handleGoogleDriveUpload}
+                galleryEnabled={true}
+                title="Carregar sua arte"
+            />
+            <GalleryPickerModal
+                isOpen={isGalleryPickerModalOpen}
+                onClose={() => setIsGalleryPickerModalOpen(false)}
+                onSelectAsset={handleSelectFromGallery}
+                assetTypeFilter="image"
+            />
+            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-brand-dark rounded-2xl p-6 border border-brand-accent shadow-2xl w-full max-w-4xl relative flex gap-6 h-[80vh]">
+                    {/* Left side */}
+                    <div className="w-1/2 flex flex-col gap-4">
+                        <h3 className="text-xl font-semibold text-white">Gerador de Mockup de {mockupType.name}</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">1. Carregue sua arte</label>
+                                <div onClick={() => setIsUploadOptionsModalOpen(true)} className="cursor-pointer aspect-video w-full bg-brand-light border-2 border-dashed border-brand-accent rounded-lg flex items-center justify-center text-center text-gray-400 hover:border-brand-primary">
+                                    {artImage ? <img src={artImage} className="max-w-full max-h-full object-contain p-2" /> : <div><IconUpload className="mx-auto" /><p>Clique para carregar</p><p className="text-xs">Do Dispositivo, Galeria, etc.</p></div>}
+                                </div>
+                                <input type="file" ref={fileInputRef} onChange={(e) => handleArtUpload(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
                             </div>
-                            <input type="file" ref={fileInputRef} onChange={(e) => handleArtUpload(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">2. Instruções Adicionais (Opcional)</label>
+                                <textarea value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Ex: 'Coloque a arte no centro'" className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 h-24 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white resize-y" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">3. Quantidade</label>
+                                <select value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
+                                    <option value={1}>1 Variação</option>
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">2. Instruções Adicionais (Opcional)</label>
-                            <textarea value={instructions} onChange={e => setInstructions(e.target.value)} placeholder="Ex: 'Coloque a arte no centro'" className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 h-24 focus:outline-none focus:ring-2 focus:ring-brand-primary text-white resize-y" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-2">3. Quantidade</label>
-                            <select value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white">
-                                <option value={1}>1 Variação</option>
-                            </select>
+                         {error && <div className="text-red-400 bg-red-900/50 p-2 rounded text-sm text-center">{error}</div>}
+                        <div className="mt-auto flex justify-end gap-4">
+                            <Button onClick={onClose}>Cancelar</Button>
+                            <Button onClick={handleGenerate} primary disabled={isLoading}>
+                                {isLoading ? 'A gerar...' : 'Gerar Mockup'}
+                            </Button>
                         </div>
                     </div>
-                     {error && <div className="text-red-400 bg-red-900/50 p-2 rounded text-sm text-center">{error}</div>}
-                    <div className="mt-auto flex justify-end gap-4">
-                        <Button onClick={onClose}>Cancelar</Button>
-                        <Button onClick={handleGenerate} primary disabled={isLoading}>
-                            {isLoading ? 'A gerar...' : 'Gerar Mockup'}
-                        </Button>
+                    {/* Right side */}
+                    <div className="w-1/2 bg-black rounded-lg flex flex-col items-center justify-center p-2">
+                        {isLoading && <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>}
+                        {!isLoading && resultImages.length > 0 ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+                                 <img src={resultImages[0]} className="max-w-full max-h-[80%] object-contain rounded-lg" />
+                                 <div className="flex items-center gap-2">
+                                    <Button onClick={handleDownload}><div className="flex items-center gap-2"><IconDownload/> Baixar</div></Button>
+                                    <Button onClick={handleSaveToGallery} disabled={isSaving}><div className="flex items-center gap-2"><IconImageIcon className="w-4 h-4" />{isSaving ? 'Salvando...' : 'Salvar na Galeria'}</div></Button>
+                                 </div>
+                            </div>
+                        ): null}
+                        {!isLoading && resultImages.length === 0 && <div className="text-center text-gray-500"><IconImage /><p className="mt-2">O seu mockup aparecerá aqui.</p></div>}
                     </div>
-                </div>
-                {/* Right side */}
-                <div className="w-1/2 bg-black rounded-lg flex flex-col items-center justify-center p-2">
-                    {isLoading && <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-primary"></div>}
-                    {!isLoading && resultImages.length > 0 ? (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-4">
-                             <img src={resultImages[0]} className="max-w-full max-h-[80%] object-contain rounded-lg" />
-                             <div className="flex items-center gap-2">
-                                <Button onClick={handleDownload}><div className="flex items-center gap-2"><IconDownload/> Baixar</div></Button>
-                                <Button onClick={handleSaveToGallery} disabled={isSaving}><div className="flex items-center gap-2"><IconImageIcon className="w-4 h-4" />{isSaving ? 'Salvando...' : 'Salvar na Galeria'}</div></Button>
-                             </div>
-                        </div>
-                    ): null}
-                    {!isLoading && resultImages.length === 0 && <div className="text-center text-gray-500"><IconImage /><p className="mt-2">O seu mockup aparecerá aqui.</p></div>}
-                </div>
-                <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-brand-accent transition-colors"><IconX/></button>
-            </motion.div>
-        </div>
+                    <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full hover:bg-brand-accent transition-colors"><IconX/></button>
+                </motion.div>
+            </div>
+        </>
     );
 };
 

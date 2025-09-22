@@ -46,9 +46,11 @@ const UploadOptionsModal: React.FC<UploadOptionsModalProps> = ({
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }} className="bg-brand-dark rounded-2xl p-6 border border-brand-accent shadow-2xl w-full max-w-lg relative text-white">
                 <h3 className="text-xl font-semibold mb-6 text-center">{title}</h3>
                 
-                <div className="grid grid-cols-3 gap-4">
+                <div className={`grid ${galleryEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}>
                     <UploadOption icon={<IconFolder className="w-full h-full text-gray-400"/>} label={localLabel} onClick={onLocalUpload} />
-                    <UploadOption icon={<IconImageIcon className="w-full h-full text-brand-secondary"/>} label={galleryLabel} onClick={onGalleryUpload} disabled={!galleryEnabled} />
+                    {galleryEnabled && (
+                         <UploadOption icon={<IconImageIcon className="w-full h-full text-brand-secondary"/>} label={galleryLabel} onClick={onGalleryUpload} />
+                    )}
                     <UploadOption icon={<IconGoogleDrive className="w-full h-full"/>} label="Google Drive" onClick={onGoogleDriveUpload} />
                 </div>
 

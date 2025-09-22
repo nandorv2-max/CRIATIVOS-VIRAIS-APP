@@ -44,7 +44,7 @@ const SelectionBox: React.FC<SelectionBoxProps> = ({ layers, zoom, cropLayerId, 
     const layer = layers[0];
     const isCropping = cropLayerId === layer.id;
     const handleSize = 10 / zoom;
-    const handleStyle: React.CSSProperties = {
+     const handleStyle: React.CSSProperties = {
         position: 'absolute',
         background: 'white',
         border: `1px solid ${isCropping ? '#fbbf24' : '#4CAF50'}`,
@@ -55,6 +55,14 @@ const SelectionBox: React.FC<SelectionBoxProps> = ({ layers, zoom, cropLayerId, 
 
     if (isCropping) {
         const cornerHandleStyle = { ...handleStyle, width: handleSize, height: handleSize };
+        const sideHandleStyle: React.CSSProperties = {
+            ...handleStyle,
+            borderRadius: 2,
+            width: handleSize * 1.5,
+            height: handleSize / 2,
+            background: '#fbbf24',
+            border: '1px solid white',
+        };
         const halfHandle = handleSize / 2;
         return (
              <div 
@@ -75,6 +83,10 @@ const SelectionBox: React.FC<SelectionBoxProps> = ({ layers, zoom, cropLayerId, 
                 <div data-handle="tr" style={{ ...cornerHandleStyle, top: -halfHandle, right: -halfHandle, cursor: 'nesw-resize' }}></div>
                 <div data-handle="bl" style={{ ...cornerHandleStyle, bottom: -halfHandle, left: -halfHandle, cursor: 'nesw-resize' }}></div>
                 <div data-handle="br" style={{ ...cornerHandleStyle, bottom: -halfHandle, right: -halfHandle, cursor: 'nwse-resize' }}></div>
+                <div data-handle="tm" style={{ ...sideHandleStyle, top: -halfHandle / 2, left: `calc(50% - ${handleSize * 0.75}px)`, cursor: 'ns-resize' }}></div>
+                <div data-handle="bm" style={{ ...sideHandleStyle, bottom: -halfHandle / 2, left: `calc(50% - ${handleSize * 0.75}px)`, cursor: 'ns-resize' }}></div>
+                <div data-handle="ml" style={{ ...sideHandleStyle, width: handleSize / 2, height: handleSize * 1.5, top: `calc(50% - ${handleSize * 0.75}px)`, left: -halfHandle / 2, cursor: 'ew-resize' }}></div>
+                <div data-handle="mr" style={{ ...sideHandleStyle, width: handleSize / 2, height: handleSize * 1.5, top: `calc(50% - ${handleSize * 0.75}px)`, right: -halfHandle / 2, cursor: 'ew-resize' }}></div>
             </div>
         )
     }

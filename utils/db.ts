@@ -73,6 +73,22 @@ export async function getItem<T>(key: IDBValidKey): Promise<T | null> {
     });
 }
 
+export async function removeItem(key: IDBValidKey): Promise<void> {
+    const dbInstance = await getDB();
+    return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(PROJECTS_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(PROJECTS_STORE_NAME);
+        store.delete(key);
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => {
+            console.error('Error removing item from IndexedDB:', transaction.error);
+            reject(transaction.error);
+        };
+    });
+}
+
+
 export async function keyExists(key: IDBValidKey): Promise<boolean> {
      const dbInstance = await getDB();
     return new Promise((resolve, reject) => {

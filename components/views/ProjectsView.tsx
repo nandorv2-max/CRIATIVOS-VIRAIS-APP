@@ -41,7 +41,8 @@ const ProjectsView: React.FC = () => {
         if (filesToUpload.length === 0) return;
         
         try {
-            await Promise.all(filesToUpload.map(file => uploadUserAsset(file, null)));
+// FIX: Explicitly typed the `file` parameter in the `map` callback as `File` to resolve a type inference issue where it was being treated as `unknown`.
+            await Promise.all(filesToUpload.map((file: File) => uploadUserAsset(file, null)));
             await refetchAssets();
         } catch (err: any) {
              setLocalError("Ocorreu um erro durante o upload.");
@@ -62,7 +63,8 @@ const ProjectsView: React.FC = () => {
                 const uploadFiles = async (files: File[]) => {
                     if (files.length === 0) return;
                     try {
-                        await Promise.all(files.map(file => uploadUserAsset(file, null)));
+                        // FIX: Explicitly typed the `file` parameter in the `map` callback as `File` to resolve a type inference issue where it was being treated as `unknown`.
+                        await Promise.all(files.map((file: File) => uploadUserAsset(file, null)));
                         await refetchAssets();
                     } catch (err: any) {
                          setLocalError("Ocorreu um erro durante o upload.");

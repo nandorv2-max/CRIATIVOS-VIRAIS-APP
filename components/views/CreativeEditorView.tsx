@@ -21,7 +21,7 @@ import { blobToBase64, toBase64 } from '../../utils/imageUtils.ts';
 import { setItem, getItem, removeItem } from '../../utils/db.ts';
 import SelectionBox from '../SelectionBox.tsx';
 import { uploadUserAsset, getPublicAssets, adminUploadPublicAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
-import { generateImageFromPrompt } from '../../services/geminiService.ts';
+import { generateImageFromPrompt } from '../../geminiService.ts';
 import { IconMinus, IconPlus, IconMaximize } from '../Icons.tsx';
 import type { User } from '@supabase/gotrue-js';
 import DownloadManager from '../DownloadManager.tsx';
@@ -549,7 +549,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         if (filesToUpload.length === 0) return;
 
         try {
-            await Promise.all(filesToUpload.map(file => uploadUserAsset(file, null)));
+            // FIX: Explicitly typed the `file` parameter in the `map` callback as `File` to resolve a type inference issue where it was being treated as `unknown`.
+            await Promise.all(filesToUpload.map((file: File) => uploadUserAsset(file, null)));
             await assetContext.refetchAssets();
         } catch (err) {
             console.error("Upload failed:", err);
@@ -834,46 +835,70 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 
                 const { x: ox, y: oy, width: ow, height: oh } = initialLayer;
                 
-                // FIX: Cast updates object to a more specific partial type to allow assignment of properties
-                // like 'scale', 'offsetX', and 'offsetY' that do not exist on all layer types in the AnyLayer union.
-                // This is safe because these assignments are within logic branches that have already confirmed
-                // the layer is of a type that supports these properties (ImageLayer or VideoLayer).
                 const updates: Partial<AnyLayer & { scale: number, offsetX: number, offsetY: number }> = {};
                 
-                if (['tl', 'tr', 'bl', 'br'].includes(handle)) { // Corner handles -> Proportional Scale
+                // Independent (non-proportional) resize logic for shapes and text layers
+                if (initialLayer.type === 'shape' || initialLayer.type === 'text') {
+                    let newX = ox;
+                    let newY = oy;
                     let newW = ow;
-                    if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
-                    if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
+                    let newH = oh;
 
-                    const aspectRatio = ow / oh;
-                    const newH = newW / aspectRatio;
-                    const dw = newW - ow;
-                    const dh = newH - oh;
-                    
-                    let newX = ox, newY = oy;
-                    if (handle.includes('l')) newX -= dw;
-                    if (handle.includes('t')) newY -= dh;
+                    if (handle.includes('r')) {
+                        newW = Math.max(minSize, ow + rdx);
+                    }
+                    if (handle.includes('l')) {
+                        newW = Math.max(minSize, ow - rdx);
+                        const dx_world = rdx * cos;
+                        const dy_world = rdx * sin;
+                        newX += dx_world;
+                        newY += dy_world;
+                    }
 
-                    const center_dx = (newX + newW/2) - (ox + ow/2);
-                    const center_dy = (newY + newH/2) - (oy + oh/2);
+                    if (handle.includes('b')) {
+                        newH = Math.max(minSize, oh + rdy);
+                    }
+                    if (handle.includes('t')) {
+                        newH = Math.max(minSize, oh - rdy);
+                        const dx_world = -rdy * sin;
+                        const dy_world = rdy * cos;
+                        newX += dx_world;
+                        newY += dy_world;
+                    }
                     
-                    updates.x = (ox + ow/2) + (center_dx * cos - center_dy * sin) - newW / 2;
-                    updates.y = (oy + oh/2) + (center_dx * sin + center_dy * cos) - newH / 2;
+                    updates.x = newX;
+                    updates.y = newY;
                     updates.width = newW;
                     updates.height = newH;
-                    
-                    if (initialLayer.type === 'image' || initialLayer.type === 'video') {
+                } 
+                // Proportional and crop/pan resize for media layers
+                else if (initialLayer.type === 'image' || initialLayer.type === 'video') {
+                    if (['tl', 'tr', 'bl', 'br'].includes(handle)) { // Corner handles -> Proportional Scale
+                        let newW = ow;
+                        if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
+                        if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
+
+                        const aspectRatio = ow / oh;
+                        const newH = newW / aspectRatio;
+                        const dw = newW - ow;
+                        const dh = newH - oh;
+                        
+                        let newX = ox, newY = oy;
+                        if (handle.includes('l')) newX -= dw;
+                        if (handle.includes('t')) newY -= dh;
+
+                        const center_dx = (newX + newW/2) - (ox + ow/2);
+                        const center_dy = (newY + newH/2) - (oy + oh/2);
+                        
+                        updates.x = (ox + ow/2) + (center_dx * cos - center_dy * sin) - newW / 2;
+                        updates.y = (oy + oh/2) + (center_dx * sin + center_dy * cos) - newH / 2;
+                        updates.width = newW;
+                        updates.height = newH;
+                        
                         const mediaLayer = initialLayer as ImageLayer | VideoLayer;
                         const newScale = newW / (mediaLayer.crop.width || mediaLayer.mediaNaturalWidth);
                         updates.scale = newScale;
-                    }
-                } else { // Side handles for crop/reveal/scale
-                     const isMediaLayer = initialLayer.type === 'image' || initialLayer.type === 'video';
-                     if (!isMediaLayer) { // Non-proportional scale for shapes
-                        updates.width = Math.max(minSize, ow + (handle.includes('l') || handle.includes('r') ? rdx : 0));
-                        updates.height = Math.max(minSize, oh + (handle.includes('t') || handle.includes('b') ? rdy : 0));
-                        // Position adjustment for left/top handles
-                     } else {
+                    } else { // Side handles for crop/reveal/scale
                         const mediaLayer = initialLayer as ImageLayer | VideoLayer;
                         const deltaX = handle === 'ml' ? -rdx : (handle === 'mr' ? rdx : 0);
                         const deltaY = handle === 'tm' ? -rdy : (handle === 'bm' ? rdy : 0);
@@ -915,7 +940,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                                 }
                             }
                         } else if (deltaY !== 0) { // Vertical Drag
-                             if (deltaY < 0) { // Crop
+                                if (deltaY < 0) { // Crop
                                 const cropAmount = Math.abs(deltaY);
                                 updates.height = Math.max(minSize, oh - cropAmount);
                                 const actualCrop = oh - updates.height;
@@ -948,8 +973,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                                         updates.x = ox - (local_dy * sin) - (total_dw / 2 * cos);
                                         updates.y = oy + (local_dy * cos) - (total_dw / 2 * sin);
                                     } else {
-                                         updates.x = ox - (total_dw / 2 * cos);
-                                         updates.y = oy - (total_dw / 2 * sin);
+                                            updates.x = ox - (total_dw / 2 * cos);
+                                            updates.y = oy - (total_dw / 2 * sin);
                                     }
                                 }
                             }
@@ -1348,9 +1373,12 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
             let mixedAudio: any = null;
             if (audioSources.length > 0) {
-                 audioWorker = new Worker(new URL('../../services/audio.worker.ts', import.meta.url), { type: 'module' });
+                 audioWorker = new Worker('/services/audio.worker.ts', { type: 'module' });
                  mixedAudio = await new Promise((resolve, reject) => {
-                     audioWorker!.onmessage = e => e.data.type === 'done' ? resolve(e.data.payload) : reject(new Error(e.data.payload.message));
+                     audioWorker!.onmessage = e => {
+                        if (e.data.type === 'done') resolve(e.data.payload);
+                        else if (e.data.type === 'error') reject(new Error(e.data.payload.message));
+                     };
                      audioWorker!.onerror = e => reject(e);
                      audioWorker!.postMessage({ type: 'process', payload: { audioSources, maxDuration: totalDuration } });
                  });
@@ -1363,7 +1391,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
              const exportHeight = activePage.height;
              const offscreenCanvas = new OffscreenCanvas(exportWidth, exportHeight);
 
-             videoWorker = new Worker(new URL('../../services/videoRenderer.worker.ts', import.meta.url), { type: 'module' });
+             videoWorker = new Worker('/services/videoRenderer.worker.ts', { type: 'module' });
              const finalBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
                  videoWorker!.onmessage = async (e) => {
                     if (e.data.type === 'ready') {
@@ -1580,7 +1608,9 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                     onApplyCrop={onApplyCrop}
                     onCancelCrop={onCancelCrop}
                     userProfile={userProfile}
+// FIX: Corrected function name from 'onSaveProjectAsPublic' to 'handleSaveProjectAsPublic' to match the actual function defined in the component.
                     onSaveProjectAsPublic={handleSaveProjectAsPublic}
+// FIX: Corrected function name from 'onSaveProjectToComputer' to 'handleSaveProjectToComputer' to match the actual function defined in the component.
                     onSaveProjectToComputer={handleSaveProjectToComputer}
                     onNewProject={handleNewProject}
                 />

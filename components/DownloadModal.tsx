@@ -48,7 +48,8 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onDownlo
             bitrate: 8000,
             frameRate: 30,
             codec: 'h264',
-            pageIndexes: Array.from(selectedPages).sort((a,b) => a-b),
+            // FIX: Explicitly typed the sort callback parameters `a` and `b` as numbers to resolve a type inference issue that caused an arithmetic operation error.
+            pageIndexes: Array.from(selectedPages).sort((a: number, b: number) => a-b),
         });
         onClose();
     };

@@ -2,13 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AnyLayer, TextLayer, ShapeLayer, UserProfile } from '../types.ts';
 import Button from './Button.tsx';
-import { IconDownload, IconFolder, IconSave, IconCrop, IconRocket, IconFile } from './Icons.tsx';
+import { IconDownload, IconFolder, IconSave, IconCrop, IconRocket, IconFile, IconFlipHorizontal, IconFlipVertical } from './Icons.tsx';
 import type { User } from '@supabase/gotrue-js';
 
 
 interface PropertiesPanelProps {
     selectedLayers: AnyLayer[];
-    onUpdateLayers: (update: Partial<AnyLayer>) => void;
+    onUpdateLayers: (update: Partial<AnyLayer>, commit: boolean) => void;
     onCommitHistory: () => void;
     canvasWidth: number;
     canvasHeight: number;
@@ -148,10 +148,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
          const renderTextProperties = (l: TextLayer) => (
             <>
                 <h4 className="text-sm font-bold text-gray-300 pt-4 border-t border-brand-accent/50">Texto</h4>
-                <textarea value={l.text} onChange={e => onUpdateLayers({ text: e.target.value })} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white h-24 resize-y"/>
+                <textarea value={l.text} onChange={e => onUpdateLayers({ text: e.target.value }, false)} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white h-24 resize-y"/>
                 <div className="space-y-3 pt-2">
-                    <SliderInput label="Espaçamento Linhas" value={l.lineHeight || 1.2} onChange={v => onUpdateLayers({lineHeight: v})} onBlur={onCommitHistory} min={0.5} max={3} step={0.1} />
-                    <SliderInput label="Espaçamento Letras" value={l.letterSpacing || 0} onChange={v => onUpdateLayers({letterSpacing: v})} onBlur={onCommitHistory} min={-50} max={100} step={1} />
+                    <SliderInput label="Espaçamento Linhas" value={l.lineHeight || 1.2} onChange={v => onUpdateLayers({lineHeight: v}, false)} onBlur={onCommitHistory} min={0.5} max={3} step={0.1} />
+                    <SliderInput label="Espaçamento Letras" value={l.letterSpacing || 0} onChange={v => onUpdateLayers({letterSpacing: v}, false)} onBlur={onCommitHistory} min={-50} max={100} step={1} />
                 </div>
             </>
          );
@@ -176,12 +176,24 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         <div className="space-y-3">
                             <h4 className="text-sm font-bold text-gray-300">Transformar</h4>
                             <div className="grid grid-cols-2 gap-2">
-                                <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v})} onBlur={onCommitHistory} />
-                                <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v})} onBlur={onCommitHistory} />
-                                <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v})} onBlur={onCommitHistory} />
-                                <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v})} onBlur={onCommitHistory} />
+                                <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v}, false)} onBlur={onCommitHistory} />
                             </div>
-                            <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v})} onBlur={onCommitHistory} />
+                            <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="col-span-2">
+                                    <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v}, false)} onBlur={onCommitHistory} />
+                                </div>
+                                <div className="flex items-end gap-1 h-full">
+                                    <Button onClick={() => onUpdateLayers({ flipH: !layer.flipH }, true)} className="!p-2 h-[42px]" title="Inverter Horizontalmente">
+                                        <IconFlipHorizontal className="w-5 h-5"/>
+                                    </Button>
+                                     <Button onClick={() => onUpdateLayers({ flipV: !layer.flipV }, true)} className="!p-2 h-[42px]" title="Inverter Verticalmente">
+                                        <IconFlipVertical className="w-5 h-5"/>
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t border-brand-accent/50 space-y-3">
@@ -189,7 +201,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                             <SliderInput 
                                 label="Opacidade" 
                                 value={Math.round((layer.opacity ?? 1) * 100)} 
-                                onChange={v => onUpdateLayers({ opacity: v / 100 })} 
+                                onChange={v => onUpdateLayers({ opacity: v / 100 }, false)} 
                                 onBlur={onCommitHistory} 
                                 min={0} 
                                 max={100} 

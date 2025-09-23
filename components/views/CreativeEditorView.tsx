@@ -15,13 +15,13 @@ import BackgroundRemoverModal from '../BackgroundRemoverModal.tsx';
 import ProjectBrowserModal from '../ProjectBrowserModal.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer,
-    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext, DownloadJob
+    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext, DownloadJob, AudioTrack
 } from '../../types.ts';
 import { blobToBase64, toBase64 } from '../../utils/imageUtils.ts';
 import { setItem, getItem, removeItem } from '../../utils/db.ts';
 import SelectionBox from '../SelectionBox.tsx';
-import { uploadUserAsset, getPublicAssets, adminUploadPublicAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
-import { generateImageFromPrompt } from '../../services/geminiService.ts';
+import { uploadUserAsset, getPublicAssets, adminUploadPublicProject, createSignedUrlForPath } from '../../services/databaseService.ts';
+import { generateImageFromPrompt } from '../../geminiService.ts';
 import { IconMinus, IconPlus, IconMaximize } from '../Icons.tsx';
 import type { User } from '@supabase/gotrue-js';
 import JSZip from 'jszip';
@@ -32,7 +32,6 @@ import ContextMenu from '../ContextMenu.tsx';
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
     return new Promise((resolve, reject) => {
-        // FIX: Add a guard to prevent calling methods on a null or undefined src, which would crash the app.
         if (!src || typeof src !== 'string') {
             return reject(new Error('Fonte de mídia inválida ou ausente.'));
         }
@@ -52,14 +51,12 @@ const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageEleme
 
             const onCanPlay = () => {
                 element.removeEventListener('canplay', onCanPlay);
-                // A quick play/pause can force the browser to load the first frame for drawing
                 element.play().then(() => {
                     element.pause();
-                    element.currentTime = 0; // Ensure it's at the start
+                    element.currentTime = 0; 
                     resolve(element);
                 }).catch(e => {
                     console.warn("A reprodução automática foi impedida para o carregamento do vídeo, mas a continuar.", e);
-                    // Even if autoplay fails, the video element is likely ready.
                     resolve(element);
                 });
             };
@@ -94,7 +91,6 @@ interface InteractionState {
     startY: number;
     initialLayerStates: Map<string, AnyLayer>;
     handle?: Handle;
-    // For rotation
     centerX?: number;
     centerY?: number;
     startAngle?: number;
@@ -104,31 +100,16 @@ interface CreativeEditorViewProps {
     userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
 }
 
-// Custom deep clone that preserves runtime elements (_imageElement, _videoElement) by reference
 const deepCloneWithElements = <T extends any>(obj: T, visited = new WeakMap()): T => {
-    if (obj === null || typeof obj !== 'object') {
-        return obj;
-    }
-    
-    // Handle DOM elements by returning them directly (by reference)
-    if (obj instanceof HTMLElement) {
-        return obj;
-    }
-
-    // Handle circular references
-    if (visited.has(obj)) {
-        return visited.get(obj);
-    }
-    
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (obj instanceof HTMLElement) return obj;
+    if (visited.has(obj)) return visited.get(obj);
     if (Array.isArray(obj)) {
         const newArr: any[] = [];
         visited.set(obj, newArr);
-        obj.forEach(item => {
-            newArr.push(deepCloneWithElements(item, visited));
-        });
+        obj.forEach(item => { newArr.push(deepCloneWithElements(item, visited)); });
         return newArr as any;
     }
-
     const newObj: { [key: string]: any } = {};
     visited.set(obj, newObj);
     for (const key in obj) {
@@ -164,6 +145,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const [bgRemoverState, setBgRemoverState] = useState<{ isOpen: boolean; imageWithTransparency: string | null; originalImage: string | null; layerId: string | null; }>({ isOpen: false, imageWithTransparency: null, originalImage: null, layerId: null });
     const [isDraggingOver, setIsDraggingOver] = useState(false);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; layerId: string } | null>(null);
+    const [liveEditText, setLiveEditText] = useState('');
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -225,7 +207,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         return [projectToSave, projectName];
     }, [project]);
 
-    // Auto-saving logic
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
@@ -305,16 +286,13 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     }, [setError]);
 
-    // Load auto-saved project on mount
     useEffect(() => {
-        const loadAutoSavedProject = async () => {
-            const savedState = await getItem<ProjectState>(AUTOSAVE_KEY);
+        getItem<ProjectState>(AUTOSAVE_KEY).then(savedState => {
             if (savedState) {
                 console.log("Restoring auto-saved project...");
-                await loadProjectState(savedState, true);
+                loadProjectState(savedState, true);
             }
-        };
-        loadAutoSavedProject();
+        });
     }, [loadProjectState]);
 
     const handleNewProject = () => {
@@ -468,7 +446,17 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 return;
             }
             if (type === 'audio') {
-                setError('A funcionalidade de adicionar áudio ainda não foi implementada na tela.');
+                 const newTrack: AudioTrack = {
+                    id: nanoid(),
+                    name: asset.name,
+                    src: 'asset_url' in asset ? asset.asset_url : asset.url,
+                    startTime: 0,
+                    volume: 1,
+                    assetId: asset.id,
+                };
+                updateProject(draft => {
+                    draft.audioTracks.push(newTrack);
+                }, true);
                 return;
             }
         }
@@ -523,12 +511,12 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 y: dropCoords ? dropCoords.y - layerHeight / 2 : (canvasHeight - layerHeight) / 2,
                 width: layerWidth, height: layerHeight, 
                 mediaNaturalWidth: naturalWidth, mediaNaturalHeight: naturalHeight, 
-                scale: scaleToFit, offsetX: 0, offsetY: 0,
+                scale: 1, offsetX: 0, offsetY: 0,
                 crop: { x: 0, y: 0, width: naturalWidth, height: naturalHeight } 
             };
             
             if (type === 'video') {
-                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: true, _videoElement: mediaElement as HTMLVideoElement };
+                const newLayer: VideoLayer = { ...newLayerBase, type: 'video', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, startTime: 0, endTime: duration || 0, duration: duration || 0, volume: 1, isMuted: false, _videoElement: mediaElement as HTMLVideoElement };
                 addLayer(newLayer);
             } else {
                  const newLayer: ImageLayer = { ...newLayerBase, type: 'image', id: nanoid(), rotation: 0, opacity: 1, isLocked: false, isVisible: true, _imageElement: mediaElement as HTMLImageElement };
@@ -581,8 +569,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         setError(null);
 
         try {
-            const resultBlob = await (remove as any).default(targetLayer.src, {
-                publicPath: 'https://esm.sh/@imgly/background-removal@1.0.4/dist/'
+            const resultBlob = await remove.default(targetLayer.src, {
+                publicPath: 'https://unpkg.com/@imgly/background-removal@1.0.4/dist/'
             });
             const resultB64 = await blobToBase64(resultBlob);
             const newImageElement = await loadMedia(resultB64, 'image') as HTMLImageElement;
@@ -599,7 +587,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                     const aspectRatio = newImageElement.naturalWidth / newImageElement.naturalHeight;
                     layerToUpdate.height = layerToUpdate.width / aspectRatio;
                     layerToUpdate.crop = { x: 0, y: 0, width: newImageElement.naturalWidth, height: newImageElement.naturalHeight };
-                    layerToUpdate.scale = layerToUpdate.width / newImageElement.naturalWidth;
+                    layerToUpdate.scale = 1;
                     layerToUpdate.offsetX = 0;
                     layerToUpdate.offsetY = 0;
                 }
@@ -657,7 +645,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 const aspectRatio = newImageElement.naturalWidth / newImageElement.naturalHeight;
                 layerToUpdate.height = layerToUpdate.width / aspectRatio;
                 layerToUpdate.crop = { x: 0, y: 0, width: newImageElement.naturalWidth, height: newImageElement.naturalHeight };
-                layerToUpdate.scale = layerToUpdate.width / newImageElement.naturalWidth;
+                layerToUpdate.scale = 1;
                 layerToUpdate.offsetX = 0;
                 layerToUpdate.offsetY = 0;
             }
@@ -745,6 +733,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
         if (clickedLayer?.type === 'text' && !editingTextLayerId) {
             setEditingTextLayerId(clickedLayer.id);
+            setLiveEditText((clickedLayer as TextLayer).text);
             setCropLayerId(null);
             return;
         }
@@ -755,7 +744,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.button === 2) return; // Ignore right-clicks
+        if (e.button === 2) return; 
         if (contextMenu) setContextMenu(null);
 
         if (editingTextLayerId || !activePage) return;
@@ -838,66 +827,53 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 const initialLayer = initialLayerStates.get(interaction.layerIds[0]);
                 if (!initialLayer) return;
 
-                const rad = initialLayer.rotation * Math.PI / 180;
+                const rad = -initialLayer.rotation * Math.PI / 180;
                 const cos = Math.cos(rad); const sin = Math.sin(rad);
-                const dx = (e.clientX - startX) / zoom;
-                const dy = (e.clientY - startY) / zoom;
-                const rdx = dx * cos + dy * sin;
-                const rdy = -dx * sin + dy * cos;
+                const dx_mouse = (e.clientX - startX) / zoom;
+                const dy_mouse = (e.clientY - startY) / zoom;
+                
+                const rdx = dx_mouse * cos + dy_mouse * sin;
+                const rdy = -dx_mouse * sin + dy_mouse * cos;
+
                 const minSize = 20;
                 
-                const { x: ox, y: oy, width: ow, height: oh } = initialLayer;
+                let { x: ox, y: oy, width: ow, height: oh } = initialLayer;
                 
-                const updates: Partial<AnyLayer & { scale: number, offsetX: number, offsetY: number }> = {};
+                const updates: Partial<AnyLayer> = {};
                 
-                let newX = ox;
-                let newY = oy;
-                let newW = ow;
-                let newH = oh;
+                let newW = ow, newH = oh, newX = ox, newY = oy;
 
                 if (handle.includes('r')) newW = Math.max(minSize, ow + rdx);
                 if (handle.includes('l')) newW = Math.max(minSize, ow - rdx);
                 if (handle.includes('b')) newH = Math.max(minSize, oh + rdy);
                 if (handle.includes('t')) newH = Math.max(minSize, oh - rdy);
                 
-                // For proportional scaling on media layers with corner handles
-                if ((initialLayer.type === 'image' || initialLayer.type === 'video') && ['tl', 'tr', 'bl', 'br'].includes(handle)) {
-                    const aspectRatio = ow / oh;
-                    if (handle === 'tl' || handle === 'br') {
-                        if (Math.abs(rdx) > Math.abs(rdy)) {
-                            newH = newW / aspectRatio;
-                        } else {
-                            newW = newH * aspectRatio;
-                        }
-                    } else { // tr, bl
-                        if (Math.abs(rdx) > Math.abs(rdy)) {
-                            newH = newW / aspectRatio;
-                        } else {
-                            newW = newH * aspectRatio;
-                        }
-                    }
-                }
-                
                 const dw = newW - ow;
                 const dh = newH - oh;
                 
-                // Anchor the opposite handle
-                if (handle.includes('l')) newX -= dw;
-                if (handle.includes('t')) newY -= dh;
-
-                // Adjust position based on rotation
-                const center_dx = (newX + newW/2) - (ox + ow/2);
-                const center_dy = (newY + newH/2) - (oy + oh/2);
+                if (handle.includes('l')) {
+                    const dx_world = dw * cos;
+                    const dy_world = dw * sin;
+                    newX -= dx_world;
+                    newY -= dy_world;
+                }
+                if (handle.includes('t')) {
+                    const dx_world = -dh * sin;
+                    const dy_world = dh * cos;
+                    newX -= dx_world;
+                    newY -= dy_world;
+                }
                 
-                updates.x = (ox + ow/2) + (center_dx * cos - center_dy * sin) - newW / 2;
-                updates.y = (oy + oh/2) + (center_dx * sin + center_dy * cos) - newH / 2;
+                updates.x = newX;
+                updates.y = newY;
                 updates.width = newW;
                 updates.height = newH;
                 
                 if (initialLayer.type === 'image' || initialLayer.type === 'video') {
-                    const mediaLayer = initialLayer as ImageLayer | VideoLayer;
-                    const newScale = newW / (mediaLayer.crop.width || mediaLayer.mediaNaturalWidth);
-                    updates.scale = newScale;
+                    // Side handles no longer adjust scale to prevent distortion. They only "crop".
+                } else if (initialLayer.type === 'text') {
+                    const widthScaleFactor = newW / ow;
+                    (updates as TextLayer).fontSize = Math.max(8, (initialLayer as TextLayer).fontSize * widthScaleFactor);
                 }
                 
                 updateProject(draft => {
@@ -932,39 +908,38 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     useEffect(() => {
         if (editingLayer && textareaRef.current) {
-            textareaRef.current.focus();
-            textareaRef.current.select();
+            const textarea = textareaRef.current;
+            textarea.value = liveEditText; 
+            textarea.style.height = 'auto'; 
+            textarea.style.height = `${textarea.scrollHeight}px`; 
+            textarea.focus();
+            textarea.select();
         }
-    }, [editingTextLayerId, editingLayer]);
+    }, [editingLayer, liveEditText]);
 
-    const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const localTextArea = e.target;
-        updateProject(draft => {
-            const layer = draft.pages[activePageIndex].layers.find(l => l.id === editingTextLayerId) as TextLayer;
-            if (layer) {
-                layer.text = localTextArea.value;
-                // Auto-resize logic
-                localTextArea.style.height = 'auto';
-                const scrollHeight = localTextArea.scrollHeight;
-                const newHeight = scrollHeight > layer.height ? scrollHeight : layer.height;
-                layer.height = newHeight;
-                localTextArea.style.height = `${newHeight}px`;
-            }
-        });
+    const handleLiveTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setLiveEditText(e.target.value);
+        const textarea = e.target;
+        textarea.style.height = 'auto';
+        textarea.style.height = `${textarea.scrollHeight}px`;
     };
     
     const handleTextBlur = () => {
         if (editingTextLayerId) {
-            commitToHistory(project);
+            updateProject(draft => {
+                const layer = draft.pages[activePageIndex].layers.find(l => l.id === editingTextLayerId) as TextLayer;
+                if (layer && layer.text !== liveEditText) {
+                    layer.text = liveEditText;
+                }
+            }, true);
             setEditingTextLayerId(null);
         }
     };
     
-    // This is the synchronous render function for the live canvas.
     const drawLiveCanvas = useCallback(() => {
         if (!activePage || !canvasRef.current) return;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
     
         canvas.width = activePage.width;
@@ -980,6 +955,10 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             ctx.globalAlpha = layer.opacity;
             ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2);
             ctx.rotate(layer.rotation * Math.PI / 180);
+
+            if (layer.flipH) ctx.scale(-1, 1);
+            if (layer.flipV) ctx.scale(1, -1);
+            
             const drawX = -layer.width / 2;
             const drawY = -layer.height / 2;
     
@@ -987,19 +966,24 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 const mediaLayer = layer as ImageLayer | VideoLayer;
                 const mediaElement = mediaLayer.type === 'video' ? mediaLayer._videoElement : mediaLayer._imageElement;
                 
-                // FIX: Add type guards to ensure mediaElement is a valid and ready HTML element.
                 if (mediaElement && (('naturalWidth' in mediaElement && mediaElement.naturalWidth > 0) || ('videoWidth' in mediaElement && mediaElement.videoWidth > 0))) {
                     ctx.beginPath();
                     ctx.rect(drawX, drawY, layer.width, layer.height);
                     ctx.clip();
                     
-                    const contentWidth = mediaLayer.mediaNaturalWidth * mediaLayer.scale;
-                    const contentHeight = mediaLayer.mediaNaturalHeight * mediaLayer.scale;
+                    const croppedWidth = mediaLayer.crop.width;
+                    const croppedHeight = mediaLayer.crop.height;
+
+                    const scaleX = layer.width / croppedWidth;
+                    const scaleY = layer.height / croppedHeight;
+                    const scale = Math.max(scaleX, scaleY);
+                    
+                    const contentWidth = mediaLayer.mediaNaturalWidth * scale;
+                    const contentHeight = mediaLayer.mediaNaturalHeight * scale;
                     
                     ctx.drawImage(mediaElement, drawX - mediaLayer.offsetX, drawY - mediaLayer.offsetY, contentWidth, contentHeight);
                 }
-            } else if (layer.type === 'text') {
-                 // Text drawing logic...
+            } else if (layer.type === 'text' && layer.id !== editingTextLayerId) {
                  const textLayer = layer as TextLayer;
                  ctx.font = `${textLayer.fontStyle} ${textLayer.fontWeight} ${textLayer.fontSize}px "${textLayer.fontFamily}"`;
                  ctx.fillStyle = textLayer.color;
@@ -1022,11 +1006,14 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             }
             ctx.restore();
         }
-    }, [activePage]);
+    }, [activePage, editingTextLayerId]);
 
-    // This is the async render function for exports.
-    const drawPageToCanvasForExport = useCallback(async (page: Page, canvas: HTMLCanvasElement, options: { transparent: boolean, time?: number }) => {
-        // ... (This function remains largely the same, with its async media loading logic)
+    const drawPageToCanvasForExport = useCallback(async (
+        page: Page, 
+        canvas: HTMLCanvasElement | OffscreenCanvas, 
+        options: { transparent: boolean, time?: number },
+        preloadedMedia: Map<string, HTMLImageElement | HTMLVideoElement>
+    ) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error("Could not get canvas context for export.");
 
@@ -1046,28 +1033,49 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
              ctx.globalAlpha = layer.opacity;
              ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2);
              ctx.rotate(layer.rotation * Math.PI / 180);
+             if (layer.flipH) ctx.scale(-1, 1);
+             if (layer.flipV) ctx.scale(1, -1);
              const drawX = -layer.width / 2;
              const drawY = -layer.height / 2;
 
             if (layer.type === 'image' || layer.type === 'video') {
                 const mediaLayer = layer as ImageLayer | VideoLayer;
-                let mediaElement = mediaLayer.type === 'video' ? mediaLayer._videoElement : mediaLayer._imageElement;
+                const mediaElement = preloadedMedia.get(mediaLayer.src);
+
                 if (!mediaElement) {
-                    // This is the crucial part for export: load media if it's not already loaded
-                    mediaElement = await loadMedia(mediaLayer.src, mediaLayer.type);
+                    console.warn(`Media source not found in preloaded map for layer ${mediaLayer.name}. Skipping render.`);
+                    ctx.restore();
+                    continue;
                 }
                 
-                // FIX: Add type guard to ensure layer is a VideoLayer before accessing video-specific properties.
                 if (mediaLayer.type === 'video' && mediaElement instanceof HTMLVideoElement && options.time !== undefined) {
-                    const videoTime = ((options.time / 1000) - mediaLayer.startTime) % mediaLayer.duration;
-                    if (videoTime >= 0) {
+                    const pagesForExport = project.pages.map(page => {
+                        const videoLayers = page.layers.filter(l => l.type === 'video') as VideoLayer[];
+                        const maxLayerDuration = videoLayers.length > 0 ? Math.max(...videoLayers.map(l => l.duration * 1000)) : 0;
+                        return { ...page, duration: Math.max(page.duration, maxLayerDuration) };
+                    });
+                    const pageIndex = pagesForExport.findIndex(p => p.id === page.id);
+                    const timeBeforePage = pagesForExport.slice(0, pageIndex).reduce((acc, d) => acc + d.duration, 0);
+                    
+                    const timeOnPage = options.time - timeBeforePage;
+                    const videoTime = (timeOnPage / 1000) - mediaLayer.startTime;
+                    
+                    if (videoTime >= 0 && videoTime <= mediaLayer.duration) {
+                        mediaElement.pause();
                         mediaElement.currentTime = videoTime;
-                        await new Promise(res => {
+                        await new Promise<void>((resolve, reject) => {
                             const onSeeked = () => {
-                                mediaElement?.removeEventListener('seeked', onSeeked);
-                                res(null);
+                                mediaElement.removeEventListener('seeked', onSeeked);
+                                mediaElement.removeEventListener('error', onError);
+                                resolve();
                             };
-                            mediaElement?.addEventListener('seeked', onSeeked);
+                            const onError = (e: Event) => {
+                                mediaElement.removeEventListener('seeked', onSeeked);
+                                mediaElement.removeEventListener('error', onError);
+                                reject(new Error('Video seek failed'));
+                            };
+                            mediaElement.addEventListener('seeked', onSeeked);
+                            mediaElement.addEventListener('error', onError);
                         });
                     }
                 }
@@ -1103,7 +1111,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             }
             ctx.restore();
         }
-    }, []);
+    }, [project.pages]);
 
     useEffect(() => {
         const renderLoop = () => {
@@ -1168,7 +1176,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             const scaleX = availableWidth / activePage.width;
             const scaleY = availableHeight / activePage.height;
             
-            setZoom(Math.min(scaleX, scaleY));
+            setZoom(Math.min(scaleX, scaleY, 3));
         }
     }, [activePage]);
     
@@ -1228,7 +1236,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         const file = new File([projectJson], `${projectName}.brmp`, { type: 'application/json' });
         
         try {
-            await adminUploadPublicAsset(file, 'Public', null);
+            await adminUploadPublicProject(file, 'Public', null);
             alert('Modelo de projeto salvo publicamente com sucesso!');
         } catch (err) {
             console.error(err);
@@ -1300,31 +1308,40 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const exportImages = useCallback(async (options: DownloadOptions, job: DownloadJob) => {
         const offscreenCanvas = document.createElement('canvas');
         const updateJob = (update: Partial<DownloadJob>) => setDownloadJobs(prev => prev.map(j => j.id === job.id ? {...j, ...update} : j));
-
+        const preloadedMedia = new Map<string, HTMLImageElement | HTMLVideoElement>();
+        
         try {
             const pagesToExport = options.pageIndexes.map(i => project.pages[i]);
             
+            const allSources = new Set<string>();
+            pagesToExport.forEach(page => page.layers.forEach(layer => {
+                if ((layer.type === 'image' || layer.type === 'video') && layer.src) allSources.add(layer.src);
+            }));
+            await Promise.all(Array.from(allSources).map(async src => {
+                const type = src.startsWith('data:video') ? 'video' : 'image';
+                preloadedMedia.set(src, await loadMedia(src, type));
+            }));
+
             if (pagesToExport.length === 1) {
                 const page = pagesToExport[0];
                 updateJob({ statusText: `Renderizando ${page.name}...` });
-                await drawPageToCanvasForExport(page, offscreenCanvas, { transparent: options.transparent });
+                await drawPageToCanvasForExport(page, offscreenCanvas, { transparent: options.transparent, time: 0 }, preloadedMedia);
                 const blob = await new Promise<Blob | null>(resolve => offscreenCanvas.toBlob(resolve, `image/${options.format}`, 0.95));
-                if (!blob) throw new Error("Falha ao criar blob da imagem.");
-                const url = URL.createObjectURL(blob);
-                updateJob({ status: 'done', resultUrl: url, progress: 100 });
+                if (!blob || blob.size === 0) throw new Error("Falha ao criar blob da imagem.");
+                
+                updateJob({ status: 'done', progress: 100, statusText: 'Pronto para baixar!', resultUrl: URL.createObjectURL(blob) });
             } else {
                 const zip = new JSZip();
                 for (let i = 0; i < pagesToExport.length; i++) {
                     const page = pagesToExport[i];
                     updateJob({ statusText: `Compactando ${page.name} (${i+1}/${pagesToExport.length})...`, progress: (i / pagesToExport.length) * 100 });
-                    await drawPageToCanvasForExport(page, offscreenCanvas, { transparent: options.transparent });
+                    await drawPageToCanvasForExport(page, offscreenCanvas, { transparent: options.transparent, time: 0 }, preloadedMedia);
                     const blob = await new Promise<Blob | null>(resolve => offscreenCanvas.toBlob(resolve, `image/${options.format}`, 0.95));
                     if(blob) zip.file(`${page.name}.${options.format}`, blob);
                 }
                 updateJob({ statusText: 'Finalizando zip...', progress: 99 });
                 const zipBlob = await zip.generateAsync({ type: 'blob' });
-                const url = URL.createObjectURL(zipBlob);
-                updateJob({ status: 'done', resultUrl: url, progress: 100, fileName: `${project.name}.zip` });
+                updateJob({ status: 'done', progress: 100, statusText: 'Pronto para baixar!', resultUrl: URL.createObjectURL(zipBlob), fileName: `${project.name}.zip` });
             }
         } catch (err) {
             console.error("Image export failed:", err);
@@ -1337,74 +1354,175 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
         const updateJob = (update: Partial<DownloadJob>) => setDownloadJobs(prev => prev.map(j => j.id === job.id ? {...j, ...update} : j));
     
+        const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+            const parts = base64.split(',');
+            if (parts.length !== 2) {
+                console.warn("URL de dados base64 inválido para áudio, a saltar.");
+                return new ArrayBuffer(0);
+            }
+            try {
+                const binary_string = window.atob(parts[1]);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                return bytes.buffer;
+            } catch (e) {
+                console.error("Erro ao descodificar string base64:", e);
+                return new ArrayBuffer(0);
+            }
+        };
+
         try {
+            const pagesForExport = project.pages.map(page => {
+                 const videoLayers = page.layers.filter(l => l.type === 'video') as VideoLayer[];
+                 const maxLayerDuration = videoLayers.length > 0 ? Math.max(...videoLayers.map(l => l.duration * 1000)) : 0;
+                 return { ...page, duration: Math.max(page.duration, maxLayerDuration) };
+            });
+            const totalDurationMs = pagesForExport.reduce((acc, p) => acc + p.duration, 0);
+            const totalDurationSec = totalDurationMs / 1000;
+    
             updateJob({ statusText: 'Pré-carregando mídias...' });
-            const allSources = project.pages.flatMap(p => p.layers)
-                .filter(l => (l.type === 'image' || l.type === 'video') && !l._imageElement && !l._videoElement)
-                .map(l => (l as ImageLayer | VideoLayer).src);
-            // FIX: Explicitly type `uniqueSources` as string[] to resolve type inference issue.
-            const uniqueSources: string[] = [...new Set(allSources)];
-            await Promise.all(uniqueSources.map(src => loadMedia(src, src.startsWith('data:video') ? 'video' : 'image')));
+            const preloadedMedia = new Map<string, HTMLImageElement | HTMLVideoElement>();
+            const allSources: Set<string> = new Set();
+            project.pages.forEach(p => p.layers.forEach(l => { if ((l.type === 'image' || l.type === 'video') && l.src) allSources.add(l.src)}));
+            project.audioTracks.forEach(t => allSources.add(t.src));
+            await Promise.all(Array.from(allSources).map(async (src) => {
+                if (!src) return;
+                const typeGuess = src.startsWith('data:video') || src.endsWith('.mp4') || src.endsWith('.webm') ? 'video' : src.startsWith('data:audio') ? 'audio' : 'image';
+                if (typeGuess !== 'audio') {
+                    preloadedMedia.set(src, await loadMedia(src, typeGuess as 'image' | 'video'));
+                }
+            }));
     
             updateJob({ statusText: 'Processando áudio...' });
+            const SAMPLE_RATE = 48000;
+            const audioContext = new OfflineAudioContext(2, Math.ceil(totalDurationSec * SAMPLE_RATE), SAMPLE_RATE);
+            const allAudioSources = [
+                ...project.pages.flatMap((p, pageIndex) => 
+                    (p.layers.filter(l => l.type === 'video' && (l as VideoLayer).volume > 0 && !(l as VideoLayer).isMuted) as VideoLayer[])
+                    .map(l => ({ ...l, __pageIndex: pageIndex }))
+                ),
+                ...project.audioTracks.map(t => ({ ...t, __pageIndex: -1 }))
+            ];
             
-            const totalDuration = project.pages.reduce((acc, p) => acc + p.duration, 0);
-            
-            const audioContext = new AudioContext();
-            const allAudioBuffers: AudioBuffer[] = [];
-    
-            const videoLayersWithAudio = project.pages.flatMap(p => p.layers).filter(l => l.type === 'video' && (l as VideoLayer).volume > 0 && !(l as VideoLayer).isMuted) as VideoLayer[];
-            
-            for (const layer of videoLayersWithAudio) {
+            let audioSourcesProcessed = 0;
+            await Promise.all(allAudioSources.map(async (source) => {
                 try {
-                    const response = await fetch(layer.src);
-                    const arrayBuffer = await response.arrayBuffer();
-                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    allAudioBuffers.push(audioBuffer);
-                } catch (e) {
-                    console.warn(`Could not decode audio for video layer ${layer.name}`, e);
-                }
-            }
+                    let arrayBuffer: ArrayBuffer;
+                    if (source.src.startsWith('data:')) {
+                        arrayBuffer = base64ToArrayBuffer(source.src);
+                    } else {
+                        const response = await fetch(source.src);
+                        if (!response.ok) throw new Error(`Falha ao buscar áudio de ${source.name}`);
+                        arrayBuffer = await response.arrayBuffer();
+                    }
+                    if (arrayBuffer.byteLength === 0) return;
+
+                    const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    const bufferSource = audioContext.createBufferSource();
+                    bufferSource.buffer = decodedBuffer;
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = source.volume;
+                    bufferSource.connect(gainNode).connect(audioContext.destination);
+
+                    let startTimeSec = 0;
+                    if ('__pageIndex' in source && source.__pageIndex !== -1) {
+                         const timeBeforePageMs = pagesForExport.slice(0, source.__pageIndex).reduce((acc, p) => acc + p.duration, 0);
+                         startTimeSec = (timeBeforePageMs + source.startTime) / 1000;
+                    } else { startTimeSec = source.startTime / 1000; }
+                    bufferSource.start(startTimeSec);
+                    audioSourcesProcessed++;
+                } catch (e) { console.warn(`Não foi possível decodificar ou processar áudio para ${source.name}`, e); }
+            }));
+            
+            const mixedAudioBuffer = audioSourcesProcessed > 0 ? await audioContext.startRendering() : null;
     
-            let muxer = new Muxer({
+            const muxer = new Muxer({
                 target: new ArrayBufferTarget(),
-                video: { codec: 'avc', width: activePage.width, height: activePage.height, },
-                audio: allAudioBuffers.length > 0 ? { codec: 'aac', sampleRate: 44100, numberOfChannels: 2 } : undefined,
+                video: { codec: 'avc', width: activePage.width, height: activePage.height },
+                audio: mixedAudioBuffer ? { codec: 'aac', sampleRate: SAMPLE_RATE, numberOfChannels: 2 } : undefined,
                 fastStart: 'in-memory',
             });
-    
-            let videoEncoder = new (window as any).VideoEncoder({
+            const videoEncoder = new (window as any).VideoEncoder({
                 output: (chunk: any, meta: any) => muxer.addVideoChunk(chunk, meta),
-                error: (e: any) => console.error(e),
+                error: (e: any) => { throw e; }
             });
             videoEncoder.configure({ codec: 'avc1.4d002a', width: activePage.width, height: activePage.height, bitrate: options.bitrate * 1000, framerate: options.frameRate });
+            
+            let audioEncoder: any = null;
+            if (mixedAudioBuffer) {
+                audioEncoder = new (window as any).AudioEncoder({
+                    output: (chunk: any, meta: any) => muxer.addAudioChunk(chunk, meta),
+                    error: (e: any) => { throw e; }
+                });
+                audioEncoder.configure({ codec: 'mp4a.40.2', sampleRate: SAMPLE_RATE, numberOfChannels: 2, bitrate: 128000 });
+            }
     
-            const totalFrames = Math.ceil(totalDuration / 1000 * options.frameRate);
-            let framesEncoded = 0;
-            let pageStartTime = 0;
+            const totalFrames = Math.ceil(totalDurationSec * options.frameRate);
             const offscreenCanvas = new OffscreenCanvas(activePage.width, activePage.height);
-    
-            for (const page of project.pages) {
-                const pageEndTime = pageStartTime + page.duration;
-                for (let time = pageStartTime; time < pageEndTime; time += 1000 / options.frameRate) {
-                    await drawPageToCanvasForExport(page, offscreenCanvas as any, { transparent: false, time });
-                    const frame = new (window as any).VideoFrame(offscreenCanvas, { timestamp: time * 1000 });
+            let frameCount = 0;
+
+            if (mixedAudioBuffer && audioEncoder) {
+                const numSamplesPerChunk = 1024;
+                const channelL = mixedAudioBuffer.getChannelData(0);
+                const channelR = mixedAudioBuffer.getChannelData(1);
+                const numChannels = mixedAudioBuffer.numberOfChannels;
+
+                for (let i = 0; i < mixedAudioBuffer.length; i += numSamplesPerChunk) {
+                    const chunkEnd = Math.min(i + numSamplesPerChunk, mixedAudioBuffer.length);
+                    const numFramesInChunk = chunkEnd - i;
+                    if (numFramesInChunk <= 0) break;
+
+                    const interleavedChunk = new Float32Array(numFramesInChunk * numChannels);
+                    for (let frame = 0; frame < numFramesInChunk; frame++) {
+                        interleavedChunk[frame * numChannels] = channelL[i + frame];
+                        if (numChannels > 1) {
+                            interleavedChunk[frame * numChannels + 1] = channelR[i + frame];
+                        }
+                    }
+                    
+                    const timestamp = (i / SAMPLE_RATE) * 1_000_000;
+                    audioEncoder.encode(new (window as any).AudioData({
+                       format: 'f32',
+                       sampleRate: SAMPLE_RATE, 
+                       numberOfFrames: numFramesInChunk,
+                       numberOfChannels: numChannels, 
+                       timestamp: timestamp, 
+                       data: interleavedChunk.buffer
+                    }));
+                }
+            }
+
+
+            let accumulatedTimeMs = 0;
+            for (const page of pagesForExport) {
+                const pageEndTimeMs = accumulatedTimeMs + page.duration;
+                for (let timeMs = accumulatedTimeMs; timeMs < pageEndTimeMs; timeMs += 1000 / options.frameRate) {
+                    if (frameCount >= totalFrames) break;
+                    
+                    await drawPageToCanvasForExport(page, offscreenCanvas as any, { transparent: false, time: timeMs }, preloadedMedia);
+                    const frame = new (window as any).VideoFrame(offscreenCanvas, { timestamp: timeMs * 1000 });
                     videoEncoder.encode(frame);
                     frame.close();
-                    framesEncoded++;
-                    updateJob({ progress: (framesEncoded / totalFrames) * 95, statusText: `Renderizando frame ${framesEncoded} de ${totalFrames}` });
+                    
+                    frameCount++;
+                    updateJob({ progress: (frameCount / totalFrames) * 95, statusText: `Renderizando frame ${frameCount} de ${totalFrames}` });
                 }
-                pageStartTime = pageEndTime;
+                if (frameCount >= totalFrames) break;
+                accumulatedTimeMs = pageEndTimeMs;
             }
-            
+    
             await videoEncoder.flush();
+            if (audioEncoder) await audioEncoder.flush();
             updateJob({ statusText: 'Finalizando...', progress: 100 });
             muxer.finalize();
             const { buffer } = muxer.target;
             
-            const blob = new Blob([buffer], { type: 'video/mp4' });
-            const url = URL.createObjectURL(blob);
-            updateJob({ status: 'done', resultUrl: url, progress: 100 });
+            if (!buffer || buffer.byteLength === 0) throw new Error('O buffer de vídeo final gerado estava vazio.');
+            
+            updateJob({ status: 'done', progress: 100, statusText: 'Pronto para baixar!', resultUrl: URL.createObjectURL(new Blob([buffer], { type: 'video/mp4' })) });
     
         } catch (err) {
             console.error("Video export failed:", err);
@@ -1413,11 +1531,11 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         }
     }, [project, activePage, drawPageToCanvasForExport]);
     
-
     const handleExport = useCallback(async (options: DownloadOptions) => {
         const jobId = nanoid();
         const thumbnailCanvas = document.createElement('canvas');
-        await drawPageToCanvasForExport(activePage, thumbnailCanvas, { transparent: false });
+        const preloadedMediaForThumb = new Map<string, HTMLImageElement | HTMLVideoElement>();
+        await drawPageToCanvasForExport(activePage, thumbnailCanvas, { transparent: false, time: 0 }, preloadedMediaForThumb);
         const thumbnail = thumbnailCanvas.toDataURL('image/jpeg', 0.5);
 
         const newJob: DownloadJob = {
@@ -1428,8 +1546,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             statusText: 'A iniciar...',
             thumbnail,
         };
-        setDownloadJobs(prev => [...prev, newJob]);
-
+        setDownloadJobs(prev => [newJob, ...prev.filter(j => j.status !== 'done' && j.status !== 'error')]);
+        
         setTimeout(() => {
             if (options.format === 'mp4') {
                 exportVideo(options, newJob);
@@ -1440,14 +1558,24 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
 
     }, [project.name, activePage, drawPageToCanvasForExport, exportImages, exportVideo]);
 
-    const activeJob = downloadJobs.find(job => job.status === 'rendering' || job.status === 'encoding' || job.status === 'preparing');
+    const activeJob = downloadJobs.length > 0 ? downloadJobs.find(j => j.status !== 'done' && j.status !== 'error') || downloadJobs[0] : null;
+
+    const handleCloseExportModal = () => {
+        setDownloadJobs(prev => {
+            const jobsToKeep = prev.filter(j => j.id !== activeJob?.id);
+            if(activeJob?.resultUrl) {
+                URL.revokeObjectURL(activeJob.resultUrl);
+            }
+            return jobsToKeep;
+        });
+    };
 
     return (
         <div className="h-full w-full flex flex-col bg-brand-accent text-white">
             <ExportProgressModal 
                 isOpen={!!activeJob} 
-                progress={activeJob?.progress || 0}
-                statusText={activeJob?.statusText || ''}
+                job={activeJob}
+                onClose={handleCloseExportModal}
             />
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
             <BackgroundRemoverModal
@@ -1532,17 +1660,17 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                                             left: editingLayer.x,
                                             top: editingLayer.y,
                                             width: editingLayer.width,
-                                            height: editingLayer.height,
+                                            height: 'auto',
                                             transform: `rotate(${editingLayer.rotation}deg)`,
-                                            transformOrigin: 'center center',
+                                            transformOrigin: 'top left',
                                             pointerEvents: 'auto',
                                         }}
                                         onMouseDown={e => e.stopPropagation()}
                                     >
                                         <textarea
                                             ref={textareaRef}
-                                            value={editingLayer.text}
-                                            onChange={handleTextChange}
+                                            value={liveEditText}
+                                            onChange={handleLiveTextChange}
                                             onBlur={handleTextBlur}
                                             className="w-full h-full bg-transparent border border-dashed border-blue-400 outline-none resize-none overflow-hidden p-0"
                                             style={{

@@ -17,16 +17,24 @@ import {
     adminUpdatePlan,
     adminSetPlanFeatures,
     adminGetCreditCosts,
-    adminUpdateCreditCost
+    adminUpdateCreditCost,
+    getPublicProjects,
+    adminGetPublicProjectCategories,
+    adminCreatePublicProjectCategory,
+    adminUpdatePublicProjectCategory,
+    adminDeletePublicProjectCategory,
+    adminUploadPublicProject,
+    adminDeletePublicProject,
+    adminUpdatePublicProject
 } from '../../services/databaseService.ts';
-import type { UserProfile, Plan, PublicAsset, Category, Feature, CreditCost, AssetVisibility } from '../../types.ts';
+import type { UserProfile, Plan, PublicAsset, Category, Feature, CreditCost, AssetVisibility, PublicProject, PublicProjectCategory } from '../../types.ts';
 import EditUserModal from '../EditUserModal.tsx';
 import Button from '../Button.tsx';
 import AdminSetupInstructions from '../AdminSetupInstructions.tsx';
 import { IconTrash, IconEdit, IconRocket } from '../Icons.tsx';
 import EditAssetModal from '../EditAssetModal.tsx';
 
-type AdminTab = 'users' | 'media' | 'fonts' | 'presets' | 'plans';
+type AdminTab = 'users' | 'media' | 'fonts' | 'presets' | 'publicProjects' | 'plans';
 type AssetTypeFilter = 'media' | 'font' | 'preset';
 
 // Gallery Component
@@ -73,7 +81,7 @@ const AssetGallery: React.FC<{
         switch(assetTypeFilter) {
             case 'media': return 'image/*,video/*';
             case 'font': return '.otf,.ttf,.woff,.woff2';
-            case 'preset': return '.dng,.brmp';
+            case 'preset': return '.dng'; // Note: .brmp is now handled separately
             default: return '*/*';
         }
     };
@@ -134,7 +142,7 @@ const AssetGallery: React.FC<{
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 p-2">
                                 <IconRocket className="w-12 h-12" />
-                                <span className="text-xs mt-2 text-center break-all">{asset.name.replace('.brmp', '')}</span>
+                                <span className="text-xs mt-2 text-center break-all">{asset.name.replace('.brmp', '').replace('.dng', '')}</span>
                             </div>
                         )}
                         <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
@@ -166,12 +174,14 @@ const AdminView: React.FC = () => {
     const [fontCategories, setFontCategories] = useState<Category[]>([]);
     const [presetCategories, setPresetCategories] = useState<Category[]>([]);
     const [planFeatures, setPlanFeatures] = useState<Record<string, string[]>>({});
+    const [publicProjects, setPublicProjects] = useState<PublicProject[]>([]);
+    const [publicProjectCategories, setPublicProjectCategories] = useState<PublicProjectCategory[]>([]);
 
     // UI states
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-    const [editingAsset, setEditingAsset] = useState<PublicAsset | null>(null);
+    const [editingAsset, setEditingAsset] = useState<PublicAsset | PublicProject | null>(null);
     const [requiresSetup, setRequiresSetup] = useState(false);
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
@@ -183,11 +193,13 @@ const AdminView: React.FC = () => {
             const [
                 userProfiles, planData, publicAssetData,
                 mediaCats, fontCats, presetCats,
-                featureData, creditCostData
+                featureData, creditCostData,
+                publicProjectData, publicProjectCats
             ] = await Promise.all([
                 adminGetAllUserProfiles(), adminGetPlans(), getPublicAssets(),
                 adminGetCategories('media'), adminGetCategories('font'), adminGetCategories('preset'),
-                adminGetFeatures(), adminGetCreditCosts()
+                adminGetFeatures(), adminGetCreditCosts(),
+                getPublicProjects(), adminGetPublicProjectCategories()
             ]);
             
             setUsers(userProfiles);
@@ -198,6 +210,8 @@ const AdminView: React.FC = () => {
             setPresetCategories(presetCats);
             setFeatures(featureData);
             setCreditCosts(creditCostData);
+            setPublicProjects(publicProjectData);
+            setPublicProjectCategories(publicProjectCats);
 
             if (planData.length > 0) {
                 const firstPlanId = planData[0].id;
@@ -249,10 +263,16 @@ const AdminView: React.FC = () => {
             } catch(err: any) { setError(`Falha ao apagar o recurso público: ${err.message}`); }
         }
     };
-
+    
     const handleSaveAsset = async (assetId: string, newName: string, newCategoryId: string | null) => {
         try {
-            await adminUpdatePublicAsset(assetId, newName, newCategoryId);
+            if (!editingAsset) return;
+            // Check if it's a project or a regular asset
+            if ('asset_type' in editingAsset) {
+                await adminUpdatePublicAsset(assetId, newName, newCategoryId);
+            } else {
+                await adminUpdatePublicProject(assetId, newName, newCategoryId);
+            }
             setEditingAsset(null);
             await fetchData();
         } catch(err: any) { setError(`Falha ao atualizar o recurso: ${err.message}`); }
@@ -296,6 +316,31 @@ const AdminView: React.FC = () => {
         } catch(err: any) { setError(`Falha ao atualizar o custo de crédito: ${err.message}`); }
     };
 
+    const handlePublicProjectCategoryAction = async (action: 'create' | 'update' | 'delete', nameOrId: string, newName?: string) => {
+        try {
+            if (action === 'create') await adminCreatePublicProjectCategory(nameOrId);
+            if (action === 'update' && newName) await adminUpdatePublicProjectCategory(nameOrId, newName);
+            if (action === 'delete') await adminDeletePublicProjectCategory(nameOrId);
+            await fetchData();
+        } catch(err: any) { setError(`Falha na operação da categoria de projeto: ${err.message}`); }
+    };
+
+    const handleUploadPublicProject = async (file: File, categoryId: string | null, visibility: AssetVisibility) => {
+        try {
+            await adminUploadPublicProject(file, visibility, categoryId);
+            await fetchData();
+        } catch(err: any) { setError(`Falha ao fazer upload do modelo de projeto: ${err.message}`); }
+    };
+
+    const handleDeletePublicProject = async (project: PublicProject) => {
+        if (window.confirm(`Tem a certeza que quer apagar o modelo "${project.name}"?`)) {
+            try {
+                await adminDeletePublicProject(project.id);
+                await fetchData();
+            } catch(err: any) { setError(`Falha ao apagar o modelo de projeto: ${err.message}`); }
+        }
+    };
+
     if (requiresSetup) return <AdminSetupInstructions />;
 
     const renderCurrentTab = () => {
@@ -328,7 +373,34 @@ const AdminView: React.FC = () => {
             );
             case 'media': return <AssetGallery assets={publicAssets.filter(a => ['image', 'video'].includes(a.asset_type))} categories={mediaCategories} assetTypeFilter="media" onUpload={handleUploadPublicAsset} onDelete={handleDeletePublicAsset} onEdit={setEditingAsset} onNewCategory={(name) => handleCategoryAction('create', 'media', name)} onDeleteCategory={(id) => handleCategoryAction('delete', 'media', id)} onUpdateCategory={(id, name) => handleCategoryAction('update', 'media', id, name)} />;
             case 'fonts': return <AssetGallery assets={publicAssets.filter(a => a.asset_type === 'font')} categories={fontCategories} assetTypeFilter="font" onUpload={handleUploadPublicAsset} onDelete={handleDeletePublicAsset} onEdit={setEditingAsset} onNewCategory={(name) => handleCategoryAction('create', 'font', name)} onDeleteCategory={(id) => handleCategoryAction('delete', 'font', id)} onUpdateCategory={(id, name) => handleCategoryAction('update', 'font', id, name)} />;
-            case 'presets': return <AssetGallery assets={publicAssets.filter(a => ['dng', 'brmp'].includes(a.asset_type))} categories={presetCategories} assetTypeFilter="preset" onUpload={handleUploadPublicAsset} onDelete={handleDeletePublicAsset} onEdit={setEditingAsset} onNewCategory={(name) => handleCategoryAction('create', 'preset', name)} onDeleteCategory={(id) => handleCategoryAction('delete', 'preset', id)} onUpdateCategory={(id, name) => handleCategoryAction('update', 'preset', id, name)} />;
+            case 'presets': return <AssetGallery assets={publicAssets.filter(a => a.asset_type === 'dng')} categories={presetCategories} assetTypeFilter="preset" onUpload={handleUploadPublicAsset} onDelete={handleDeletePublicAsset} onEdit={setEditingAsset} onNewCategory={(name) => handleCategoryAction('create', 'preset', name)} onDeleteCategory={(id) => handleCategoryAction('delete', 'preset', id)} onUpdateCategory={(id, name) => handleCategoryAction('update', 'preset', id, name)} />;
+            case 'publicProjects': return (
+                // This is a simplified, inlined version of AssetGallery for projects
+                <div className="space-y-6">
+                    <h3 className="text-lg font-semibold mb-2">Fazer Upload de Novo Modelo</h3>
+                    <div className="bg-brand-light p-4 rounded-lg border border-brand-accent">
+                         <input type="file" accept=".brmp" onChange={e => {
+                             const file = e.target.files?.[0];
+                             if (file) handleUploadPublicProject(file, null, 'Public');
+                         }} className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-primary file:text-white hover:file:bg-brand-secondary"/>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        {publicProjects.map(project => (
+                             <div key={project.id} className="relative group aspect-video bg-brand-light rounded-lg flex flex-col items-center justify-center text-gray-400 p-2">
+                                <IconRocket className="w-12 h-12" />
+                                <span className="text-xs mt-2 text-center break-all">{project.name.replace('.brmp', '')}</span>
+                                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
+                                    <p className="text-xs text-white truncate">{project.name}</p>
+                                    <div className="flex justify-end gap-2">
+                                        <Button onClick={() => setEditingAsset(project)} className="!p-2"><IconEdit className="w-4 h-4" /></Button>
+                                        <Button onClick={() => handleDeletePublicProject(project)} className="!p-2 !bg-red-600 hover:!bg-red-500"><IconTrash className="w-4 h-4" /></Button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
             case 'plans': 
                 const selectedPlan = plans.find(p => p.id === selectedPlanId);
                 return (
@@ -377,6 +449,7 @@ const AdminView: React.FC = () => {
         { id: 'media', label: 'Galeria Mídias' },
         { id: 'fonts', label: 'Galeria Fontes' },
         { id: 'presets', label: 'Galeria Pre-Definições' },
+        { id: 'publicProjects', label: 'Modelos Públicos' },
         { id: 'plans', label: 'Planos e Permissões' }
     ];
 
@@ -388,7 +461,13 @@ const AdminView: React.FC = () => {
                 isOpen={!!editingAsset}
                 onClose={() => setEditingAsset(null)}
                 onSave={handleSaveAsset}
-                categories={[...mediaCategories, ...fontCategories, ...presetCategories]}
+                categories={
+                    activeTab === 'media' ? mediaCategories :
+                    activeTab === 'fonts' ? fontCategories :
+                    activeTab === 'presets' ? presetCategories :
+                    activeTab === 'publicProjects' ? (publicProjectCategories as any) :
+                    []
+                }
             />
             <div className="h-full w-full flex flex-col p-8 bg-brand-dark text-white">
                 <header className="flex-shrink-0 mb-6">

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.ts';
-import type { UploadedAsset, PublicAsset, UserProfile, Plan, UserRole, Category, Feature, CreditCost, AssetVisibility, UploadedAssetType } from '../types.ts';
+import type { UploadedAsset, PublicAsset, UserProfile, Plan, UserRole, Category, Feature, CreditCost, AssetVisibility, UploadedAssetType, PublicProject, PublicProjectCategory } from '../types.ts';
 import { nanoid } from 'nanoid';
 
 // Helper to get user ID
@@ -192,13 +192,31 @@ export const toggleAssetFavorite = async (assetId: string, isFavorite: boolean):
     if (error) throw error;
 };
 
-// PUBLIC ASSETS
+// PUBLIC ASSETS (Media, Fonts, Non-Project Presets)
 export const getPublicAssets = async (): Promise<PublicAsset[]> => {
     const { data, error } = await supabase
         .from('public_assets')
         .select('*, public_asset_categories(name)')
         .order('created_at', { ascending: false });
     if (error) throw error;
+    return data;
+};
+
+// PUBLIC PROJECTS (New, separated logic)
+export const getPublicProjects = async (): Promise<PublicProject[]> => {
+    const { data, error } = await supabase
+        .from('public_projects')
+        .select('*, public_project_categories(name)')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        // Handle case where table might not exist yet
+        if (error.code === '42P01') {
+            console.warn("Tabela 'public_projects' não encontrada. Pode ser necessário executar o script de configuração.");
+            return [];
+        }
+        throw error;
+    }
     return data;
 };
 
@@ -233,12 +251,13 @@ export const adminGetAllUserProfiles = async (): Promise<UserProfile[]> => {
     return data;
 };
 
-// FIX: Aligned function with v19.0 database schema. Removed 'status' and 'plan_id' parameters, updated the RPC name to 'admin_update_user', and corrected the 'updates' type to prevent a startup crash.
-export const adminUpdateUserDetails = async (userId: string, updates: Partial<Pick<UserProfile, 'role' | 'credits'>>): Promise<void> => {
-    const { error } = await supabase.rpc('admin_update_user', {
+export const adminUpdateUserDetails = async (userId: string, updates: Partial<UserProfile>): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_user_details', {
         p_user_id: userId,
         p_role: updates.role,
-        p_credits: updates.credits
+        p_credits: updates.credits,
+        p_status: updates.status,
+        p_plan_id: updates.plan_id
     });
     if (error) throw error;
 };
@@ -345,5 +364,67 @@ export const adminDeletePublicAsset = async (assetId: string): Promise<void> => 
 
 export const adminUpdatePublicAsset = async (assetId: string, newName: string, newCategoryId: string | null): Promise<void> => {
     const { error } = await supabase.rpc('admin_update_public_asset', { p_asset_id: assetId, p_new_name: newName, p_new_category_id: newCategoryId });
+    if (error) throw error;
+};
+
+
+// NEW ADMIN FUNCTIONS FOR PUBLIC PROJECTS
+export const adminGetPublicProjectCategories = async (): Promise<PublicProjectCategory[]> => {
+    const { data, error } = await supabase.rpc('admin_get_public_project_categories');
+    if (error) throw error;
+    return data;
+};
+
+export const getPublicProjectCategoriesForUser = async (): Promise<PublicProjectCategory[]> => {
+    const { data, error } = await supabase.rpc('get_public_project_categories_for_user');
+    if (error) throw error;
+    return data;
+};
+
+export const adminCreatePublicProjectCategory = async (name: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_create_public_project_category', { p_name: name });
+    if (error) throw error;
+};
+
+export const adminUpdatePublicProjectCategory = async (id: string, newName: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_public_project_category', { p_category_id: id, p_new_name: newName });
+    if (error) throw error;
+};
+
+export const adminDeletePublicProjectCategory = async (id: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_delete_public_project_category', { p_category_id: id });
+    if (error) throw error;
+};
+
+export const adminUploadPublicProject = async (file: File, visibility: AssetVisibility, categoryId: string | null): Promise<void> => {
+    const userId = await getUserId();
+    const fileName = `public_projects/${nanoid()}.brmp`;
+
+    // Use the 'public_assets' bucket, but a different folder for organization
+    const { data: uploadData, error: uploadError } = await supabase.storage.from('public_assets').upload(fileName, file);
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage.from('public_assets').getPublicUrl(fileName);
+
+    const { error } = await supabase.rpc('admin_add_public_project', {
+        p_name: file.name,
+        p_storage_path: uploadData.path,
+        p_asset_url: publicUrl,
+        p_thumbnail_url: null, // Projects don't have thumbnails
+        p_visibility: visibility,
+        p_owner_id: userId,
+        p_category_id: categoryId,
+    });
+    if (error) throw error;
+};
+
+
+export const adminDeletePublicProject = async (projectId: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_delete_public_project', { p_project_id: projectId });
+    if (error) throw error;
+};
+
+export const adminUpdatePublicProject = async (projectId: string, newName: string, newCategoryId: string | null): Promise<void> => {
+    const { error } = await supabase.rpc('admin_update_public_project', { p_project_id: projectId, p_new_name: newName, p_new_category_id: newCategoryId });
     if (error) throw error;
 };

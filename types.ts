@@ -225,6 +225,26 @@ export interface PublicAsset {
     public_asset_categories: { name: string } | null;
 }
 
+export interface PublicProjectCategory {
+    id: string;
+    name: string;
+    created_at: string;
+}
+
+export interface PublicProject {
+    id: string;
+    name: string;
+    asset_url: string;
+    storage_path: string;
+    thumbnail_url?: string;
+    visibility: AssetVisibility;
+    created_at: string;
+    owner_id: string;
+    category_id: string | null;
+    public_project_categories: { name: string } | null;
+}
+
+
 export interface DownloadJob {
     id: string;
     fileName: string;
@@ -253,13 +273,13 @@ export interface Creation {
 
 export type UserRole = 'admin' | 'starter' | 'premium' | 'professional';
 
-// CRITICAL FIX: Reverted UserProfile to match the v19.0 database schema.
-// Removed `status` and `plan_id` to prevent the "column does not exist" startup crash.
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
   credits: number;
+  status: 'active' | 'pending_approval' | 'suspended';
+  plan_id: string | null;
 }
 
 export interface Folder {

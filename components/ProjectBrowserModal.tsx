@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getPublicAssets, createSignedUrlForPath, getUserAssets, adminDeletePublicAsset, adminUpdatePublicAsset, adminGetCategories } from '../services/databaseService.ts';
-import type { UploadedAsset, ProjectState, PublicAsset, UserProfile, Category } from '../types.ts';
+import { getPublicProjects, createSignedUrlForPath, getUserAssets, adminDeletePublicProject, adminUpdatePublicProject, adminGetPublicProjectCategories, getPublicProjectCategoriesForUser } from '../../services/databaseService.ts';
+import type { UploadedAsset, ProjectState, PublicProject, UserProfile, PublicProjectCategory } from '../../types.ts';
 import type { User } from '@supabase/gotrue-js';
 import { IconX, IconRocket, IconOptions, IconEdit, IconTrash } from './Icons.tsx';
 import Button from './Button.tsx';
@@ -15,7 +15,7 @@ interface ProjectBrowserModalProps {
 }
 
 const ProjectCard: React.FC<{
-    asset: PublicAsset | UploadedAsset;
+    asset: PublicProject | UploadedAsset;
     onClick: () => void;
     isAdmin: boolean;
     onEdit: () => void;
@@ -55,7 +55,7 @@ const ProjectCard: React.FC<{
                 <p className="text-sm font-semibold text-white truncate" title={name}>{name}</p>
             </div>
 
-            {isAdmin && 'asset_type' in asset && (
+            {isAdmin && 'visibility' in asset && ( // Admin options only for public projects
                 <div className="absolute top-2 right-2 z-20 pointer-events-auto">
                     <button
                         onClick={(e) => {
@@ -93,17 +93,17 @@ const ProjectCard: React.FC<{
 
 const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClose, onLoadProject, userProfile }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [activeTab, setActiveTab] = useState<'user' | 'public'>('user');
+    const [activeTab, setActiveTab] = useState<'public' | 'user'>('public');
     
-    const [publicProjects, setPublicProjects] = useState<PublicAsset[]>([]);
+    const [publicProjects, setPublicProjects] = useState<PublicProject[]>([]);
     const [isLoadingPublic, setIsLoadingPublic] = useState(false);
 
     const [userProjects, setUserProjects] = useState<UploadedAsset[]>([]);
     const [isLoadingUser, setIsLoadingUser] = useState(false);
     
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-    const [editingAsset, setEditingAsset] = useState<PublicAsset | null>(null);
-    const [presetCategories, setPresetCategories] = useState<Category[]>([]);
+    const [editingAsset, setEditingAsset] = useState<PublicProject | null>(null);
+    const [projectCategories, setProjectCategories] = useState<PublicProjectCategory[]>([]);
 
 
     useEffect(() => {
@@ -112,11 +112,11 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
         if (activeTab === 'public') {
             setIsLoadingPublic(true);
             Promise.all([
-                getPublicAssets(),
-                adminGetCategories('preset')
-            ]).then(([assets, categories]) => {
-                setPublicProjects(assets.filter(a => a.asset_type === 'brmp'));
-                setPresetCategories(categories);
+                getPublicProjects(),
+                userProfile?.isAdmin ? adminGetPublicProjectCategories() : getPublicProjectCategoriesForUser()
+            ]).then(([projects, categories]) => {
+                setPublicProjects(projects);
+                setProjectCategories(categories as any);
             }).catch(err => console.error("Failed to load public projects/categories:", err))
             .finally(() => setIsLoadingPublic(false));
         } else if (activeTab === 'user') {
@@ -128,12 +128,12 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
                 .catch(err => console.error("Failed to load user projects:", err))
                 .finally(() => setIsLoadingUser(false));
         }
-    }, [isOpen, activeTab]);
+    }, [isOpen, activeTab, userProfile?.isAdmin]);
 
-    const handleLoad = async (asset: UploadedAsset | PublicAsset) => {
+    const handleLoad = async (asset: UploadedAsset | PublicProject) => {
         let projectUrl: string;
         try {
-             if ('asset_url' in asset) { // PublicAsset
+             if ('asset_url' in asset) { // PublicProject
                 projectUrl = asset.asset_url;
             } else { // UploadedAsset
                 projectUrl = await createSignedUrlForPath(asset.storage_path);
@@ -167,11 +167,11 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
         reader.readAsText(file);
     };
     
-    const handleDeletePublicProject = async (asset: PublicAsset) => {
+    const handleDeletePublicProject = async (asset: PublicProject) => {
         setOpenMenuId(null);
         if (window.confirm(`Tem a certeza que quer apagar o modelo "${asset.name}"?`)) {
             try {
-                await adminDeletePublicAsset(asset.id);
+                await adminDeletePublicProject(asset.id);
                 setPublicProjects(prev => prev.filter(p => p.id !== asset.id));
             } catch (err) {
                 alert('Falha ao apagar o modelo.');
@@ -182,7 +182,7 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
     
     const handleSaveAsset = async (assetId: string, newName: string, newCategoryId: string | null) => {
         try {
-            await adminUpdatePublicAsset(assetId, newName, newCategoryId);
+            await adminUpdatePublicProject(assetId, newName, newCategoryId);
             setEditingAsset(null);
             setPublicProjects(prev => prev.map(p => 
                 p.id === assetId ? { ...p, name: newName, category_id: newCategoryId } : p
@@ -222,8 +222,8 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
                         asset={project}
                         onClick={() => handleLoad(project)}
                         isAdmin={userProfile?.isAdmin ?? false}
-                        onEdit={() => setEditingAsset(project as PublicAsset)}
-                        onDelete={() => handleDeletePublicProject(project as PublicAsset)}
+                        onEdit={() => setEditingAsset(project as PublicProject)}
+                        onDelete={() => handleDeletePublicProject(project as PublicProject)}
                         openMenuId={openMenuId}
                         setOpenMenuId={setOpenMenuId}
                     />
@@ -239,7 +239,7 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
                 isOpen={!!editingAsset}
                 onClose={() => setEditingAsset(null)}
                 onSave={handleSaveAsset}
-                categories={presetCategories}
+                categories={projectCategories as any}
             />
             <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }} 
@@ -250,8 +250,8 @@ const ProjectBrowserModal: React.FC<ProjectBrowserModalProps> = ({ isOpen, onClo
                     <div>
                         <h3 className="text-2xl font-bold">Carregar Projeto</h3>
                         <div className="flex items-center border-b border-brand-accent mt-2">
-                            <button onClick={() => setActiveTab('user')} className={`px-4 py-2 font-semibold ${activeTab === 'user' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>Meus Projetos</button>
                             <button onClick={() => setActiveTab('public')} className={`px-4 py-2 font-semibold ${activeTab === 'public' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>Modelos Públicos</button>
+                            <button onClick={() => setActiveTab('user')} className={`px-4 py-2 font-semibold ${activeTab === 'user' ? 'text-brand-primary border-b-2 border-brand-primary' : 'text-gray-400'}`}>Meus Projetos</button>
                         </div>
                     </div>
                     <Button onClick={() => fileInputRef.current?.click()}>Carregar do Computador</Button>

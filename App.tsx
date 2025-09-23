@@ -56,18 +56,19 @@ const App: React.FC = () => {
     const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
         const isAdmin = MASTER_USERS.includes(user.email ?? '');
         
-        // CRITICAL FIX: Reverted to fetch only columns that exist in the v19.0 schema.
-        // This prevents the "column user_profiles.status does not exist" crash on startup.
-        const { data, error } = await supabase.from('user_profiles').select('role, credits').eq('id', user.id).single();
+        const { data, error } = await supabase.from('user_profiles').select('role, credits, status, plan_id').eq('id', user.id).single();
 
         if (error) {
             console.error("Error fetching user profile, using defaults:", error.message);
+            // This fallback may not be perfect but prevents a crash if the profile is missing post-signup.
             return {
                 ...user,
                 id: user.id,
                 email: user.email ?? '',
                 role: isAdmin ? 'admin' : 'starter',
-                credits: 10, // Default credits from v19 script
+                credits: 10,
+                status: isAdmin ? 'active' : 'pending_approval',
+                plan_id: null,
                 isAdmin,
             };
         } else {
@@ -77,6 +78,8 @@ const App: React.FC = () => {
                 email: user.email ?? '',
                 role: data.role,
                 credits: data.credits,
+                status: data.status,
+                plan_id: data.plan_id,
                 isAdmin,
             };
         }
@@ -174,9 +177,7 @@ const App: React.FC = () => {
             );
         }
         
-        // Note: The concept of 'pending_approval' does not exist in the v19 schema, so this view is now effectively disabled.
-        // It's kept here for potential future use if the schema is upgraded again.
-        if ((userProfile as any).status === 'pending_approval' && !userProfile.isAdmin) {
+        if (userProfile.status === 'pending_approval' && !userProfile.isAdmin) {
              return (
                 <motion.div key="pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <PendingApprovalView />

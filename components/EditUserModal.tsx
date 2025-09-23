@@ -8,25 +8,28 @@ interface EditUserModalProps {
     user: UserProfile | null;
     plans: Plan[];
     onClose: () => void;
-    // FIX: Updated onSave signature to only include properties available in the v19.0 schema.
-    onSave: (userId: string, updates: { role: UserRole; credits: number }) => void;
+    onSave: (userId: string, updates: Partial<UserProfile>) => void;
 }
 
 const EditUserModal: React.FC<EditUserModalProps> = ({ user, plans, onClose, onSave }) => {
     const [role, setRole] = useState<UserRole>('starter');
     const [credits, setCredits] = useState(0);
+    const [status, setStatus] = useState<'active' | 'pending_approval' | 'suspended'>('pending_approval');
+    const [planId, setPlanId] = useState<string | null>(null);
+
 
     useEffect(() => {
         if (user) {
             setRole(user.role);
             setCredits(user.credits);
+            setStatus(user.status);
+            setPlanId(user.plan_id);
         }
     }, [user]);
 
     const handleSave = () => {
         if (user) {
-            // FIX: Removed status and plan_id from the saved object to match the updated onSave signature.
-            onSave(user.id, { role, credits: Number(credits) });
+            onSave(user.id, { role, credits: Number(credits), status, plan_id: planId });
         }
     };
 
@@ -54,6 +57,31 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ user, plans, onClose, onS
                             <option value="premium">Premium</option>
                             <option value="professional">Professional</option>
                             <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Status</label>
+                        <select 
+                            value={status} 
+                            onChange={(e) => setStatus(e.target.value as any)}
+                            className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                        >
+                            <option value="pending_approval">Pendente de Aprovação</option>
+                            <option value="active">Ativo</option>
+                            <option value="suspended">Suspenso</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Plano</label>
+                        <select 
+                            value={planId || ''} 
+                            onChange={(e) => setPlanId(e.target.value || null)}
+                            className="w-full bg-brand-light border border-brand-accent rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                        >
+                            <option value="">Nenhum</option>
+                            {plans.map(plan => (
+                                <option key={plan.id} value={plan.id}>{plan.name}</option>
+                            ))}
                         </select>
                     </div>
                     <div>

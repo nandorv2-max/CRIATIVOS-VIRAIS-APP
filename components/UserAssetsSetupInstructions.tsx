@@ -148,7 +148,16 @@ $$;
 -- ======= PARTE 7: CRIAR POLÍTICAS DE ARMAZENAMENTO (STORAGE) =======
 CREATE POLICY "Acesso público de leitura para public_assets" ON storage.objects FOR SELECT USING ( bucket_id = 'public_assets' );
 CREATE POLICY "Acesso total de admin para public_assets" ON storage.objects FOR ALL USING ( bucket_id = 'public_assets' AND (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' ) WITH CHECK ( bucket_id = 'public_assets' AND (SELECT role FROM public.user_profiles WHERE id = auth.uid()) = 'admin' );
-CREATE POLICY "Acesso total do utilizador aos seus próprios ficheiros" ON storage.objects FOR ALL USING ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid ) WITH CHECK ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid );`;
+CREATE POLICY "Acesso total do utilizador aos seus próprios ficheiros" ON storage.objects FOR ALL USING ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid ) WITH CHECK ( bucket_id = 'user_assets' AND public.get_my_uid() = (storage.foldername(name))[1]::uuid );
+
+-- ======= PARTE 8: CONFIGURAR CORS DO STORAGE (AÇÃO MANUAL NO PAINEL) =======
+-- 1. Vá para o seu painel do Supabase.
+-- 2. Navegue até 'Storage' -> 'Configuration'.
+-- 3. Em 'Allowed origins for buckets', adicione a URL onde a sua aplicação está hospedada.
+--    - Para desenvolvimento local, pode usar: http://localhost:*, http://127.0.0.1:*
+--    - Para produção, use a sua URL específica: https://sua-app.com
+--    - Para permitir qualquer origem (menos seguro, bom para testes rápidos), use: *
+-- 4. Clique em 'Save'. Isto é CRÍTICO para que o upload e o carregamento de imagens funcionem.`;
 
 const UserAssetsSetupInstructions: React.FC<{
     isAdminContext?: boolean;
@@ -178,7 +187,18 @@ const UserAssetsSetupInstructions: React.FC<{
                 <p className="mt-4 text-gray-300">
                     Para corrigir isto, por favor, execute o seguinte script SQL no seu editor de SQL do Supabase. Isto irá criar as tabelas e funções necessárias para que a aplicação funcione corretamente.
                 </p>
-                <div className="mt-4 bg-brand-dark p-4 rounded-lg overflow-auto max-h-[50vh] relative">
+
+                <div className="mt-6 text-yellow-300 bg-yellow-900/50 p-4 rounded-lg border border-yellow-700/50 text-sm">
+                    <p className="font-bold text-base">Ação Manual Necessária: Configurar o CORS</p>
+                    <p className="mt-2">
+                        Após executar o script, você <strong>DEVE</strong> configurar as permissões de CORS para o Storage do Supabase. Sem isso, o upload e o carregamento de imagens falharão com um erro "Failed to fetch".
+                    </p>
+                    <p className="mt-2">
+                        Vá para <strong>Storage &rarr; Configuration</strong> no seu painel do Supabase e adicione a URL da sua aplicação (ou <code>*</code>) às "Allowed origins".
+                    </p>
+                </div>
+
+                <div className="mt-4 bg-brand-dark p-4 rounded-lg overflow-auto max-h-[40vh] relative">
                     <pre className="text-xs text-gray-400 whitespace-pre-wrap">
                         <code>{SQL_SCRIPT}</code>
                     </pre>

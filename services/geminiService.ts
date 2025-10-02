@@ -8,7 +8,7 @@ let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        ai = new GoogleGenAI({ apiKey });
+        ai = new GoogleGenAI(apiKey);
         currentApiKey = apiKey;
     } else {
         ai = null;

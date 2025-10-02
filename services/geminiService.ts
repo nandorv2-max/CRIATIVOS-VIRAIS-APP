@@ -8,6 +8,8 @@ let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
+        // REVERTED: The constructor expects the API key directly as a string.
+        // The previous object-based approach was incorrect and broke authentication.
         ai = new GoogleGenAI(apiKey);
         currentApiKey = apiKey;
     } else {
@@ -119,10 +121,6 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 };
 
 export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
-    // FIX: Switched from the 'imagen-4.0' model (which requires a billed account)
-    // to the more accessible 'gemini-2.5-flash-image-preview' model by reusing the
-    // existing generateImageWithRetry function. This allows users with standard,
-    // non-billed API keys to generate images from text.
     const finalPrompt = `${prompt}, aspect ratio ${aspectRatio}`;
     return generateImageWithRetry({ prompt: finalPrompt });
 };

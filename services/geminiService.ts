@@ -160,7 +160,7 @@ export const generateVideo = async (
     
     // 2. Main logic wrapped in a try/catch to handle errors gracefully without deducting credits
     try {
-        const masterApiKey = process.env.API_KEY;
+        const masterApiKey = import.meta.env.VITE_GEMINI_API_KEY;
         if (!masterApiKey) {
             throw new Error("A chave de API principal para geração de vídeo não está configurada no ambiente da aplicação. Por favor, contacte o administrador.");
         }

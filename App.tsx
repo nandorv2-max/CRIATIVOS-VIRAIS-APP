@@ -178,7 +178,7 @@ const App: React.FC = () => {
                     
                     let keyToUse = window.localStorage.getItem('user_gemini_api_key');
                     if (!keyToUse && profile.isAdmin) {
-                        keyToUse = process.env.API_KEY as string;
+                        keyToUse = import.meta.env.VITE_GEMINI_API_KEY as string;
                         if (!keyToUse) {
                             console.error("FATAL ERROR: Master API_KEY is not configured for admin user.");
                             setApiKeyStatus('error');

@@ -9,7 +9,7 @@ declare var google: any;
 // =====================================================================================
 // 1. O 'DEVELOPER_KEY' é a sua chave de API do Google, a mesma que usa para o Gemini.
 //    O código já tenta usar a chave do ambiente, o que deve funcionar.
-const DEVELOPER_KEY = process.env.API_KEY;
+const DEVELOPER_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // 2. O 'CLIENT_ID' FOI ATUALIZADO com o valor da sua imagem.
 //    AGORA, você PRECISA adicionar a URL do seu app às "Origens JavaScript autorizadas"

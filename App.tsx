@@ -12,6 +12,7 @@ import type { UserProfile, UploadedAsset, Theme, AssetContextType } from './type
 import { MASTER_USERS } from './constants.ts';
 import { getUserAssets, getThemeSettings, getAdminApiKey } from './services/databaseService.ts';
 import { initTouchEventBridge } from './utils/touchEvents.ts';
+import { initializeGoogleDriveService } from './services/googleDriveService.ts';
 
 
 const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -190,9 +191,11 @@ const App: React.FC = () => {
 
                     if (keyToUse) {
                         initializeGeminiClient(keyToUse);
+                        initializeGoogleDriveService(keyToUse);
                         setApiKeyStatus('set');
                     } else {
                         initializeGeminiClient('');
+                        initializeGoogleDriveService('');
                         setApiKeyStatus('pending');
                     }
                 } else {
@@ -200,6 +203,7 @@ const App: React.FC = () => {
                     setSession(null);
                     setUserProfile(null);
                     initializeGeminiClient('');
+                    initializeGoogleDriveService('');
                     setApiKeyStatus('pending');
                 }
             } catch (error) {
@@ -269,6 +273,7 @@ const App: React.FC = () => {
 
     const handleApiKeySubmit = (apiKey: string) => {
         initializeGeminiClient(apiKey);
+        initializeGoogleDriveService(apiKey);
         setApiKeyStatus('set');
     };
     

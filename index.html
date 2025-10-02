@@ -150,11 +150,6 @@
         cursor: grab;
       }
     </style>
-  <script>
-    // Polyfill process.env to prevent app crash in browser environments
-    // where it's not defined. The platform is expected to inject API_KEY.
-    window.process = window.process || { env: {} };
-  </script>
   <script type="importmap">
 {
   "imports": {

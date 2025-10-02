@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getPublicProjects, createSignedUrlForPath, getUserAssets, adminDeletePublicProject, adminUpdatePublicProject, adminGetPublicProjectCategories, getPublicProjectCategoriesForUser } from '../../services/databaseService.ts';
-import type { UploadedAsset, ProjectState, PublicProject, UserProfile, PublicProjectCategory } from '../../types.ts';
+import { getPublicProjects, createSignedUrlForPath, getUserAssets, adminDeletePublicProject, adminUpdatePublicProject, adminGetPublicProjectCategories, getPublicProjectCategoriesForUser } from '../services/databaseService.ts';
+import type { UploadedAsset, ProjectState, PublicProject, UserProfile, PublicProjectCategory } from '../types.ts';
 import type { User } from '@supabase/gotrue-js';
 import { IconX, IconRocket, IconOptions, IconEdit, IconTrash } from './Icons.tsx';
 import Button from './Button.tsx';

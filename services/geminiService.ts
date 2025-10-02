@@ -8,8 +8,6 @@ let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        // REVERTED: The constructor expects the API key directly as a string.
-        // The previous object-based approach was incorrect and broke authentication.
         ai = new GoogleGenAI(apiKey);
         currentApiKey = apiKey;
     } else {
@@ -75,7 +73,7 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
             parts.push({ text: prompt });
 
             const response: GenerateContentResponse = await client.models.generateContent({
-                model: 'gemini-2.5-flash-image-preview',
+                model: 'gemini-1.5-flash',
                 contents: { parts: parts },
                 config: {
                     responseModalities: [Modality.IMAGE, Modality.TEXT],

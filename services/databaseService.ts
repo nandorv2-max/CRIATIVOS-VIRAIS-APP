@@ -201,7 +201,6 @@ export const updateUserProfile = async (updates: { name?: string; avatar_url?: s
     if (error) throw error;
 };
 
-// FIX: Added missing theme customization functions to resolve export errors.
 // =========================================================================================
 // THEME & CUSTOMIZATION FUNCTIONS
 // =========================================================================================
@@ -293,7 +292,6 @@ export const removeFavoritePublicAsset = async (assetId: string): Promise<void> 
     if (error) throw error;
 };
 
-// FIX: Added missing deductVideoCredits function to call the Supabase RPC.
 export const deductVideoCredits = async (amount: number): Promise<void> => {
     const { error } = await supabase.rpc('deduct_video_credits', { amount_to_deduct: amount });
     if (error) throw error;
@@ -302,6 +300,15 @@ export const deductVideoCredits = async (amount: number): Promise<void> => {
 // =========================================================================================
 // ADMIN FUNCTIONS (RPC-based for security and robustness)
 // =========================================================================================
+
+export const getAdminApiKey = async (): Promise<string | null> => {
+    const { data, error } = await supabase.functions.invoke('get-admin-api-key');
+    if (error) {
+        console.error("Error fetching admin API key:", error.message);
+        throw new Error("Não foi possível obter a chave de API de administrador.");
+    }
+    return data.apiKey;
+};
 
 export const adminGetAllUserProfiles = async (): Promise<UserProfile[]> => {
     const { data, error } = await supabase.rpc('admin_get_all_users');
@@ -338,7 +345,6 @@ export const adminGetPlanFeatures = async (planId: string): Promise<string[]> =>
     return data;
 };
 
-// FIX: Corrected the type definition for updates to match the Plan interface and the RPC function.
 export const adminUpdatePlan = async (planId: string, updates: Partial<Pick<Plan, 'name' | 'stripe_payment_link' | 'video_credits_monthly' | 'storage_limit_gb' | 'download_limit_gb' | 'trial_days'>>): Promise<void> => {
     const { error } = await supabase.rpc('admin_update_plan', { p_plan_id: planId, p_updates: updates });
     if (error) throw error;

@@ -1,0 +1,7 @@
+{
+  "name": "GenIA",
+  "description": "An AI-powered creative studio that transforms your pictures into various creative styles, creates videos, and provides professional editing tools using AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AuraStudio</title>
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#4CAF50" />
+    
+    <!-- Performance Optimizations -->
+    <link rel="preconnect" href="https://i.imgur.com">
+    <link rel="preload" href="https://i.imgur.com/5KX47Hm.jpeg" as="image">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Inter:wght@400;500;600;700&display=swap" as="style">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link id="main-font" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-primary': 'var(--color-primary)',
+              'brand-secondary': 'var(--color-secondary)',
+              'brand-dark': 'var(--color-dark)',
+              'brand-light': 'var(--color-light)',
+              'brand-accent': 'var(--color-accent)',
+            },
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --color-primary: #4CAF50;
+        --color-secondary: #81C784;
+        --font-family-main: 'Inter', sans-serif;
+        --font-family-handwriting: 'Caveat', cursive;
+        --bg-image-url: '';
+      }
+
+      /* Base variables for themes */
+      :root {
+        --color-dark-base: #121212;
+        --color-light-base: #1E1E1E;
+        --color-accent-base: #2A2A2A;
+        --text-color-base-default: #e5e7eb;
+        --text-color-muted-default: #9ca3af;
+      }
+      
+      html.light-mode {
+        --color-dark-base: #F9FAFB;   /* gray-50 */
+        --color-light-base: #FFFFFF;
+        --color-accent-base: #F3F4F6;  /* gray-100 */
+        --text-color-base-default: #1F2937;  /* gray-800 */
+        --text-color-muted-default: #6B7280; /* gray-500 */
+      }
+
+      /* Connect base variables to the brand variables used by Tailwind config */
+      :root {
+        --color-dark: var(--color-dark-base);
+        --color-light: var(--color-light-base);
+        --color-accent: var(--color-accent-base);
+        --text-color-base: var(--color-text-base-custom, var(--text-color-base-default));
+        --text-color-muted: var(--color-text-muted-custom, var(--text-color-muted-default));
+      }
+
+      body { 
+        font-family: var(--font-family-main); 
+        color: var(--text-color-base);
+        background-color: var(--color-dark);
+      }
+      .bg-gradient-main {
+        background-color: var(--color-dark);
+        background-image: var(--bg-image-url), 
+                          radial-gradient(circle at top left, var(--bg-gradient-color-1, rgba(76, 175, 80, 0.2)), transparent 40%),
+                          radial-gradient(circle at bottom right, var(--bg-gradient-color-2, rgba(76, 175, 80, 0.2)), transparent 40%);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+      html.light-mode .bg-gradient-main {
+        --bg-gradient-color-1: rgba(76, 175, 80, 0.1);
+        --bg-gradient-color-2: rgba(76, 175, 80, 0.1);
+      }
+
+      /* Tailwind color class overrides */
+      .text-white { color: var(--text-color-base) !important; }
+      .text-gray-100 { color: var(--text-color-base) !important; }
+      .text-gray-200 { color: var(--text-color-base) !important; }
+      .text-gray-300 { color: var(--text-color-base) !important; }
+      .text-gray-400 { color: var(--text-color-muted) !important; }
+      .text-gray-500 { color: var(--text-color-muted) !important; }
+
+      .font-caveat { 
+        font-family: var(--font-family-handwriting); 
+      }
+      /* Custom scrollbar for webkit browsers */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--color-light);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--color-primary);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-secondary);
+      }
+      /* Custom scrollbar for the main sidebar */
+      .custom-sidebar-scroll::-webkit-scrollbar {
+        width: 6px;
+      }
+      .custom-sidebar-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-sidebar-scroll::-webkit-scrollbar-thumb {
+        background: var(--color-primary);
+        border-radius: 3px;
+      }
+      .custom-sidebar-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-primary) transparent;
+      }
+      /* Custom styles for the hue slider thumb in the color picker */
+      .hue-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        background-color: white;
+        border: 2px solid #e5e7eb; /* gray-200 */
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        cursor: grab;
+        margin-top: -3px; /* Center thumb on track */
+      }
+      .hue-range::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        background-color: white;
+        border: 2px solid #e5e7eb; /* gray-200 */
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        cursor: grab;
+      }
+    </style>
+  <script>
+    // Polyfill process.env to prevent app crash in browser environments
+    // where it's not defined. The platform is expected to inject API_KEY.
+    window.process = window.process || { env: {} };
+  </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.17.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.12",
+    "@imgly/background-removal": "https://esm.sh/@imgly/background-removal@1.0.4",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.45.2",
+    "jszip": "https://aistudiocdn.com/jszip@^3.10.1",
+    "nanoid": "https://aistudiocdn.com/nanoid@^5.1.5",
+    "react-hotkeys-hook": "https://aistudiocdn.com/react-hotkeys-hook@^5.1.0",
+    "mp4-muxer": "https://aistudiocdn.com/mp4-muxer@^2.0.2",
+    "@supabase/gotrue-js": "https://aistudiocdn.com/@supabase/gotrue-js@^2.72.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gradient-main">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx" defer></script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

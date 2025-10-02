@@ -1,0 +1,295 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { AnyLayer, TextLayer, ShapeLayer, UserProfile, VideoLayer } from '../types.ts';
+import Button from './Button.tsx';
+import { IconDownload, IconFolder, IconSave, IconCrop, IconRocket, IconFile, IconFlipHorizontal, IconFlipVertical, IconX, IconVolume2, IconVolumeX } from './Icons.tsx';
+import type { User } from '@supabase/gotrue-js';
+
+
+interface PropertiesPanelProps {
+    selectedLayers: AnyLayer[];
+    onUpdateLayers: (update: Partial<AnyLayer>, commit: boolean) => void;
+    onCommitHistory: () => void;
+    canvasWidth: number;
+    canvasHeight: number;
+    onCanvasSizeChange: (width: number, height: number) => void;
+    onSaveProject: () => void;
+    onLoadProject: () => void;
+    onDownload: () => void;
+    cropLayerId: string | null;
+    onStartCrop: () => void;
+    onApplyCrop: () => void;
+    onCancelCrop: () => void;
+    userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
+    onSaveProjectAsPublic: () => void;
+    onSaveProjectToComputer: () => void;
+    onNewProject: () => void;
+    isMobileView?: boolean;
+    onClose?: () => void;
+}
+
+const SIZE_PRESETS = [
+    { name: 'Personalizado', width: 0, height: 0 },
+    { name: 'Quadrado', width: 1080, height: 1080 },
+    { name: 'Feed (Retrato)', width: 1080, height: 1350 },
+    { name: 'Stories/Reels', width: 1080, height: 1920 },
+    { name: 'Thumbnail YouTube', width: 1280, height: 720 },
+];
+
+const NumberInput: React.FC<{label: string, value: number, onChange: (v: number) => void, onBlur: () => void}> = ({ label, value, onChange, onBlur }) => (
+    <div>
+        <label className="text-xs font-medium text-gray-400 mb-1 block">{label}</label>
+        <input type="number" value={Math.round(value)} onChange={e => onChange(Number(e.target.value))} onBlur={onBlur} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white"/>
+    </div>
+);
+
+const SliderInput: React.FC<{label: string, value: number, onChange: (v: number) => void, onBlur: () => void, min: number, max: number, step: number}> = ({ label, value, onChange, onBlur, min, max, step }) => (
+    <div>
+        <div className="flex justify-between items-center text-xs font-medium text-gray-400 mb-1">
+            <label>{label}</label>
+            <span>{typeof value === 'number' ? value.toFixed(step < 1 ? 2 : 0) : 0}</span>
+        </div>
+        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} onMouseUp={onBlur} onTouchEnd={onBlur} className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm" />
+    </div>
+);
+
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
+    selectedLayers, onUpdateLayers, onCommitHistory, canvasWidth, canvasHeight, onCanvasSizeChange,
+    onSaveProject, onLoadProject, onDownload, cropLayerId, onStartCrop, onApplyCrop, onCancelCrop,
+    userProfile, onSaveProjectAsPublic, onSaveProjectToComputer, onNewProject,
+    isMobileView, onClose
+}) => {
+    
+    const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
+    const saveMenuRef = useRef<HTMLDivElement>(null);
+    const [selectedPreset, setSelectedPreset] = useState('Personalizado');
+
+    useEffect(() => {
+        // Sincroniza o estado local do dropdown quando as dimensões da tela mudam externamente (ex: ao carregar um projeto)
+        const currentPresetName = SIZE_PRESETS.find(p => p.width === canvasWidth && p.height === canvasHeight)?.name || 'Personalizado';
+        setSelectedPreset(currentPresetName);
+    }, [canvasWidth, canvasHeight]);
+
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (saveMenuRef.current && !saveMenuRef.current.contains(event.target as Node)) {
+                setIsSaveMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const presetName = e.target.value;
+        setSelectedPreset(presetName); // Atualiza o estado local imediatamente para mostrar/ocultar os campos personalizados
+
+        const selected = SIZE_PRESETS.find(p => p.name === presetName);
+        if (selected && selected.name !== 'Personalizado') {
+            onCanvasSizeChange(selected.width, selected.height);
+        }
+    };
+    
+    const renderCanvasProperties = () => (
+        <div className="p-4 space-y-4">
+            <h3 className="text-lg font-bold text-white">Propriedades da Tela</h3>
+            <div>
+                <label className="text-sm font-medium text-gray-300 mb-1 block">Predefinições de Tamanho</label>
+                <select onChange={handlePresetChange} value={selectedPreset} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white">
+                    {SIZE_PRESETS.map((p) => (
+                        <option key={p.name} value={p.name}>{p.name} {p.width > 0 ? `(${p.width}x${p.height})` : ''}</option>
+                    ))}
+                </select>
+            </div>
+            {selectedPreset === 'Personalizado' && (
+                 <div className="grid grid-cols-2 gap-2">
+                    <NumberInput label="Largura" value={canvasWidth} onChange={w => onCanvasSizeChange(w, canvasHeight)} onBlur={onCommitHistory} />
+                    <NumberInput label="Altura" value={canvasHeight} onChange={h => onCanvasSizeChange(canvasWidth, h)} onBlur={onCommitHistory} />
+                </div>
+            )}
+            <div className="pt-4 border-t border-brand-accent/50 space-y-2">
+                <Button onClick={onNewProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconFile className="w-5 h-5" /> Novo Projeto</div>
+                </Button>
+
+                <div className="relative" ref={saveMenuRef}>
+                    <Button onClick={() => setIsSaveMenuOpen(prev => !prev)} className="w-full">
+                        <div className="flex items-center gap-2"><IconSave className="w-5 h-5" /> Salvar Projeto</div>
+                    </Button>
+                    <AnimatePresence>
+                        {isSaveMenuOpen && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                className="absolute bottom-full left-0 w-full mb-2 bg-brand-light rounded-lg shadow-2xl p-2 border border-brand-accent z-10"
+                            >
+                                <button onClick={() => { onSaveProject(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                    <IconSave className="w-5 h-5" /> Salvar nos Meus Recursos
+                                </button>
+                                <button onClick={() => { onSaveProjectToComputer(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                    <IconDownload className="w-5 h-5" /> Salvar no Computador
+                                </button>
+                                {userProfile?.isAdmin && (
+                                     <button onClick={() => { onSaveProjectAsPublic(); setIsSaveMenuOpen(false); }} className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md hover:bg-brand-accent transition-colors">
+                                        <IconRocket className="w-5 h-5"/> Salvar como Modelo Público
+                                    </button>
+                                )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+                
+                <Button onClick={onLoadProject} className="w-full">
+                    <div className="flex items-center gap-2"><IconFolder className="w-5 h-5"/> Carregar Projeto</div>
+                </Button>
+                <Button onClick={onDownload} primary className="w-full">
+                     <div className="flex items-center gap-2"><IconDownload /> Fazer Download</div>
+                </Button>
+            </div>
+        </div>
+    );
+    
+    const renderLayerProperties = () => {
+         const layer = selectedLayers[0];
+         if (!layer) return null;
+
+         const canCrop = selectedLayers.length === 1 && (layer.type === 'image' || layer.type === 'video');
+         const isCropping = canCrop && cropLayerId === layer.id;
+
+         const renderTextProperties = (l: TextLayer) => (
+            <>
+                <h4 className="text-sm font-bold text-gray-300 pt-4 border-t border-brand-accent/50">Texto</h4>
+                <textarea value={l.text} onChange={e => onUpdateLayers({ text: e.target.value }, false)} onBlur={onCommitHistory} className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 text-white h-24 resize-y"/>
+                <div className="space-y-3 pt-2">
+                    <SliderInput label="Espaçamento Linhas" value={l.lineHeight || 1.2} onChange={v => onUpdateLayers({lineHeight: v}, false)} onBlur={onCommitHistory} min={0.5} max={3} step={0.1} />
+                    <SliderInput label="Espaçamento Letras" value={l.letterSpacing || 0} onChange={v => onUpdateLayers({letterSpacing: v}, false)} onBlur={onCommitHistory} min={-50} max={100} step={1} />
+                </div>
+            </>
+         );
+         const renderShapeProperties = (l: ShapeLayer) => (
+             <>
+                <h4 className="text-sm font-bold text-gray-300 pt-4 border-t border-brand-accent/50">Forma</h4>
+                <div>
+                    <label className="text-xs font-medium text-gray-400 mb-1 block">Preenchimento</label>
+                    <div className="flex items-center gap-2">
+                        {/* A ColorPicker would go here */}
+                    </div>
+                </div>
+             </>
+         );
+         
+         const renderVideoProperties = (l: VideoLayer) => (
+             <div className="pt-4 border-t border-brand-accent/50 space-y-3">
+                <h4 className="text-sm font-bold text-gray-300">Áudio</h4>
+                 <div className="flex items-center gap-2">
+                    <Button onClick={() => onUpdateLayers({ isMuted: !l.isMuted }, true)} className="!p-2">
+                        {l.isMuted ? <IconVolumeX className="w-5 h-5" /> : <IconVolume2 className="w-5 h-5" />}
+                    </Button>
+                    <div className="flex-grow">
+                        <SliderInput 
+                            label="Volume" 
+                            value={l.isMuted ? 0 : Math.round(l.volume * 100)} 
+                            onChange={v => onUpdateLayers({ volume: v / 100, isMuted: v === 0 }, false)} 
+                            onBlur={onCommitHistory} 
+                            min={0} 
+                            max={100} 
+                            step={1} 
+                        />
+                    </div>
+                </div>
+             </div>
+         );
+
+         return (
+             <div className="p-4 space-y-4">
+                <h3 className="text-lg font-bold text-white truncate">{selectedLayers.length > 1 ? `${selectedLayers.length} Camadas` : layer.name}</h3>
+                
+                {!isCropping && (
+                    <>
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-bold text-gray-300">Transformar</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                <NumberInput label="X" value={layer.x} onChange={v => onUpdateLayers({x: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Y" value={layer.y} onChange={v => onUpdateLayers({y: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Largura" value={layer.width} onChange={v => onUpdateLayers({width: v}, false)} onBlur={onCommitHistory} />
+                                <NumberInput label="Altura" value={layer.height} onChange={v => onUpdateLayers({height: v}, false)} onBlur={onCommitHistory} />
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="col-span-2">
+                                    <NumberInput label="Rotação" value={layer.rotation} onChange={v => onUpdateLayers({rotation: v}, false)} onBlur={onCommitHistory} />
+                                </div>
+                                <div className="flex items-end gap-1 h-full">
+                                    <Button onClick={() => onUpdateLayers({ flipH: !layer.flipH }, true)} className="!p-2 h-[42px]" title="Inverter Horizontalmente">
+                                        <IconFlipHorizontal className="w-5 h-5"/>
+                                    </Button>
+                                     <Button onClick={() => onUpdateLayers({ flipV: !layer.flipV }, true)} className="!p-2 h-[42px]" title="Inverter Verticalmente">
+                                        <IconFlipVertical className="w-5 h-5"/>
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-brand-accent/50 space-y-3">
+                            <h4 className="text-sm font-bold text-gray-300">Aparência</h4>
+                            <SliderInput 
+                                label="Opacidade" 
+                                value={Math.round((layer.opacity ?? 1) * 100)} 
+                                onChange={v => onUpdateLayers({ opacity: v / 100 }, false)} 
+                                onBlur={onCommitHistory} 
+                                min={0} 
+                                max={100} 
+                                step={1} 
+                            />
+                        </div>
+                    </>
+                )}
+                
+                {canCrop && (
+                    <div className="pt-4 border-t border-brand-accent/50">
+                        {isCropping ? (
+                        <div className="flex flex-col gap-2">
+                            <p className="text-sm text-gray-300 text-center mb-2">Ajuste as alças para cortar a sua mídia.</p>
+                            <div className="flex gap-2">
+                                <Button onClick={onCancelCrop} className="w-full">Cancelar</Button>
+                                <Button onClick={onApplyCrop} primary className="w-full">Aplicar</Button>
+                            </div>
+                        </div>
+                        ) : (
+                        <Button onClick={onStartCrop} className="w-full">
+                            <div className="flex items-center justify-center gap-2"><IconCrop className="w-5 h-5"/> Cortar</div>
+                        </Button>
+                        )}
+                    </div>
+                )}
+
+                {selectedLayers.length === 1 && !isCropping && (
+                    <>
+                        {layer.type === 'text' && renderTextProperties(layer as TextLayer)}
+                        {layer.type === 'shape' && renderShapeProperties(layer as ShapeLayer)}
+                        {layer.type === 'video' && renderVideoProperties(layer as VideoLayer)}
+                    </>
+                )}
+             </div>
+         );
+    };
+
+    return (
+        <aside className={`h-full bg-brand-dark/90 backdrop-blur-md shadow-lg z-20 flex-shrink-0 border-l border-brand-accent flex flex-col ${isMobileView ? 'w-[85vw] max-w-sm' : 'w-72 lg:w-80'}`}>
+            {isMobileView && onClose && (
+                 <div className="flex-shrink-0 p-4 border-b border-brand-accent flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white">Propriedades</h3>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-brand-light">
+                        <IconX className="w-5 h-5" />
+                    </button>
+                </div>
+            )}
+            <div className="overflow-y-auto">
+                 {selectedLayers.length > 0 ? renderLayerProperties() : renderCanvasProperties()}
+            </div>
+        </aside>
+    );
+};
+
+export default PropertiesPanel;

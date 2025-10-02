@@ -1,0 +1,84 @@
+{
+  "name": "AuraStudio",
+  "short_name": "AuraStudio",
+  "description": "An AI-powered creative studio that transforms your pictures into various creative styles, creates videos, and provides professional editing tools using AI.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay"
+  ],
+  "background_color": "#121212",
+  "theme_color": "#4CAF50",
+  "orientation": "portrait",
+  "categories": [
+    "photo",
+    "video",
+    "design",
+    "utilities"
+  ],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "https://i.imgur.com/5KX47Hm.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.imgur.com/5KX47Hm.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://i.imgur.com/Xq3h7D0.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "AuraStudio Creative Studio on Mobile"
+    },
+    {
+      "src": "https://i.imgur.com/N7f4m8i.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "AuraStudio Creative Studio on Desktop"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Studio Criativo",
+      "short_name": "Studio",
+      "description": "Abra o editor criativo completo.",
+      "url": "/?view=studioCriativo",
+      "icons": [{ "src": "https://i.imgur.com/5KX47Hm.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Gerador de Imagem",
+      "short_name": "Gerador",
+      "description": "Crie imagens a partir de texto.",
+      "url": "/?view=imageGenerator",
+      "icons": [{ "src": "https://i.imgur.com/5KX47Hm.png", "sizes": "192x192" }]
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/png": [".png"],
+        "image/webp": [".webp"],
+        "application/json": [".brmp"]
+      }
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
+}

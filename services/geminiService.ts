@@ -73,7 +73,7 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
             parts.push({ text: prompt });
 
             const response: GenerateContentResponse = await client.models.generateContent({
-                model: 'gemini-1.5-flash',
+                model: 'gemini-2.5-flash-image-preview',
                 contents: { parts: parts },
                 config: {
                     responseModalities: [Modality.IMAGE, Modality.TEXT],

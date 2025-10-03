@@ -130,14 +130,16 @@ export const generateVideo = async (
     aspectRatio: string,
     userRole: UserRole
 ): Promise<Blob> => {
+    // 1. Authorization check - Adicionado 'bee' para o seu teste
     const authorizedRoles: UserRole[] = ['premium', 'professional', 'admin', 'bee'];
     if (!authorizedRoles.includes(userRole)) {
          throw new Error("O seu plano atual não permite a geração de vídeos. Faça um upgrade para aceder a esta funcionalidade.");
     }
     
+    // 2. Main logic wrapped in a try/catch to handle errors gracefully without deducting credits
     try {
         const videoClient = getClient();
-        if (!videoClient || !currentApiKey) {
+        if (!videoClient) {
             throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
         }
 
@@ -162,13 +164,8 @@ export const generateVideo = async (
             throw new Error("A geração de vídeo foi bem-sucedida, mas não foi encontrado nenhum link para download na resposta da API.");
         }
         
-        // **A CORREÇÃO ESTÁ AQUI**
-        // Usando o cabeçalho 'Authorization: Bearer' em vez de 'x-goog-api-key'.
-        const response = await fetch(downloadLink, {
-            headers: {
-                'Authorization': `Bearer ${currentApiKey}`
-            }
-        });
+        // The downloadLink is a pre-signed URL and does NOT need the API key appended.
+        const response = await fetch(downloadLink);
 
         if (!response.ok) {
             const errorBody = await response.text();
@@ -178,10 +175,14 @@ export const generateVideo = async (
         
         const videoBlob = await response.blob();
 
+        // 3. Deduct credits ONLY after the entire process is successful.
+        // Adicionado 'bee' para não deduzir créditos durante o teste.
         if (userRole !== 'admin' && userRole !== 'bee') {
             try {
                 await deductVideoCredits(20);
             } catch (deductionError: any) {
+                // This is an edge case: video is created but credits couldn't be deducted (e.g., user ran out mid-generation).
+                // Log it, but let the user have the video.
                 console.error(`CRITICAL: Video successfully generated for user, but credit deduction failed. Reason: ${deductionError.message}`);
             }
         }
@@ -190,6 +191,7 @@ export const generateVideo = async (
 
     } catch (error: any) {
         console.error('Video generation process failed:', error);
+        // Re-throw the original error. No credits were deducted if we land here.
         if (error.message && error.message.includes('INSUFFICIENT_CREDITS')) {
             throw new Error("Créditos de vídeo insuficientes. A sua cota será renovada no próximo ciclo de faturação ou pode fazer um upgrade de plano.");
         }

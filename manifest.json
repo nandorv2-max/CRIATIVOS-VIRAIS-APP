@@ -12,7 +12,7 @@
     "window-controls-overlay"
   ],
   "background_color": "#121212",
-  "theme_color": "#4CAF50",
+  "theme_color": "#1E1E1E",
   "orientation": "portrait",
   "categories": [
     "photo",
@@ -23,13 +23,13 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "https://i.imgur.com/5KX47Hm.png",
+      "src": "/logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://i.imgur.com/5KX47Hm.png",
+      "src": "/logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -57,14 +57,14 @@
       "short_name": "Studio",
       "description": "Abra o editor criativo completo.",
       "url": "/?view=studioCriativo",
-      "icons": [{ "src": "https://i.imgur.com/5KX47Hm.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
     },
     {
       "name": "Gerador de Imagem",
       "short_name": "Gerador",
       "description": "Crie imagens a partir de texto.",
       "url": "/?view=imageGenerator",
-      "icons": [{ "src": "https://i.imgur.com/5KX47Hm.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
     }
   ],
   "file_handlers": [

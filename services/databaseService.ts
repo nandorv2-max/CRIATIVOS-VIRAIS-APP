@@ -301,15 +301,6 @@ export const deductVideoCredits = async (amount: number): Promise<void> => {
 // ADMIN FUNCTIONS (RPC-based for security and robustness)
 // =========================================================================================
 
-export const getAdminApiKey = async (): Promise<string | null> => {
-    const { data, error } = await supabase.functions.invoke('get-admin-api-key');
-    if (error) {
-        console.error("Error fetching admin API key:", error.message);
-        throw new Error("Não foi possível obter a chave de API de administrador.");
-    }
-    return data.apiKey;
-};
-
 export const adminGetAllUserProfiles = async (): Promise<UserProfile[]> => {
     const { data, error } = await supabase.rpc('admin_get_all_users');
     if (error) throw error;

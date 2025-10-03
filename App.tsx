@@ -10,7 +10,7 @@ import { initializeGeminiClient } from './services/geminiService.ts';
 import { ThemeContext, AssetContext } from './types.ts';
 import type { UserProfile, UploadedAsset, Theme, AssetContextType } from './types.ts';
 import { MASTER_USERS } from './constants.ts';
-import { getUserAssets, getThemeSettings, getAdminApiKey } from './services/databaseService.ts';
+import { getUserAssets, getThemeSettings } from './services/databaseService.ts';
 import { initTouchEventBridge } from './utils/touchEvents.ts';
 import { initializeGoogleDriveService } from './services/googleDriveService.ts';
 
@@ -177,17 +177,7 @@ const App: React.FC = () => {
                     setSession(currentSession);
                     setUserProfile(profile);
                     
-                    let keyToUse = window.localStorage.getItem('user_gemini_api_key');
-                    
-                    if (!keyToUse && profile.isAdmin) {
-                        try {
-                            keyToUse = await getAdminApiKey();
-                        } catch (e) {
-                            console.error("FATAL ERROR: Could not fetch admin API key from Supabase function.", e);
-                            setApiKeyStatus('error');
-                            return;
-                        }
-                    }
+                    const keyToUse = window.localStorage.getItem('user_gemini_api_key');
 
                     if (keyToUse) {
                         initializeGeminiClient(keyToUse);
@@ -316,7 +306,7 @@ const App: React.FC = () => {
             );
         }
         
-        if (apiKeyStatus === 'pending' && !userProfile.isAdmin) {
+        if (apiKeyStatus === 'pending') {
              return (
                  <motion.div key="apikey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <ApiKeyPrompt onApiKeySubmit={handleApiKeySubmit} />

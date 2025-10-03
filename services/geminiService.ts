@@ -8,7 +8,8 @@ let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        ai = new GoogleGenAI(apiKey);
+        // FIX: The API key should be passed as a named parameter to the GoogleGenAI constructor.
+        ai = new GoogleGenAI({ apiKey });
         currentApiKey = apiKey;
     } else {
         ai = null;
@@ -119,12 +120,29 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 };
 
 export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
-    // FIX: Switched from the 'imagen-4.0' model (which requires a billed account)
-    // to the more accessible 'gemini-2.5-flash-image-preview' model by reusing the
-    // existing generateImageWithRetry function. This allows users with standard,
-    // non-billed API keys to generate images from text.
-    const finalPrompt = `${prompt}, aspect ratio ${aspectRatio}`;
-    return generateImageWithRetry({ prompt: finalPrompt });
+    const client = getClient();
+    try {
+        const response = await client.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: aspectRatio,
+            },
+        });
+
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
+        }
+        
+        throw new Error("Nenhuma imagem foi gerada.");
+
+    } catch (error) {
+        console.error("Image generation from prompt failed:", error);
+        throw error;
+    }
 };
 
 export const generateVideo = async (
@@ -142,10 +160,13 @@ export const generateVideo = async (
     
     // 2. Main logic wrapped in a try/catch to handle errors gracefully without deducting credits
     try {
-        const videoClient = getClient();
-        if (!videoClient) {
-            throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
+        const masterApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!masterApiKey) {
+            throw new Error("A chave de API principal para geração de vídeo não está configurada no ambiente da aplicação. Por favor, contacte o administrador.");
         }
+        
+        // Use a dedicated, local client for video generation to ensure it always uses the master key.
+        const videoClient = new GoogleGenAI({ apiKey: masterApiKey });
 
         let operation = await videoClient.models.generateVideos({
             model: 'veo-2.0-generate-001',

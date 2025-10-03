@@ -177,29 +177,17 @@ const App: React.FC = () => {
                     setSession(currentSession);
                     setUserProfile(profile);
                     
-                    // **NOVA LÓGICA DE VERIFICAÇÃO DE CHAVE**
-                    // 1. Prioriza sempre a chave guardada localmente pelo utilizador.
-                    let keyToUse = window.localStorage.getItem('user_gemini_api_key');
+                    // LÓGICA DE VERIFICAÇÃO DE CHAVE RESTAURADA (MAIS SIMPLES)
+                    // Esta lógica foi simplificada para remover uma dependência que poderia estar a causar lentidão.
+                    const keyToUse = window.localStorage.getItem('user_gemini_api_key');
                     
-                    // 2. Se não houver chave local, verifica se o utilizador é admin.
-                    if (!keyToUse && profile.isAdmin) {
-                        try {
-                            // 3. Se for admin, tenta buscar a chave principal do backend.
-                            keyToUse = await getAdminApiKey();
-                        } catch (e) {
-                            console.error("FATAL ERROR: Could not fetch admin API key from Supabase function.", e);
-                            setApiKeyStatus('error');
-                            return;
-                        }
-                    }
-
-                    // 4. Se, depois de tudo, uma chave foi encontrada (local ou de admin), inicializa o cliente.
                     if (keyToUse) {
                         initializeGeminiClient(keyToUse);
                         initializeGoogleDriveService(keyToUse);
                         setApiKeyStatus('set');
                     } else {
-                        // 5. Se não, o utilizador não é admin e não tem chave local, então pede uma.
+                        // Se não houver chave, pede sempre, independentemente do papel do utilizador.
+                        // Para administradores, a chave pode ser obtida no painel de administração se necessário.
                         initializeGeminiClient('');
                         initializeGoogleDriveService('');
                         setApiKeyStatus('pending');
@@ -322,7 +310,7 @@ const App: React.FC = () => {
             );
         }
         
-        if (apiKeyStatus === 'pending' && !userProfile.isAdmin) {
+        if (apiKeyStatus === 'pending') {
              return (
                  <motion.div key="apikey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <ApiKeyPrompt onApiKeySubmit={handleApiKeySubmit} />

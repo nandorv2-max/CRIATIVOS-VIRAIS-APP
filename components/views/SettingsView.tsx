@@ -140,7 +140,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ userProfile, refetchUserPro
                                 <UsageMeter label="Armazenamento" used={storageUsedBytes} total={storageTotalBytes} unit="GB"/>
                                 <div className="flex flex-wrap gap-4 pt-4">
                                     <Button onClick={() => setActiveView('upgrade')}>Gerir Plano</Button>
-                                    <Button onClick={() => setIsApiKeyModalOpen(true)}>Gerir Chave de API</Button>
+                                    {!userProfile.isAdmin && (
+                                        <Button onClick={() => setIsApiKeyModalOpen(true)}>Gerir Chave de API</Button>
+                                    )}
                                 </div>
                             </div>
                         </section>

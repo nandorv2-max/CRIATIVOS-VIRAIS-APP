@@ -11,9 +11,6 @@ importers:
       '@google/genai':
         specifier: ^1.17.0
         version: 1.22.0
-      '@google/generative-ai':
-        specifier: 0.11.3
-        version: 0.11.3
       '@imgly/background-removal':
         specifier: 1.0.4
         version: 1.0.4
@@ -289,10 +286,6 @@ packages:
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
         optional: true
-
-  '@google/generative-ai@0.11.3':
-    resolution: {integrity: sha512-QtQ1hz6rcybbw35uxXlFF26KNnaTVr2oWwnmDkC1M35KdzN4tVc4wakgJp8uXbY9KDCNHksyp11DbFg0HPckZQ==}
-    engines: {node: '>=18.0.0'}
 
   '@imgly/background-removal@1.0.4':
     resolution: {integrity: sha512-tLcVPT8A9OymO14dJ3guKqS1LKbpeZDbHoLTYLuv9adhocG/KTVnwmQNS9+ValgvvL5mdkab5N7NVQljMiFIRQ==}
@@ -1009,8 +1002,6 @@ snapshots:
       - encoding
       - supports-color
       - utf-8-validate
-
-  '@google/generative-ai@0.11.3': {}
 
   '@imgly/background-removal@1.0.4': {}
 

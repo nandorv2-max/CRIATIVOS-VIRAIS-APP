@@ -3,8 +3,8 @@ import { ThemeContext } from '../types.ts';
 
 export const IconLogo: React.FC<{className?: string}> = ({className}) => {
     const themeContext = useContext(ThemeContext);
-    const logoUrl = themeContext?.theme?.logo_url || "/logo.png";
-    return <img src={logoUrl} alt="AuraStudio Logo" className={className} />;
+    const logoUrl = themeContext?.theme?.logo_url || "https://i.imgur.com/5KX47Hm.jpeg";
+    return <img src={logoUrl} alt="GenIA Logo" className={className} />;
 };
 
 export const IconOptions: React.FC<{className?: string}> = ({className}) => (

@@ -179,9 +179,9 @@ const App: React.FC = () => {
                     
                     const keyToUse = window.localStorage.getItem('user_gemini_api_key');
 
-                    if (keyToUse && keyToUse.trim()) {
-                        initializeGeminiClient(keyToUse.trim());
-                        initializeGoogleDriveService(keyToUse.trim());
+                    if (keyToUse) {
+                        initializeGeminiClient(keyToUse);
+                        initializeGoogleDriveService(keyToUse);
                         setApiKeyStatus('set');
                     } else {
                         initializeGeminiClient('');

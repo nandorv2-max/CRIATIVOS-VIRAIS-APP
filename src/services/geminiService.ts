@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, Modality, Part, GenerateContentResponse } from "@google/genai";
+import { GoogleGenerativeAI, Modality, Part, GenerateContentResponse } from "@google/generative-ai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
@@ -7,9 +7,9 @@ let ai: GoogleGenerativeAI | null = null;
 let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
-    if (apiKey) {
-        ai = new GoogleGenerativeAI(apiKey);
-        currentApiKey = apiKey;
+    if (apiKey && apiKey.trim()) {
+        ai = new GoogleGenerativeAI(apiKey.trim());
+        currentApiKey = apiKey.trim();
     } else {
         ai = null;
         currentApiKey = null;

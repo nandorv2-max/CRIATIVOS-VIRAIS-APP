@@ -15,7 +15,7 @@ import ProfessionalEditorView from './views/ProfessionalEditorView.tsx';
 import AdminView from './views/AdminView.tsx';
 import ThemeCustomizationView from './views/ThemeCustomizationView.tsx';
 import PendingApprovalView from './views/PendingApprovalView.tsx';
-import SettingsView from './views/SettingsView.tsx'; // Import the new SettingsView
+import SettingsView from './views/SettingsView.tsx';
 import type { UserProfile } from '../types.ts';
 
 
@@ -40,7 +40,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
 
     const viewComponents: { [key: string]: React.ReactNode } = {
         home: <DashboardView userProfile={userProfile} setActiveView={handleSetActiveView} />,
-        settings: <SettingsView userProfile={userProfile} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
+        settings: <SettingsView userProfile={userProfile!} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
         upgrade: <PendingApprovalView showLogout={false} />,
         projects: <ProjectsView />,
         admin: <AdminView />,
@@ -63,14 +63,13 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
         if (viewFromUrl && viewComponents.hasOwnProperty(viewFromUrl)) {
             setActiveView(viewFromUrl);
         }
-    }, []); // Empty dependency array means this runs only once on mount
+    }, [viewComponents]);
 
 
     useEffect(() => {
         const handleResize = () => {
             const mobile = window.innerWidth < 768;
             setIsMobileView(mobile);
-            // Sidebar is always open on desktop, closed by default on mobile
             setIsSidebarOpen(!mobile);
         };
         window.addEventListener('resize', handleResize);
@@ -79,7 +78,6 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
 
     return (
         <div className="flex h-screen bg-brand-dark text-white font-sans">
-             {/* Mobile overlay */}
             <AnimatePresence>
                 {isSidebarOpen && isMobileView && (
                     <motion.div
@@ -93,7 +91,6 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
                 )}
             </AnimatePresence>
 
-            {/* Sidebar for Mobile */}
             <AnimatePresence>
                 {isMobileView && isSidebarOpen && (
                     <motion.div
@@ -115,7 +112,6 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
                 )}
             </AnimatePresence>
 
-             {/* Sidebar for Desktop */}
             {!isMobileView && (
                 <Sidebar 
                     activeView={activeView} 

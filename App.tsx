@@ -177,10 +177,14 @@ const App: React.FC = () => {
                     setSession(currentSession);
                     setUserProfile(profile);
                     
+                    // **NOVA LÓGICA DE VERIFICAÇÃO DE CHAVE**
+                    // 1. Prioriza sempre a chave guardada localmente pelo utilizador.
                     let keyToUse = window.localStorage.getItem('user_gemini_api_key');
                     
+                    // 2. Se não houver chave local, verifica se o utilizador é admin.
                     if (!keyToUse && profile.isAdmin) {
                         try {
+                            // 3. Se for admin, tenta buscar a chave principal do backend.
                             keyToUse = await getAdminApiKey();
                         } catch (e) {
                             console.error("FATAL ERROR: Could not fetch admin API key from Supabase function.", e);
@@ -189,11 +193,13 @@ const App: React.FC = () => {
                         }
                     }
 
+                    // 4. Se, depois de tudo, uma chave foi encontrada (local ou de admin), inicializa o cliente.
                     if (keyToUse) {
                         initializeGeminiClient(keyToUse);
                         initializeGoogleDriveService(keyToUse);
                         setApiKeyStatus('set');
                     } else {
+                        // 5. Se não, o utilizador não é admin e não tem chave local, então pede uma.
                         initializeGeminiClient('');
                         initializeGoogleDriveService('');
                         setApiKeyStatus('pending');

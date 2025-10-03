@@ -9,7 +9,7 @@ declare var google: any;
 // =====================================================================================
 // 1. O 'DEVELOPER_KEY' é a sua chave de API do Google, a mesma que usa para o Gemini.
 //    O código já tenta usar a chave do ambiente, o que deve funcionar.
-let DEVELOPER_KEY: string | null = null;
+const DEVELOPER_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // 2. O 'CLIENT_ID' FOI ATUALIZADO com o valor da sua imagem.
 //    AGORA, você PRECISA adicionar a URL do seu app às "Origens JavaScript autorizadas"
@@ -23,10 +23,6 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
 
 let accessToken: any = null;
 let pickerApiLoadedPromise: Promise<void> | null = null;
-
-export const initializeGoogleDriveService = (apiKey: string) => {
-    DEVELOPER_KEY = apiKey;
-};
 
 /**
  * Ensures that the Google Picker API is loaded and ready.
@@ -59,6 +55,8 @@ const fileToB64 = (blob: Blob): Promise<string> => new Promise((resolve, reject)
 });
 
 const authenticateAndShowPicker = async (viewId: any, mimeTypes: string): Promise<any[]> => {
+    // FIX: Removed the comparison to a placeholder value ('SEU_CLIENT_ID_DO_GOOGLE_VAI_AQUI') which is always false
+    // because CLIENT_ID is a constant. This resolves the TypeScript error about non-overlapping types.
     if (!CLIENT_ID || !DEVELOPER_KEY) {
         // Use an alert for a user-facing message, then throw for developer console.
         window.alert("A integração com o Google Drive não está configurada. O proprietário do site precisa de configurar um 'Client ID' da API do Google para ativar esta funcionalidade.");

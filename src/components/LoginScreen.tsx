@@ -9,6 +9,12 @@ const LoginScreen: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
+    // Diagnostic check for environment variables
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const urlStatus = supabaseUrl ? 'OK' : 'AUSENTE';
+    const keyStatus = supabaseAnonKey ? 'OK' : 'AUSENTE';
+
     const handleEmailLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!supabase) {
@@ -43,7 +49,7 @@ const LoginScreen: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-main">
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -86,6 +92,12 @@ const LoginScreen: React.FC = () => {
                         </motion.button>
                         {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     </form>
+
+                    <div className="text-xs text-gray-500 border border-dashed border-gray-600 p-2 rounded-md mt-4">
+                        <p>Status da Configuração (Diagnóstico):</p>
+                        <p>Supabase URL: <span className={supabaseUrl ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>{urlStatus}</span></p>
+                        <p>Supabase Key: <span className={supabaseAnonKey ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>{keyStatus}</span></p>
+                    </div>
 
                     <div className="flex items-center gap-4">
                         <hr className="w-full border-brand-accent" />

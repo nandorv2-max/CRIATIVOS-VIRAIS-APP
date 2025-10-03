@@ -177,17 +177,23 @@ const App: React.FC = () => {
                     setSession(currentSession);
                     setUserProfile(profile);
                     
-                    // LÓGICA DE VERIFICAÇÃO DE CHAVE RESTAURADA (MAIS SIMPLES)
-                    // Esta lógica foi simplificada para remover uma dependência que poderia estar a causar lentidão.
-                    const keyToUse = window.localStorage.getItem('user_gemini_api_key');
+                    let keyToUse = window.localStorage.getItem('user_gemini_api_key');
                     
+                    if (!keyToUse && profile.isAdmin) {
+                        try {
+                            keyToUse = await getAdminApiKey();
+                        } catch (e) {
+                            console.error("FATAL ERROR: Could not fetch admin API key from Supabase function.", e);
+                            setApiKeyStatus('error');
+                            return;
+                        }
+                    }
+
                     if (keyToUse) {
                         initializeGeminiClient(keyToUse);
                         initializeGoogleDriveService(keyToUse);
                         setApiKeyStatus('set');
                     } else {
-                        // Se não houver chave, pede sempre, independentemente do papel do utilizador.
-                        // Para administradores, a chave pode ser obtida no painel de administração se necessário.
                         initializeGeminiClient('');
                         initializeGoogleDriveService('');
                         setApiKeyStatus('pending');
@@ -310,7 +316,7 @@ const App: React.FC = () => {
             );
         }
         
-        if (apiKeyStatus === 'pending') {
+        if (apiKeyStatus === 'pending' && !userProfile.isAdmin) {
              return (
                  <motion.div key="apikey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <ApiKeyPrompt onApiKeySubmit={handleApiKeySubmit} />

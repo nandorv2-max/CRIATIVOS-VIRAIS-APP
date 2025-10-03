@@ -43,7 +43,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
         settings: <SettingsView userProfile={userProfile} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
         upgrade: <PendingApprovalView showLogout={false} />,
         projects: <ProjectsView />,
-        admin: <AdminView userProfile={userProfile} refetchUserProfile={refetchUserProfile} />,
+        admin: <AdminView />,
         personalizacao: <ThemeCustomizationView />,
         imageGenerator: <ImageGeneratorView />,
         mockupGenerator: <MockupGeneratorView />,

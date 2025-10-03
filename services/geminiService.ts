@@ -130,8 +130,8 @@ export const generateVideo = async (
     aspectRatio: string,
     userRole: UserRole
 ): Promise<Blob> => {
-    // 1. Authorization check - Fail fast for unauthorized users
-    const authorizedRoles: UserRole[] = ['premium', 'professional', 'admin'];
+    // 1. Authorization check - Adicionado 'bee' para o seu teste
+    const authorizedRoles: UserRole[] = ['premium', 'professional', 'admin', 'bee'];
     if (!authorizedRoles.includes(userRole)) {
          throw new Error("O seu plano atual não permite a geração de vídeos. Faça um upgrade para aceder a esta funcionalidade.");
     }
@@ -176,7 +176,8 @@ export const generateVideo = async (
         const videoBlob = await response.blob();
 
         // 3. Deduct credits ONLY after the entire process is successful.
-        if (userRole !== 'admin') {
+        // Adicionado 'bee' para não deduzir créditos durante o teste.
+        if (userRole !== 'admin' && userRole !== 'bee') {
             try {
                 await deductVideoCredits(20);
             } catch (deductionError: any) {

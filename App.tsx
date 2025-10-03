@@ -121,19 +121,20 @@ const App: React.FC = () => {
     const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
         const isAdmin = MASTER_USERS.includes(user.email ?? '');
         
-        const { data, error } = await supabase
+        // Step 1: Fetch the core user profile
+        const { data: profileData, error: profileError } = await supabase
             .from('user_profiles')
-            .select('*, plan:plans(*)')
+            .select('*')
             .eq('id', user.id)
             .maybeSingle();
-
-        if (error || !data) {
-            if (error) {
-                console.error("Error fetching user profile, using defaults:", error.message);
+    
+        // If profile doesn't exist or there's an error, return a default profile
+        if (profileError || !profileData) {
+            if (profileError) {
+                console.error("Error fetching user profile, using defaults:", profileError.message);
             } else {
                  console.warn(`User profile not found for ${user.id}, using default values. This is expected on first login.`);
             }
-
             return {
                 ...user,
                 id: user.id,
@@ -146,15 +147,34 @@ const App: React.FC = () => {
                 storage_used_bytes: 0,
                 isAdmin,
             };
-        } else {
-            return {
-                ...user,
-                ...data, // Spread all properties from the fetched data
-                id: user.id, // Ensure user.id from auth isn't overwritten
-                email: user.email ?? '', // Ensure email from auth is used
-                isAdmin, // Our calculated admin status
-            };
         }
+    
+        // Step 2: If profile exists and has a plan_id, fetch the plan details
+        let planData = null;
+        if (profileData.plan_id) {
+            const { data: pData, error: planError } = await supabase
+                .from('plans')
+                .select('*')
+                .eq('id', profileData.plan_id)
+                .single();
+            
+            if (planError) {
+                console.warn(`Could not fetch plan details for plan_id ${profileData.plan_id}:`, planError.message);
+                // Don't throw an error, just proceed without plan data
+            } else {
+                planData = pData;
+            }
+        }
+    
+        // Step 3: Combine all data and return
+        return {
+            ...user,
+            ...profileData,
+            id: user.id,
+            email: user.email ?? '',
+            plan: planData, // Attach the fetched plan data
+            isAdmin,
+        };
     }, []);
 
     const refetchUserProfile = useCallback(async () => {

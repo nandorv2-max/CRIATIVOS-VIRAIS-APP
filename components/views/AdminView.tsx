@@ -30,6 +30,7 @@ import {
     adminGetSetting, // Importa a nova função
 } from '../../services/databaseService.ts';
 import type { UserProfile, Plan, PublicAsset, Category, Feature, CreditCost, AssetVisibility, PublicProject, PublicProjectCategory, WebhookLog } from '../../types.ts';
+import type { User } from '@supabase/gotrue-js';
 import EditUserModal from '../EditUserModal.tsx';
 import Button from '../Button.tsx';
 import AdminSetupInstructions from '../AdminSetupInstructions.tsx';
@@ -516,9 +517,13 @@ const AssetGallery: React.FC<{
     );
 };
 
+interface AdminViewProps {
+    userProfile: (User & UserProfile & { isAdmin: boolean; }) | null;
+    refetchUserProfile: () => void;
+}
 
 // Main Admin View
-const AdminView: React.FC = () => {
+const AdminView: React.FC<AdminViewProps> = ({ userProfile, refetchUserProfile }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('users');
     
     // Data states
@@ -603,6 +608,11 @@ const AdminView: React.FC = () => {
         try {
             await adminUpdateUserDetails(userId, updates);
             setEditingUser(null);
+            
+            if (userProfile?.id === userId) {
+                await refetchUserProfile();
+            }
+
             await fetchData();
         } catch (err: any) { setError(`Falha ao atualizar o utilizador: ${err.message}`); }
     };

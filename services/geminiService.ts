@@ -46,7 +46,7 @@ export const describeImage = async (base64ImageData: string): Promise<string> =>
     const client = getClient();
     try {
         const model = client.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-        const prompt = "Describe this image in detail for an AI image generator prompt. Focus on the subject's clothing, pose, the environment, lighting, colors, and overall style. Be descriptive and concise. The description should be in English.";
+        const prompt = "Descreva esta imagem em detalhes para um prompt de gerador de imagens de IA. Foque nas roupas, pose, ambiente, iluminação, cores e estilo geral do sujeito. Seja descritivo e conciso.";
         const imagePart = base64ToPart(base64ImageData);
 
         const result = await model.generateContent([prompt, imagePart]);
@@ -138,28 +138,51 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 
 export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
     const client = getClient();
-    try {
-        const response = await client.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: prompt,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: aspectRatio,
-            },
-        });
+    for (let i = 0; i < 3; i++) { // 3 total attempts
+        try {
+            const fullPrompt = `${prompt}. A imagem deve ter uma proporção de ${aspectRatio}.`;
+            
+            const response: GenerateContentResponse = await client.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: { parts: [{ text: fullPrompt }] },
+                config: {
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
+                },
+            });
 
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64ImageBytes}`;
+            if (response?.candidates?.[0]?.content?.parts) {
+                let textResponse = '';
+                for (const part of response.candidates[0].content.parts) {
+                    if (part.inlineData && part.inlineData.data) {
+                        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    }
+                    if (part.text) {
+                        textResponse += part.text + ' ';
+                    }
+                }
+                if (textResponse.trim()) {
+                     throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
+                }
+            }
+
+            let failureReason = "Nenhuma imagem foi gerada na resposta.";
+            if (response?.promptFeedback?.blockReason) {
+                failureReason = `A geração de imagem foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`;
+            } else if (!response?.candidates || response.candidates.length === 0) {
+                 failureReason = "A geração de imagem falhou: Nenhum resultado válido foi retornado pelo modelo.";
+            }
+
+            throw new Error(failureReason);
+
+        } catch (error) {
+            console.error(`Attempt ${i + 1} failed for generateImageFromPrompt:`, error);
+            if (i === 2) { // Last attempt
+                throw error;
+            }
+            await delay(2000 * (i + 1)); // Wait before retrying
         }
-        
-        throw new Error("Nenhuma imagem foi gerada.");
-
-    } catch (error) {
-        console.error("Image generation from prompt failed:", error);
-        throw error;
     }
+    throw new Error("A geração de imagem falhou após várias tentativas.");
 };
 
 export const generateVideo = async (
@@ -242,17 +265,17 @@ export const generateVideo = async (
 
 
 export const removeBackground = async (base64ImageData: string): Promise<string> => {
-    const prompt = "CRITICAL TASK: Your only function is to remove the background from the provided image. Identify the primary subject(s) and perfectly isolate them. The output MUST be a high-resolution PNG of ONLY the subject(s) on a fully transparent background. Do not add shadows, reflections, or any other elements. Do not alter the subject in any way.";
+    const prompt = "TAREFA CRÍTICA: Sua única função é remover o fundo da imagem fornecida. Identifique o(s) sujeito(s) principal(is) e isole-o(s) perfeitamente. O resultado DEVE ser um PNG de alta resolução APENAS do(s) sujeito(s) em um fundo totalmente transparente. Não adicione sombras, reflexos ou quaisquer outros elementos. Não altere o sujeito de forma alguma.";
     return generateImageWithRetry({ prompt, base64ImageData });
 };
 
 export const magicExpand = async (base64ImageData: string, prompt: string): Promise<string> => {
-    const fullPrompt = `CRITICAL TASK: You are a professional photo editor. The user has provided an image and wants to expand it. Your task is to intelligently fill the new, empty areas around the original image content. The generated areas must seamlessly blend with the original image in terms of style, lighting, texture, and content. The expansion should feel like a natural continuation of the scene. User's creative direction: "${prompt}"`;
+    const fullPrompt = `TAREFA CRÍTICA: Você é um editor de fotos profissional. O usuário forneceu uma imagem e deseja expandi-la. Sua tarefa é preencher inteligentemente as novas áreas vazias ao redor do conteúdo da imagem original. As áreas geradas devem se misturar perfeitamente com a imagem original em termos de estilo, iluminação, textura e conteúdo. A expansão deve parecer uma continuação natural da cena. Direção criativa do usuário: "${prompt}"`;
     return generateImageWithRetry({ prompt: fullPrompt, base64ImageData });
 };
 
 export const magicCapture = async (base64ImageData: string, objectToCapture: string): Promise<string> => {
-    const prompt = `CRITICAL TASK: From the provided image, precisely extract ONLY the object described as: "${objectToCapture}". The output MUST be a high-resolution PNG of the extracted object on a fully transparent background. Ensure the edges are clean and accurate. Do not include any part of the original background or other objects.`;
+    const prompt = `TAREFA CRÍTICA: Da imagem fornecida, extraia precisamente APENAS o objeto descrito como: "${objectToCapture}". O resultado DEVE ser um PNG de alta resolução do objeto extraído em um fundo totalmente transparente. Garanta que as bordas estejam limpas e precisas. Não inclua nenhuma parte do fundo original ou outros objetos.`;
     return generateImageWithRetry({ prompt, base64ImageData });
 };
 
@@ -260,14 +283,14 @@ export const translateText = async (text: string, targetLanguage: string = 'Engl
     const client = getClient();
     if (!text.trim()) return text;
     try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
-            config: {
-                temperature: 0.1,
-            }
-        });
-        return response.text.trim();
+        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = `Traduza o seguinte texto para ${targetLanguage}. Retorne apenas o texto traduzido, sem nenhum preâmbulo ou explicação. Texto para traduzir: "${text}"`;
+        
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const translatedText = response.text();
+        
+        return translatedText.trim();
     } catch (error) {
         console.error("Translation failed:", error);
         throw new Error("Failed to translate text.");
@@ -285,34 +308,34 @@ export const getModelInstruction = (
 
     switch (templateKey) {
         case 'worldTour':
-            instruction = `A photorealistic image of a person, closely resembling the person in the provided reference image. The person is now at a new location: ${prompt.id}. The specific scene is: "${prompt.base}". The person must be seamlessly integrated into the new environment, matching lighting, shadows, and perspective. Maintain the person's identity from the reference.`;
+            instruction = `Uma imagem fotorrealista de uma pessoa, muito parecida com a pessoa na imagem de referência fornecida. A pessoa está agora em um novo local: ${prompt.id}. A cena específica é: "${prompt.base}". A pessoa deve ser perfeitamente integrada ao novo ambiente, combinando iluminação, sombras e perspectiva. Mantenha a identidade da pessoa da referência.`;
             break;
         
         case 'cenasDoInstagram':
-            instruction = `Generate a photorealistic image for a social media post, based on this scene: "${prompt.base}". The image must look high-quality and authentic. The person in the reference image must be the subject. CRITICAL: The final image must NOT contain any text, watermarks, or captions written on it.`;
+            instruction = `Gerar uma imagem fotorrealista para um post de rede social, baseada nesta cena: "${prompt.base}". A imagem deve parecer de alta qualidade e autêntica. A pessoa na imagem de referência deve ser o sujeito. CRÍTICO: A imagem final NÃO deve conter nenhum texto, marca d'água ou legendas escritas nela.`;
             if (aspectRatio) {
-                instruction += ` The image aspect ratio must be strictly ${aspectRatio}.`;
+                instruction += ` A proporção da imagem deve ser estritamente ${aspectRatio}.`;
             }
             break;
 
         case 'cleanAndSwap':
-             instruction = `CRITICAL TASK: First, remove any UI elements or text overlays from the provided image to get a clean background. Second, identify the main person and replace them with a new person with these exact traits: gender: ${swapGender}, ethnicity: ${swapEthnicity}, hair color: ${swapHairColor}, age: ${swapAge}. The new person must be photorealistically integrated into the cleaned background, matching the original's lighting and pose as closely as possible. The final output must be a single, cohesive, high-resolution image.`;
+             instruction = `TAREFA CRÍTICA: Primeiro, remova quaisquer elementos de interface ou sobreposições de texto da imagem fornecida para obter um fundo limpo. Segundo, identifique a pessoa principal e substitua-a por uma nova pessoa com estas características exatas: gênero: ${swapGender}, etnia: ${swapEthnicity}, cor do cabelo: ${swapHairColor}, idade: ${swapAge}. A nova pessoa deve ser integrada de forma fotorrealista no fundo limpo, combinando a iluminação e a pose do original o mais próximo possível. O resultado final deve ser uma única imagem coesa e de alta resolução.`;
             break;
             
         case 'mockupGenerator':
-             instruction = `**TASK: Create a photorealistic mockup.**
-             1. Use the provided artwork (the main input image).
-             2. Apply this artwork realistically onto a "${prompt.base}".
-             3. The final image must be a high-quality product photo. The artwork must perfectly conform to the product's shape, texture, lighting, and shadows.`;
+             instruction = `**TAREFA: Criar um mockup fotorrealista.**
+             1. Use a arte fornecida (a imagem de entrada principal).
+             2. Aplique esta arte de forma realista em um(a) "${prompt.base}".
+             3. A imagem final deve ser uma foto de produto de alta qualidade. A arte deve se conformar perfeitamente à forma, textura, iluminação e sombras do produto.`;
             break;
         
         case 'productStudio':
-            instruction = `**TASK: Create a professional product photograph.**
-            1. Take the provided product image. You MUST perfectly remove its original background.
-            2. Place the isolated product into a new, photorealistic scene described as: "${prompt.base}".
-            3. The lighting on the product must perfectly match the new scene's lighting, which is: "${lookbookStyle}".
-            4. The camera perspective for the final shot must be: "${options.cameraAngle}".
-            The final image must be indistinguishable from a real, high-end product advertisement photo.`;
+            instruction = `**TAREFA: Criar uma fotografia de produto profissional.**
+            1. Pegue a imagem do produto fornecida. Você DEVE remover perfeitamente o fundo original.
+            2. Coloque o produto isolado em uma nova cena fotorrealista descrita como: "${prompt.base}".
+            3. A iluminação no produto deve corresponder perfeitamente à iluminação da nova cena, que é: "${lookbookStyle}".
+            4. A perspectiva da câmera para a foto final deve ser: "${options.cameraAngle}".
+            A imagem final deve ser indistinguível de uma foto de anúncio de produto de alta qualidade real.`;
             break;
 
         default:

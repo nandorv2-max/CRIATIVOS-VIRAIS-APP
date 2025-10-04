@@ -44,6 +44,7 @@ const base64ToPart = (base64Data: string): Part => {
 
 interface GenerateImageParams {
     prompt: string;
+    apiKey: string; // API key is now a required parameter
     base64ImageData?: string;
     base64Mask?: string;
     detailImages?: string[];
@@ -74,7 +75,11 @@ export const getChatResponse = async (history: { role: 'user' | 'model', parts: 
 
 
 export const generateImageWithRetry = async (params: GenerateImageParams, retries = 3): Promise<string> => {
-    const client = getClient();
+    if (!params.apiKey) {
+        throw new Error("A chave de API é necessária para gerar imagens.");
+    }
+    const client = new GoogleGenAI({ apiKey: params.apiKey });
+
     for (let i = 0; i < retries; i++) {
         try {
             const { prompt, base64ImageData, base64Mask, detailImages } = params;
@@ -143,8 +148,11 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
     throw new Error("A geração de imagem falhou após várias tentativas.");
 };
 
-export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
-    const client = getClient();
+export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1', apiKey: string): Promise<string> => {
+    if (!apiKey) {
+        throw new Error("A chave de API é necessária para gerar imagens.");
+    }
+    const client = new GoogleGenAI({ apiKey });
     try {
         const response = await client.models.generateImages({
             model: 'imagen-4.0-generate-001',
@@ -250,17 +258,20 @@ export const generateVideo = async (
 
 export const removeBackground = async (base64ImageData: string): Promise<string> => {
     const prompt = "CRITICAL TASK: Your only function is to remove the background from the provided image. Identify the primary subject(s) and perfectly isolate them. The output MUST be a high-resolution PNG of ONLY the subject(s) on a fully transparent background. Do not add shadows, reflections, or any other elements. Do not alter the subject in any way.";
-    return generateImageWithRetry({ prompt, base64ImageData });
+    const apiKey = window.localStorage.getItem('user_gemini_api_key') || '';
+    return generateImageWithRetry({ prompt, base64ImageData, apiKey });
 };
 
 export const magicExpand = async (base64ImageData: string, prompt: string): Promise<string> => {
     const fullPrompt = `CRITICAL TASK: You are a professional photo editor. The user has provided an image and wants to expand it. Your task is to intelligently fill the new, empty areas around the original image content. The generated areas must seamlessly blend with the original image in terms of style, lighting, texture, and content. The expansion should feel like a natural continuation of the scene. User's creative direction: "${prompt}"`;
-    return generateImageWithRetry({ prompt: fullPrompt, base64ImageData });
+    const apiKey = window.localStorage.getItem('user_gemini_api_key') || '';
+    return generateImageWithRetry({ prompt: fullPrompt, base64ImageData, apiKey });
 };
 
 export const magicCapture = async (base64ImageData: string, objectToCapture: string): Promise<string> => {
     const prompt = `CRITICAL TASK: From the provided image, precisely extract ONLY the object described as: "${objectToCapture}". The output MUST be a high-resolution PNG of the extracted object on a fully transparent background. Ensure the edges are clean and accurate. Do not include any part of the original background or other objects.`;
-    return generateImageWithRetry({ prompt, base64ImageData });
+    const apiKey = window.localStorage.getItem('user_gemini_api_key') || '';
+    return generateImageWithRetry({ prompt, base64ImageData, apiKey });
 };
 
 export const translateText = async (text: string, targetLanguage: string = 'English'): Promise<string> => {

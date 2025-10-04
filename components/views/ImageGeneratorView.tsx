@@ -65,6 +65,13 @@ const ImageGeneratorView: React.FC = () => {
             setError("Por favor, insira um comando.");
             return;
         }
+        
+        const apiKey = window.localStorage.getItem('user_gemini_api_key');
+        if (!apiKey) {
+            setError("A sua chave de API não foi encontrada. Por favor, verifique as configurações.");
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
         setResultImage(null);
@@ -72,7 +79,7 @@ const ImageGeneratorView: React.FC = () => {
         const finalPrompt = [prompt.trim(), ...Array.from(selectedEnhancers)].join(', ');
 
         try {
-            const imageUrl = await generateImageFromPrompt(finalPrompt, aspectRatio);
+            const imageUrl = await generateImageFromPrompt(finalPrompt, aspectRatio, apiKey);
             setResultImage(imageUrl);
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";

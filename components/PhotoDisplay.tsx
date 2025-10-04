@@ -47,7 +47,7 @@ const PhotoDisplay: React.FC<PhotoDisplayProps> = ({ era, imageUrl, onDownload, 
 
     return (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className={containerClass}>
-            <div className={imageContainerClass}><img src={imageUrl} alt={`Você em ${era}`} className={`w-full ${isPolaroid ? 'h-full object-cover' : 'h-auto'}`} /></div>
+            <div className={imageContainerClass}><img src={imageUrl} alt={`Você em ${era}`} className={`w-full ${isPolaroid ? 'h-full object-cover' : 'h-auto'}`} style={{ WebkitTouchCallout: 'default' }} /></div>
             {showLabel && <p className={textClass}>{era}</p>}
             <div className="absolute top-3 right-3 z-10" ref={menuRef}>
                 <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-full bg-brand-dark/60 text-white hover:bg-brand-dark/80 transition-colors backdrop-blur-sm shadow-lg" aria-label="Opções"><IconOptions /></button>

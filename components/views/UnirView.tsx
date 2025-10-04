@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useContext } from 'react';
 import { motion } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from '../../components/Button.tsx';
@@ -8,6 +8,7 @@ import { generateImageWithRetry, translateText } from '../../services/geminiServ
 import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
 import { addCreation } from '../../utils/db.ts';
 import type { Creation, UploadedAsset } from '../../types.ts';
+import { AssetContext } from '../../types.ts';
 import MyCreationsModal from '../MyCreationsModal.tsx';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
@@ -93,6 +94,7 @@ const UnirView: React.FC = () => {
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
     const [uploadTarget, setUploadTarget] = useState<'base' | 'blend' | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const assetContext = useContext(AssetContext);
 
     const handleFilesUpload = async (files: FileList, target: 'base' | 'blend') => {
         setError(null);
@@ -280,6 +282,7 @@ const UnirView: React.FC = () => {
         try {
             const file = base64ToFile(resultImage, `GenIA-Blend-${Date.now()}.png`);
             await uploadUserAsset(file);
+            await assetContext?.refetchAssets();
             alert('Imagem salva na sua galeria com sucesso!');
         } catch(err) {
             console.error("Failed to save to gallery:", err);

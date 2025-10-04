@@ -82,11 +82,10 @@ interface ControlsPanelContentProps {
 }
 
 const ControlsPanelContent: React.FC<ControlsPanelContentProps> = React.memo(({
-    isMobile, onClose, history, undo, redo, activeTab, setActiveTab, liveAdjustments,
-    setLiveAdjustments, pushHistory, presetFileInputRef, isUploadingPreset, handlePresetFileChange,
-    openPresetSections, togglePresetSection, userPresets, handleApplyPreset, isLoadingPresets,
-    publicPresets, aiEditPrompt, setAiEditPrompt, handleAiEdit, image, isLoadingAI,
-    handleSaveToGallery, handleDownload,
+    isMobile, onClose, history, undo, redo, activeTab, setActiveTab, liveAdjustments, setLiveAdjustments, pushHistory,
+    presetFileInputRef, isUploadingPreset, handlePresetFileChange, openPresetSections, togglePresetSection,
+    userPresets, handleApplyPreset, isLoadingPresets, publicPresets, aiEditPrompt, setAiEditPrompt,
+    handleAiEdit, image, isLoadingAI, handleSaveToGallery, handleDownload,
     openEnhancerSections, toggleEnhancerSection, selectedEnhancers, handleEnhancerChange,
     onTriggerUpload, activePresetId
 }) => (
@@ -514,6 +513,7 @@ const ProfessionalEditorView: React.FC = () => {
         try {
             const file = base64ToFile(dataUrl, `AuraStudio-Edited-${nanoid(6)}.png`);
             await uploadUserAsset(file);
+            await assetContext?.refetchAssets();
             alert('Imagem salva na galeria!');
         } catch(err) {
             setError('Falha ao salvar na galeria.');

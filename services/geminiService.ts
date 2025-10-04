@@ -42,6 +42,23 @@ const base64ToPart = (base64Data: string): Part => {
     };
 };
 
+export const describeImage = async (base64ImageData: string): Promise<string> => {
+    const client = getClient();
+    try {
+        const model = client.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const prompt = "Describe this image in detail for an AI image generator prompt. Focus on the subject's clothing, pose, the environment, lighting, colors, and overall style. Be descriptive and concise. The description should be in English.";
+        const imagePart = base64ToPart(base64ImageData);
+
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+        return text.trim();
+    } catch (error) {
+        console.error("Image description failed:", error);
+        throw new Error("Failed to generate a description for the image.");
+    }
+};
+
 interface GenerateImageParams {
     prompt: string;
     base64ImageData?: string;

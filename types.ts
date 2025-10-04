@@ -1,5 +1,7 @@
 import React, { createContext } from 'react';
 
+export const ApiKeyContext = createContext<string | null>(null);
+
 export interface Prompt {
     id: string;
     base: string;
@@ -37,7 +39,8 @@ export interface ModelInstructionOptions {
 export interface GeneratedImage {
     id: string;
     status: 'pending' | 'success' | 'failed';
-    imageUrl: string | null;
+    imageUrl: string | null; // This will now be the display-optimized URL
+    fullImageUrl?: string | null; // This will store the original, full-resolution URL
 }
 
 // Creative Editor Types
@@ -104,6 +107,7 @@ export interface VideoLayer extends BaseLayer {
     src: string;
     startTime: number;
     endTime: number;
+
     duration: number;
     volume: number;
     isMuted: boolean;

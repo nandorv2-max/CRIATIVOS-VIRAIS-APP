@@ -7,7 +7,7 @@ import ApiKeyPrompt from './components/ApiKeyPrompt.tsx';
 import PendingApprovalView from './components/views/PendingApprovalView.tsx';
 import { supabase } from './services/supabaseClient.ts';
 import { initializeGeminiClient } from './services/geminiService.ts';
-import { ThemeContext, AssetContext } from './types.ts';
+import { ThemeContext, AssetContext, ApiKeyContext } from './types.ts';
 import type { UserProfile, UploadedAsset, Theme, AssetContextType } from './types.ts';
 import { MASTER_USERS, TEMPLATES } from './constants.ts';
 import { getUserAssets, getThemeSettings, getUserFeatures } from './services/databaseService.ts';
@@ -116,6 +116,7 @@ const App: React.FC = () => {
     const [session, setSession] = useState<Session | null>(null);
     const [userProfile, setUserProfile] = useState<(User & UserProfile & { isAdmin: boolean }) | null>(null);
     const [loading, setLoading] = useState(true);
+    const [apiKey, setApiKey] = useState<string | null>(null);
     const [apiKeyStatus, setApiKeyStatus] = useState<'pending' | 'set' | 'error'>('pending');
 
     const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
@@ -195,17 +196,17 @@ const App: React.FC = () => {
                     }
 
                     if (keyToUse) {
-                        initializeGeminiClient(keyToUse);
+                        setApiKey(keyToUse);
                         setApiKeyStatus('set');
                     } else {
-                        initializeGeminiClient('');
+                        setApiKey(null);
                         setApiKeyStatus('pending');
                     }
                 } else {
                     if (!isMounted) return;
                     setSession(null);
                     setUserProfile(null);
-                    initializeGeminiClient('');
+                    setApiKey(null);
                     setApiKeyStatus('pending');
                 }
             } catch (error) {
@@ -273,8 +274,8 @@ const App: React.FC = () => {
         initTouchEventBridge();
     }, []);
 
-    const handleApiKeySubmit = (apiKey: string) => {
-        initializeGeminiClient(apiKey);
+    const handleApiKeySubmit = (submittedApiKey: string) => {
+        setApiKey(submittedApiKey);
         setApiKeyStatus('set');
     };
     
@@ -328,9 +329,11 @@ const App: React.FC = () => {
         if (apiKeyStatus === 'set') {
             return (
                  <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
-                    <AssetProvider>
-                       <MainDashboard userProfile={userProfile} refetchUserProfile={refetchUserProfile} />
-                    </AssetProvider>
+                    <ApiKeyContext.Provider value={apiKey}>
+                        <AssetProvider>
+                           <MainDashboard userProfile={userProfile} refetchUserProfile={refetchUserProfile} />
+                        </AssetProvider>
+                    </ApiKeyContext.Provider>
                 </motion.div>
             );
         }

@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import Button from '../../components/Button.tsx';
 import { IconUpload, IconSparkles, IconTrash, IconImage, IconDownload, IconLayers, IconTranslate, IconX, IconImageIcon } from '../../components/Icons.tsx';
 import ErrorNotification from '../../components/ErrorNotification.tsx';
-import { generateImageWithRetry, translateText } from '../../services/geminiService.ts';
+import { generateImageWithRetry } from '../../services/geminiService.ts';
 import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
 import { addCreation } from '../../utils/db.ts';
 import type { Creation, UploadedAsset } from '../../types.ts';
@@ -25,7 +25,6 @@ const UnirView: React.FC = () => {
     
     const [resultImage, setResultImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState<'generate' | 'translate' | 'gallery' | null>(null);
-    const [isTranslating, setIsTranslating] = useState<'prompt' | 'negative' | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const [isCreationsModalOpen, setIsCreationsModalOpen] = useState(false);
@@ -117,23 +116,6 @@ const UnirView: React.FC = () => {
         }
     };
 
-    const handleTranslate = async (type: 'prompt' | 'negative') => {
-        const textToTranslate = type === 'prompt' ? prompt : negativePrompt;
-        const setText = type === 'prompt' ? setPrompt : setNegativePrompt;
-        
-        if (!textToTranslate.trim()) return;
-
-        setIsTranslating(type);
-        try {
-            const translated = await translateText(textToTranslate, 'English');
-            setText(translated);
-        } catch (e) {
-            setError("A tradução falhou. Por favor, verifique a sua API Key.");
-        } finally {
-            setIsTranslating(null);
-        }
-    };
-
     const handleGenerate = async () => {
         if (!baseImage) {
             setError("Por favor, adicione uma imagem base para começar.");
@@ -148,21 +130,21 @@ const UnirView: React.FC = () => {
         setError(null);
         setResultImage(null);
 
-        let modelInstruction = `**CRITICAL TASK: PHOTOREALISTIC IMAGE FUSION**
-        You are an expert image editor. Your task is to create a single, cohesive, photorealistic image by masterfully blending subjects from a 'base image' and several 'blend images' into a new scene described by the user's prompt. The result must NOT look like a collage.
+        let modelInstruction = `**TAREFA CRÍTICA: FUSÃO DE IMAGEM FOTORREALISTA**
+        Você é um editor de imagens especialista. Sua tarefa é criar uma única imagem coesa e fotorrealista, misturando magistralmente os assuntos de uma 'imagem base' e várias 'imagens de mistura' em uma nova cena descrita pelo prompt do usuário. O resultado NÃO deve parecer uma colagem.
 
-        **MANDATORY PROCESS:**
-        1.  **SUBJECT ANALYSIS:** From the 'base image', identify and extract the main subject. From each 'blend image', identify and extract their main subjects.
-        2.  **SCENE CREATION:** Generate a completely new, photorealistic scene based on the user's prompt. The lighting, shadows, and perspective must be consistent.
-        3.  **SEAMLESS INTEGRATION:** Place all extracted subjects into the new scene. **TOP PRIORITY:** Adjust lighting, shadows, scale, and perspective of each subject to perfectly match the new environment and each other.
+        **PROCESSO OBRIGATÓRIO:**
+        1.  **ANÁLISE DO ASSUNTO:** Da 'imagem base', identifique e extraia o assunto principal. De cada 'imagem de mistura', identifique e extraia seus assuntos principais.
+        2.  **CRIAÇÃO DA CENA:** Gere uma cena completamente nova e fotorrealista com base no prompt do usuário. A iluminação, as sombras e a perspectiva devem ser consistentes.
+        3.  **INTEGRAÇÃO PERFEITA:** Coloque todos os assuntos extraídos na nova cena. **PRIORIDADE MÁXIMA:** Ajuste a iluminação, sombras, escala e perspectiva de cada assunto para corresponder perfeitamente ao novo ambiente e uns aos outros.
         
-        **USER'S PROMPT:** "${prompt}"
-        ${negativePrompt ? `**NEGATIVE PROMPT (AVOID THESE):** "${negativePrompt}"\n` : ''}
-        **SETTINGS:**
-        ${settings.matchColor ? "- Harmonize the color palette of all subjects and the scene, taking cues from the 'base image' for a consistent look." : ''}
-        - The creative influence of the 'blend images' on the final result should be moderate (Strength: ${settings.strength}%).
+        **PROMPT DO USUÁRIO:** "${prompt}"
+        ${negativePrompt ? `**PROMPT NEGATIVO (EVITE ISSO):** "${negativePrompt}"\n` : ''}
+        **CONFIGURAÇÕES:**
+        ${settings.matchColor ? "- Harmonize a paleta de cores de todos os assuntos e da cena, inspirando-se na 'imagem base' para um visual consistente." : ''}
+        - A influência criativa das 'imagens de mistura' no resultado final deve ser moderada (Força: ${settings.strength}%).
         
-        The final output must be a single, realistic photograph where all elements exist naturally together.`;
+        O resultado final deve ser uma única fotografia realista onde todos os elementos coexistem naturalmente.`;
 
         try {
             const newImage = await generateImageWithRetry({
@@ -299,12 +281,10 @@ const UnirView: React.FC = () => {
                         <div className="relative">
                             <label className="text-sm font-medium text-gray-300 mb-1 block">Prompt</label>
                              <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ex: 'Um cão a usar o chapéu, sentado no sofá...'" className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 h-24 focus:outline-none focus:ring-1 focus:ring-brand-primary text-white resize-y" />
-                             <button onClick={() => handleTranslate('prompt')} disabled={isTranslating === 'prompt'} className="absolute bottom-2 right-2 p-1.5 rounded hover:bg-brand-accent" title="Traduzir para Inglês">{isTranslating === 'prompt' ? <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-gray-200"></div> : <IconTranslate className="w-4 h-4" />}</button>
                         </div>
                          <div className="relative">
                             <label className="text-sm font-medium text-gray-300 mb-1 block">Prompt Negativo</label>
                              <textarea value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)} placeholder="Ex: 'desenho animado, má qualidade, texto'" className="w-full bg-brand-light border border-brand-accent rounded-lg p-2 h-16 focus:outline-none focus:ring-1 focus:ring-brand-primary text-white resize-y" />
-                             <button onClick={() => handleTranslate('negative')} disabled={isTranslating === 'negative'} className="absolute bottom-2 right-2 p-1.5 rounded hover:bg-brand-accent" title="Traduzir para Inglês">{isTranslating === 'negative' ? <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-gray-200"></div> : <IconTranslate className="w-4 h-4" />}</button>
                         </div>
 
                          <div>

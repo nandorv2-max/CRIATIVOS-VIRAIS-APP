@@ -279,24 +279,6 @@ export const magicCapture = async (base64ImageData: string, objectToCapture: str
     return generateImageWithRetry({ prompt, base64ImageData });
 };
 
-export const translateText = async (text: string, targetLanguage: string = 'English'): Promise<string> => {
-    const client = getClient();
-    if (!text.trim()) return text;
-    try {
-        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const prompt = `Traduza o seguinte texto para ${targetLanguage}. Retorne apenas o texto traduzido, sem nenhum preâmbulo ou explicação. Texto para traduzir: "${text}"`;
-        
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const translatedText = response.text();
-        
-        return translatedText.trim();
-    } catch (error) {
-        console.error("Translation failed:", error);
-        throw new Error("Failed to translate text.");
-    }
-};
-
 export const getModelInstruction = (
     templateKey: string, 
     prompt: Prompt, 

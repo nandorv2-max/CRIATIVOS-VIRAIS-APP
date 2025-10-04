@@ -1,5 +1,5 @@
 import type { Templates } from './types.ts';
-import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine, IconImageIcon, IconTshirt, IconPackage, IconMagicWand, IconLayers, IconBrush } from './components/Icons.tsx';
+import { IconSparkles, IconRocket, IconMovie, IconInstagram, IconWorld, IconTools, IconBroom, IconCombine, IconImageIcon, IconTshirt, IconPackage, IconMagicWand, IconLayers, IconBrush, IconStyleTransfer } from './components/Icons.tsx';
 
 export const MASTER_USERS = ['helioarreche@gmail.com', 'nandorv2@gmail.com', 'nandorv3@gmail.com'];
 
@@ -52,11 +52,11 @@ export const TEMPLATES: Templates = {
         isPolaroid: false,
         prompts: []
     },
-    sceneCopier: {
-        name: 'Copiador de Cenas',
+    sceneRecreator: {
+        name: 'Recriador de Cenas',
         description: 'Recrie o estilo e a cena de uma foto de inspiração com a sua própria imagem.',
         icon: '🪄',
-        sidebarIcon: IconMagicWand,
+        sidebarIcon: IconStyleTransfer,
         isPolaroid: false,
         prompts: []
     },

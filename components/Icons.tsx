@@ -159,3 +159,11 @@ export const IconBlur: React.FC<{className?: string}> = ({className}) => (<svg x
 export const IconGrain: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className={className}><circle cx="12" cy="12" r="1"></circle><circle cx="10" cy="15" r="1"></circle><circle cx="14" cy="15" r="1"></circle><circle cx="15" cy="10" r="1"></circle><circle cx="9" cy="10" r="1"></circle></svg>);
 export const IconDivineRays: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2v8"></path><path d="M12 18v4"></path><path d="M4.93 4.93l4.24 4.24"></path><path d="M14.83 14.83l4.24 4.24"></path><path d="M19.07 4.93l-4.24 4.24"></path><path d="M9.17 14.83l-4.24 4.24"></path><path d="M22 12h-8"></path><path d="M10 12H2"></path></svg>);
 export const IconLongExposure: React.FC<{className?: string}> = ({className}) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 11h13.41a2 2 0 0 1 1.79 3.03l-1.07 2.14a2 2 0 0 1-1.79 1.13H4.66a2 2 0 0 1-1.79-3.03l1.07-2.14A2 2 0 0 1 4.66 11H4Z"></path><path d="M4 11V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5"></path><path d="M15 4V2"></path><path d="M9 4V2"></path></svg>);
+export const IconStyleTransfer: React.FC<{className?: string; style?: React.CSSProperties}> = ({className, style}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+        <path d="M14 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"></path>
+        <path d="M18 9h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"></path>
+        <path d="m14 13-3-3 3-3"></path>
+        <path d="M11 13h9"></path>
+    </svg>
+);

@@ -51,11 +51,29 @@ export const describeImage = async (base64ImageData: string): Promise<string> =>
 
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
+
+        if (response.promptFeedback?.blockReason) {
+            throw new Error(`A descrição foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`);
+        }
+
         const text = response.text();
+        if (!text) {
+            throw new Error("O modelo não retornou uma descrição de texto.");
+        }
         return text.trim();
     } catch (error) {
         console.error("Image description failed:", error);
-        throw new Error("Failed to generate a description for the image.");
+        if (error instanceof Error) {
+            if (error.message.includes('API key not valid')) {
+                throw new Error("A sua chave de API do Google não é válida. Por favor, verifique-a nas Configurações.");
+            }
+            // Avoid duplicating the error message if it's already one of ours.
+            if (error.message.startsWith("A descrição foi bloqueada") || error.message.startsWith("O modelo não retornou")) {
+                throw error;
+            }
+            throw new Error(`Falha na API: ${error.message}`);
+        }
+        throw new Error("Falha ao gerar a descrição da imagem devido a um erro desconhecido.");
     }
 };
 

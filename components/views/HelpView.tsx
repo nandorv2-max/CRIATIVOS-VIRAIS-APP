@@ -1,3 +1,4 @@
+' character.">
 import React from 'react';
 import { motion } from 'framer-motion';
 import { IconChevronDown } from '../Icons.tsx';
@@ -49,7 +50,7 @@ const HelpView: React.FC = () => {
                             <li>Uma nova janela se abrirá. Clique em <strong>"Create API key in new project"</strong> (Criar chave de API em um novo projeto).</li>
                             <li>Sua chave será gerada e exibida. Ela é uma longa sequência de letras e números. Clique no ícone de cópia ao lado dela.</li>
                             <li>Volte para o nosso aplicativo. Se for seu primeiro acesso, uma tela solicitará a chave. Cole-a no campo indicado e clique em "Continuar".</li>
-                            <li>Se você já estiver logado, vá para <strong>Configurações</strong> (no menu do seu perfil) > <strong>Conta e Plano</strong> e clique em <strong>"Gerir Chave de API"</strong> para colar sua nova chave.</li>
+                            <li>Se você já estiver logado, vá para <strong>Configurações</strong> (no menu do seu perfil) &gt; <strong>Conta e Plano</strong> e clique em <strong>"Gerir Chave de API"</strong> para colar sua nova chave.</li>
                         </ol>
                         <p className="mt-4 text-sm text-yellow-400"><strong>Importante:</strong> Sua chave de API é secreta. Não a compartilhe publicamente. Ela fica salva apenas no seu navegador.</p>
                     </AccordionItem>

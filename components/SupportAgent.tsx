@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconHelpCircle, IconX, IconUser, IconSparkles } from './Icons.tsx';
 import { helpContent } from './views/HelpView.tsx';
 import { getChatResponse } from '../services/geminiService.ts';
 import { createSupportTicket } from '../services/databaseService.ts';
 import Button from './Button.tsx';
+import { ApiKeyContext } from '../types.ts';
 
 type Message = {
     role: 'user' | 'model';
@@ -17,6 +18,7 @@ const SupportAgent: React.FC = () => {
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const apiKey = useContext(ApiKeyContext);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,7 +36,6 @@ const SupportAgent: React.FC = () => {
         setIsLoading(true);
 
         try {
-            const apiKey = window.localStorage.getItem('user_gemini_api_key');
             if (!apiKey) {
                 throw new Error("A chave de API do usuário não foi encontrada.");
             }
@@ -59,7 +60,7 @@ const SupportAgent: React.FC = () => {
         setIsLoading(true);
         try {
             const subject = messages.find(m => m.role === 'user')?.parts.substring(0, 50) || 'Pedido de Suporte';
-            const messagesToSave = messages.map(m => ({ content: m.parts, sender: m.sender || m.role }));
+            const messagesToSave = messages.map(m => ({ content: m.parts, sender: m.role as 'user' | 'ai' }));
             await createSupportTicket(subject, messagesToSave);
             const confirmationMessage: Message = { role: 'model', parts: "Seu pedido de suporte foi criado! Nossa equipe entrará em contato por e-mail em breve. Esta conversa foi encerrada." };
             setMessages(prev => [...prev, confirmationMessage]);

@@ -220,6 +220,11 @@ export const updateSupportTicketStatus = async (ticketId: string, newStatus: Tic
     if (error) throw error;
 };
 
+export const adminAddSupportMessage = async (ticketId: string, content: string): Promise<void> => {
+    const { error } = await supabase.rpc('admin_add_support_message', { p_ticket_id: ticketId, p_content: content });
+    if (error) throw error;
+};
+
 
 // =========================================================================================
 // THEME & CUSTOMIZATION FUNCTIONS

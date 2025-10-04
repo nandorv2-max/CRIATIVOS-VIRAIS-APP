@@ -344,6 +344,35 @@ $$;
 -- ======= FIM DO SCRIPT DE MIGRAÇÃO v2 =======
 `;
 
+const MIGRATION_SCRIPT_003_SUPPORT_ENHANCEMENTS = `-- =====================================================================================
+-- SCRIPT DE MIGRAÇÃO v3 - MELHORIAS NO SUPORTE
+-- OBJETIVO: Adicionar a capacidade de administradores responderem aos tickets.
+--
+-- INSTRUÇÕES:
+-- 1. Execute este script UMA ÚNICA VEZ no seu SQL Editor do Supabase.
+-- 2. Este script é SEGURO e NÃO apaga nenhuma tabela ou dado existente.
+-- =====================================================================================
+
+CREATE OR REPLACE FUNCTION public.admin_add_support_message(p_ticket_id uuid, p_content text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Apenas administradores podem executar esta função
+    IF public.get_my_role() <> 'admin' THEN
+        RAISE EXCEPTION 'PERMISSION_DENIED';
+    END IF;
+
+    -- Insere a mensagem do administrador na tabela de mensagens
+    INSERT INTO public.support_messages (ticket_id, content, sender)
+    VALUES (p_ticket_id, p_content, 'admin');
+END;
+$$;
+
+-- ======= FIM DO SCRIPT DE MIGRAÇÃO v3 =======
+`;
+
 interface UserAssetsSetupInstructionsProps {
     error?: string | null;
     onRetry?: () => void;
@@ -397,6 +426,18 @@ const UserAssetsSetupInstructions: React.FC<UserAssetsSetupInstructionsProps> = 
                         </div>
                         <pre className="bg-brand-dark p-4 rounded-md text-xs overflow-auto max-h-40 font-mono border border-brand-accent">
                             <code>{MIGRATION_SCRIPT_002_SUPPORT}</code>
+                        </pre>
+                    </div>
+
+                    <div className="border border-brand-accent p-4 rounded-lg">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-lg font-semibold">Script v3 (Respostas de Suporte)</h2>
+                            <button onClick={() => handleCopy(MIGRATION_SCRIPT_003_SUPPORT_ENHANCEMENTS, 'v3')} className="bg-brand-primary text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-brand-secondary transition-colors">
+                                Copiar Script v3
+                            </button>
+                        </div>
+                        <pre className="bg-brand-dark p-4 rounded-md text-xs overflow-auto max-h-40 font-mono border border-brand-accent">
+                            <code>{MIGRATION_SCRIPT_003_SUPPORT_ENHANCEMENTS}</code>
                         </pre>
                     </div>
                 </div>

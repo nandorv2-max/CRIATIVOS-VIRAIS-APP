@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from '../Button.tsx';
@@ -9,6 +9,7 @@ import LoadingCard from '../LoadingCard.tsx';
 import { ENHANCER_CATEGORIES } from '../../constants.ts';
 import { cropImage, base64ToFile } from '../../utils/imageUtils.ts';
 import { uploadUserAsset } from '../../services/databaseService.ts';
+import { ApiKeyContext } from '../../types.ts';
 
 const ImageGeneratorView: React.FC = () => {
     const [prompt, setPrompt] = useState('');
@@ -25,6 +26,7 @@ const ImageGeneratorView: React.FC = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    const apiKey = useContext(ApiKeyContext);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -66,7 +68,6 @@ const ImageGeneratorView: React.FC = () => {
             return;
         }
         
-        const apiKey = window.localStorage.getItem('user_gemini_api_key');
         if (!apiKey) {
             setError("A sua chave de API não foi encontrada. Por favor, verifique as configurações.");
             return;

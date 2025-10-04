@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconRotate, IconBrush, IconTrash, IconSparkles, IconX } from './Icons.tsx';
-// FIX: Corrected import path for geminiService to point to the correct file in the services directory.
 import { generateImageWithRetry } from '../services/geminiService.ts';
 import { toBase64 } from '../utils/imageUtils.ts';
+import { ApiKeyContext } from '../types.ts';
 
 interface EditModalProps {
     isOpen: boolean;
@@ -35,6 +35,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     const isDrawingRef = useRef(false);
     const lastPosRef = useRef<{ x: number, y: number } | null>(null);
     const detailFileInputRef = useRef<HTMLInputElement>(null);
+    const apiKey = useContext(ApiKeyContext);
 
     const resetState = useCallback(() => {
         setPrompt('');
@@ -125,7 +126,10 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     };
 
     const handleGenerate = async () => {
-        if (!prompt || !imageUrl) return;
+        if (!prompt || !imageUrl || !apiKey) {
+            setError("Prompt ou chave de API não encontrados.");
+            return;
+        }
         setIsLoading(true);
         setError(null);
         try {
@@ -138,6 +142,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
                 base64ImageData: imageUrl,
                 base64Mask: maskDataUrl,
                 detailImages: detailImages,
+                apiKey,
             });
             setEditedImageUrl(newImageUrl);
         } catch (err) {
@@ -155,7 +160,6 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
         onClose();
     };
 
-    // FIX: A component must return a ReactNode. Added a valid JSX structure for the modal.
     if (!isOpen) return null;
 
     return (
@@ -214,5 +218,4 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, imageUrl, onAppl
     );
 };
 
-// FIX: Added a default export to resolve "Module has no default export" error.
 export default EditModal;

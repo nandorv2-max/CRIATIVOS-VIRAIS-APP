@@ -6,7 +6,6 @@ import MainDashboard from './components/MainDashboard.tsx';
 import ApiKeyPrompt from './components/ApiKeyPrompt.tsx';
 import PendingApprovalView from './components/views/PendingApprovalView.tsx';
 import { supabase } from './services/supabaseClient.ts';
-import { initializeGeminiClient } from './services/geminiService.ts';
 import { ThemeContext, AssetContext, ApiKeyContext } from './types.ts';
 import type { UserProfile, UploadedAsset, Theme, AssetContextType } from './types.ts';
 import { MASTER_USERS, TEMPLATES } from './constants.ts';

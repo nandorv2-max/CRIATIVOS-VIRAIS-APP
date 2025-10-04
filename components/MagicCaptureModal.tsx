@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconX, IconSparkles } from './Icons.tsx';
-// FIX: Corrected import path for geminiService to point to the correct file in the services directory.
 import { generateImageWithRetry } from '../services/geminiService.ts';
 import ErrorNotification from './ErrorNotification.tsx';
+import { ApiKeyContext } from '../../types.ts';
 
 interface MagicCaptureModalProps {
     isOpen: boolean;
@@ -17,10 +17,15 @@ const MagicCaptureModal: React.FC<MagicCaptureModalProps> = ({ isOpen, onClose, 
     const [prompt, setPrompt] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const apiKey = useContext(ApiKeyContext);
 
     const handleApplyCapture = async () => {
         if (!image || !prompt.trim()) {
             setError("Por favor, descreva o objeto que deseja capturar.");
+            return;
+        }
+        if (!apiKey) {
+            setError("A sua chave de API não foi encontrada.");
             return;
         }
         setIsLoading(true);
@@ -30,6 +35,7 @@ const MagicCaptureModal: React.FC<MagicCaptureModalProps> = ({ isOpen, onClose, 
             const resultUrl = await generateImageWithRetry({
                 prompt: modelInstruction,
                 base64ImageData: image,
+                apiKey,
             });
             onApply(resultUrl);
         } catch (err) {

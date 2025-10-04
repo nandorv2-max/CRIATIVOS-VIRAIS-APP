@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { nanoid } from 'nanoid';
@@ -9,7 +9,6 @@ import LoadingCard from '../../components/LoadingCard.tsx';
 import ErrorCard from '../../components/ErrorCard.tsx';
 import ErrorNotification from '../../components/ErrorNotification.tsx';
 import CameraModal from '../../components/CameraModal.tsx';
-// FIX: Changed to a default import for EditModal.
 import EditModal from '../../components/EditModal.tsx';
 import RadioPill from '../../components/RadioPill.tsx';
 import AlbumDownloadButton from '../../components/AlbumDownloadButton.tsx';
@@ -23,6 +22,7 @@ import { uploadUserAsset, createSignedUrlForPath } from '../../services/database
 import { TEMPLATES, ENHANCER_CATEGORIES } from '../../constants.ts';
 import type { GeneratedImage, Prompt, Template, UserProfile, UploadedAsset } from '../../types.ts';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
+import { ApiKeyContext } from '../../types.ts';
 
 interface GeneratorViewProps {
     templateKey: string;
@@ -58,6 +58,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
     // State for enhancers
     const [openEnhancerSections, setOpenEnhancerSections] = useState<Set<string>>(new Set());
     const [selectedEnhancers, setSelectedEnhancers] = useState<Set<string>>(new Set());
+    const apiKey = useContext(ApiKeyContext);
     
     const template = TEMPLATES[templateKey];
 
@@ -108,7 +109,6 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
     };
 
     const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        // FIX: Cast event target to `any` to access properties in environments with incomplete DOM typings.
         const file = (event.target as any).files?.[0];
         if (file) {
             setIsUploading(true); setError(null);
@@ -154,7 +154,6 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         }
     };
 
-    // FIX: Added handler for Google Drive uploads.
     const handleGoogleDriveUpload = async () => {
         setIsUploadModalOpen(false);
         setIsUploading(true);
@@ -178,12 +177,14 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         if (!uploadedImage) { setError("Por favor, carregue uma foto para começar!"); return; }
         if (templateKey === 'worldTour' && !selectedLocation) { setError("Por favor, selecione um destino!"); return; }
         if (templateKey === 'cenasDoInstagram' && !instagramScenePrompt.trim()) { setError("Por favor, descreva a cena."); return; }
+        if (!apiKey) {
+            setError("A sua chave de API não foi encontrada. Por favor, verifique as configurações.");
+            return;
+        }
 
         setIsLoading(true); setError(null);
-        // FIX: Use optional chaining and cast to `any` for scrollIntoView to prevent runtime errors if ref is null.
         setTimeout(() => { (resultsRef.current as any)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
         
-        // FIX: Corrected property name `customLookStyle` to `customLookbookStyle` to match the type definition.
         const options = { hairColors: [], swapGender, swapEthnicity, swapHairColor, swapAge, lookbookStyle: '', customLookbookStyle: '' };
         
         const promptsForGeneration = getPromptsForTemplate();
@@ -197,7 +198,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         let translatedBasePrompt = instagramScenePrompt;
         if (templateKey === 'cenasDoInstagram') {
             try {
-                translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
+                translatedBasePrompt = await translateText(instagramScenePrompt, 'English', apiKey);
             } catch (e) {
                 setError("A tradução do prompt falhou. A gerar com o prompt original.");
                 console.error("Translation failed:", e);
@@ -222,7 +223,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
                     modelInstruction += `. Apply the following visual styles: ${enhancersString}`;
                 }
 
-                const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage });
+                const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage, apiKey });
                 setGeneratedImages(prev => prev.map((img, index) => index === i ? { ...img, status: 'success', imageUrl } : img));
             } catch (err) {
                 console.error(`Falha ao gerar imagem para ${p.id}:`, err);
@@ -237,11 +238,15 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
             setError("Imagem de upload não encontrada para regenerar.");
             return;
         }
+        if (!apiKey) {
+            setError("A sua chave de API não foi encontrada para regenerar.");
+            return;
+        }
         
         let promptsForGeneration = getPromptsForTemplate();
         
         if (templateKey === 'cenasDoInstagram' && instagramScenePrompt) {
-             const translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
+             const translatedBasePrompt = await translateText(instagramScenePrompt, 'English', apiKey);
              promptsForGeneration = Array.from({ length: numImages }, (_, i) => ({
                 id: `Variação ${i + 1}`,
                 base: `${translatedBasePrompt}${i > 0 ? `, variação ${i + 1}` : ''}`
@@ -267,7 +272,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
                 modelInstruction += `. Apply the following visual styles: ${enhancersString}`;
             }
 
-            const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage });
+            const imageUrl = await generateImageWithRetry({ prompt: modelInstruction, base64ImageData: uploadedImage, apiKey });
             
             setGeneratedImages(prev => prev.map((img, index) => 
                 index === imageIndex 
@@ -364,7 +369,6 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         }
     };
     
-    // FIX: A component must return a ReactNode. Added a return statement to the component function.
     return (
         <>
             <ErrorNotification message={error} onDismiss={() => setError(null)} />
@@ -378,7 +382,6 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
                     setIsUploadModalOpen(false);
                     setIsGalleryPickerModalOpen(true);
                 }}
-                // FIX: Added missing 'onGoogleDriveUpload' prop to satisfy the component's interface.
                 onGoogleDriveUpload={handleGoogleDriveUpload}
                 galleryEnabled={true}
             />

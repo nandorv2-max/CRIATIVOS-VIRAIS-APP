@@ -3,7 +3,6 @@ import type { UserProfile } from '../../types.ts';
 import Button from '../Button.tsx';
 import ApiKeyManagerModal from '../ApiKeyManagerModal.tsx';
 import { updateUserProfile } from '../../services/databaseService.ts';
-import { initializeGeminiClient } from '../../services/geminiService.ts';
 
 interface SettingsViewProps {
     userProfile: UserProfile | null;
@@ -78,7 +77,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ userProfile, refetchUserPro
 
     const handleSaveApiKey = (apiKey: string) => {
         window.localStorage.setItem('user_gemini_api_key', apiKey);
-        initializeGeminiClient(apiKey);
+        // The app will automatically pick up the new key on the next reload/session change.
+        // For immediate effect, we could force a reload, but it's better to let the context handle it.
+        alert('Chave de API guardada! A alteração terá efeito total ao recarregar a aplicação.');
     };
 
     const storageUsedBytes = userProfile.storage_used_bytes;

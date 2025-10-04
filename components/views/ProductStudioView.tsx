@@ -1,12 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react';
 import Button from '../Button.tsx';
 import { IconUpload, IconImage, IconDownload, IconImageIcon } from '../Icons.tsx';
 import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
-// FIX: Corrected import path for geminiService to point to the correct file in the services directory.
 import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService.ts';
 import { uploadUserAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
 import { nanoid } from 'nanoid';
-import { Prompt, UploadedAsset } from '../../types.ts';
+import { Prompt, UploadedAsset, ApiKeyContext } from '../../types.ts';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
@@ -24,6 +23,7 @@ const ProductStudioView: React.FC = () => {
 
     const [isUploadOptionsModalOpen, setIsUploadOptionsModalOpen] = useState(false);
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
+    const apiKey = useContext(ApiKeyContext);
 
     const handleProductImageUpload = async (file: File | null) => {
         if (!file) return;
@@ -67,6 +67,10 @@ const ProductStudioView: React.FC = () => {
             setError("Por favor, carregue uma imagem do produto e descreva a cena.");
             return;
         }
+        if (!apiKey) {
+            setError("A sua chave de API não foi encontrada.");
+            return;
+        }
         setIsLoading(true);
         setError(null);
         setResultImage(null);
@@ -79,6 +83,7 @@ const ProductStudioView: React.FC = () => {
             const imageUrl = await generateImageWithRetry({
                 prompt: modelInstruction,
                 base64ImageData: productImage,
+                apiKey,
             });
             setResultImage(imageUrl);
         } catch (err) {

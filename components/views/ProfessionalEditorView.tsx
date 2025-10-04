@@ -13,7 +13,7 @@ import ErrorNotification from '../ErrorNotification.tsx';
 import type { UploadedAsset, PublicAsset, Preset } from '../../types.ts';
 import { parseDngPreset } from '../../utils/dngPresetParser.ts';
 import SkeletonLoader from '../SkeletonLoader.tsx';
-import { AssetContext } from '../../types.ts';
+import { AssetContext, ApiKeyContext } from '../../types.ts';
 import EffectsToolbar from '../EffectsToolbar.tsx';
 import { ENHANCER_CATEGORIES } from '../../constants.ts';
 
@@ -264,6 +264,7 @@ const ProfessionalEditorView: React.FC = () => {
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     
     const [effectsPreviewStyle, setEffectsPreviewStyle] = useState<React.CSSProperties>({});
+    const apiKey = useContext(ApiKeyContext);
 
     const assetContext = useContext(AssetContext);
     const userPresets = assetContext?.assets.filter(a => a.type === 'dng') || [];
@@ -521,7 +522,10 @@ const ProfessionalEditorView: React.FC = () => {
     };
     
     const handleBackgroundBlur = async () => {
-        if (!image) return;
+        if (!image || !apiKey) {
+            setError("Imagem ou chave de API não encontrada.");
+            return;
+        }
         setIsLoadingAI('bgBlur');
         setError(null);
         try {
@@ -571,7 +575,10 @@ const ProfessionalEditorView: React.FC = () => {
     };
 
     const handleApplyAiEffect = async (effect: 'grain' | 'rays' | 'vibrantColor' | 'magicFocus' | 'longExposure') => {
-        if (!image) return;
+        if (!image || !apiKey) {
+            setError("Imagem ou chave de API não encontrada.");
+            return;
+        }
         setIsLoadingAI(effect);
         setError(null);
         
@@ -598,6 +605,7 @@ const ProfessionalEditorView: React.FC = () => {
             const resultBase64 = await generateImageWithRetry({
                 prompt: prompt,
                 base64ImageData: image.src,
+                apiKey,
             });
             const newImage = new Image();
             newImage.crossOrigin = 'anonymous';
@@ -613,7 +621,10 @@ const ProfessionalEditorView: React.FC = () => {
     };
 
     const handleAiEdit = useCallback(async () => {
-        if (!image || !aiEditPrompt.trim()) return;
+        if (!image || !aiEditPrompt.trim() || !apiKey) {
+            setError("Imagem, prompt ou chave de API não encontrados.");
+            return;
+        }
         setIsLoadingAI('ai-edit');
         setError(null);
         try {
@@ -621,6 +632,7 @@ const ProfessionalEditorView: React.FC = () => {
             const resultBase64 = await generateImageWithRetry({
                 prompt: finalPrompt,
                 base64ImageData: image.src,
+                apiKey,
             });
             const img = new Image();
             img.crossOrigin = 'anonymous';
@@ -635,7 +647,7 @@ const ProfessionalEditorView: React.FC = () => {
         } finally {
             setIsLoadingAI(null);
         }
-    }, [image, aiEditPrompt, selectedEnhancers, setImageAndPushHistory]);
+    }, [image, aiEditPrompt, selectedEnhancers, setImageAndPushHistory, apiKey]);
 
     const handleApplyPreset = async (asset: PublicAsset | UploadedAsset) => {
         if (activePresetId === asset.id) {

@@ -82,55 +82,72 @@ const HelpView: React.FC = () => {
 
                 <Section title="Guia dos Módulos">
                     <FaqItem question="Gerador de Imagem">
-                        <p>Cria imagens do zero a partir de uma descrição em texto (prompt). Quanto mais detalhado o seu prompt, melhor o resultado.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
-                        <p>Escreva o que você quer ver, em inglês, no campo "Comando". Use os "Potenciadores" para refinar o estilo. Escolha o tamanho e clique em "Gerar".</p>
+                        <p>Cria imagens do zero a partir de uma descrição em texto (prompt).</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>No campo "Comando", escreva uma descrição detalhada da imagem que você quer criar (em inglês).</li>
+                            <li>Opcional: Expanda as seções de "Potenciadores" para adicionar estilos específicos (iluminação, tipo de câmera, etc.).</li>
+                            <li>Selecione o "Tamanho da Imagem" desejado.</li>
+                            <li>Clique em "Gerar Imagem" e aguarde o resultado.</li>
+                        </ol>
                         <h4 className="font-semibold mt-3 text-white">Exemplos de Prompts:</h4>
                         <CodeBlock>{`A photorealistic portrait of an ancient warrior queen, intricate silver armor, piercing blue eyes, cinematic lighting.`}</CodeBlock>
-                        <CodeBlock>{`A cute, fluffy red panda wearing a tiny wizard hat, sitting on a pile of old books, magical glowing particles in the air, digital art.`}</CodeBlock>
                     </FaqItem>
                     <FaqItem question="Cenas do Instagram / Viagem pelo Mundo">
-                        <p>Estes módulos colocam a pessoa da sua foto em um novo cenário. Ideal para criar conteúdo para redes sociais de forma rápida e criativa.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
-                        <p>Carregue sua foto. Para "Viagem pelo Mundo", escolha um destino. Para "Cenas do Instagram", descreva a cena desejada. Use os "Potenciadores" para melhorar o estilo e clique em "Gerar".</p>
+                        <p>Coloca a pessoa da sua foto em um novo cenário. Ideal para criar conteúdo para redes sociais.</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Clique em "Carregar Foto" e envie uma imagem sua.</li>
+                            <li>Para "Viagem pelo Mundo", selecione um destino na lista.</li>
+                            <li>Para "Cenas do Instagram", descreva o cenário onde você quer que a pessoa esteja.</li>
+                            <li>Opcional: Use os "Potenciadores" para refinar o estilo da imagem final.</li>
+                            <li>Ajuste o "Número de Imagens" que deseja gerar.</li>
+                            <li>Clique em "Gerar Imagens".</li>
+                        </ol>
                         <h4 className="font-semibold mt-3 text-white">Exemplos de Prompts (para Cenas do Instagram):</h4>
                         <CodeBlock>{`Trabalhando em um café moderno e elegante, com um laptop e uma xícara de café na mesa.`}</CodeBlock>
-                        <CodeBlock>{`Fazendo uma trilha em uma floresta exuberante, com raios de sol passando por entre as árvores.`}</CodeBlock>
                     </FaqItem>
                     <FaqItem question="Editor Profissional">
-                        <p>Oferece controle manual sobre ajustes de luz, cor e efeitos, além de ferramentas de edição com IA para fazer alterações específicas na sua foto.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
-                        <p>Carregue uma imagem. Use os sliders na aba "Ajustes" para edições manuais. Para edições com IA, escreva um comando no campo "Edição com IA" (ex: "mude a cor da camisa para vermelho") e clique em "Editar com IA".</p>
+                        <p>Oferece controle manual sobre ajustes de luz, cor e efeitos, além de ferramentas de edição com IA.</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Clique em "Carregar Imagem" para enviar a foto que deseja editar.</li>
+                            <li><strong>Para ajustes manuais:</strong> Na aba "Ajustes", use os sliders para controlar exposição, contraste, cores, etc.</li>
+                            <li><strong>Para edições com IA:</strong> No campo "Edição com IA", descreva a alteração que você quer fazer (em inglês).</li>
+                            <li>Clique em "Editar com IA".</li>
+                            <li><strong>Para aplicar efeitos rápidos:</strong> Use a barra de ferramentas na parte inferior da imagem para aplicar efeitos como "Desfocar Fundo".</li>
+                        </ol>
                         <h4 className="font-semibold mt-3 text-white">Exemplos de Prompts (para Edição com IA):</h4>
                         <CodeBlock>{`Remove the watch from the person's left wrist.`}</CodeBlock>
-                        <CodeBlock>{`Change the color of the car to a metallic dark blue.`}</CodeBlock>
                     </FaqItem>
                     <FaqItem question="Studio Criativo">
-                        <p>Sua tela em branco para projetos complexos. Crie designs completos adicionando imagens, vídeos, textos e formas em camadas. Use as ferramentas de IA para gerar imagens ou remover fundos diretamente na tela.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <p>Sua tela em branco para projetos complexos. Crie designs com imagens, vídeos, textos e IA.</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
                          <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
-                            <li><strong>Adicionar Elementos:</strong> Use a barra lateral esquerda para adicionar Texto, Formas, ou mídias da Galeria e seus Uploads.</li>
-                            <li><strong>Manipular Camadas:</strong> Clique para selecionar um elemento na tela. Arraste para mover. Use as alças nos cantos para redimensionar e a alça superior para rotacionar.</li>
-                            <li><strong>Painel de Propriedades (Direita):</strong> Com uma camada selecionada, ajuste sua posição (X, Y), tamanho, opacidade e outras propriedades específicas.</li>
-                            <li><strong>Barra Superior:</strong> As ferramentas mudam com a seleção. Para texto, você pode mudar a fonte, cor e alinhamento. Para formas, pode alterar o preenchimento.</li>
-                            <li><strong>Ferramentas de IA:</strong> Na barra lateral, use "IA Mágica" para gerar imagens a partir de um prompt ou usar o "Removedor de Fundo" em uma imagem selecionada.</li>
-                            <li><strong>Salvar/Carregar:</strong> No painel de Propriedades (quando nada está selecionado), use os botões para salvar seu projeto no computador/nuvem ou carregar um projeto existente.</li>
-                            <li><strong>Download:</strong> Use o botão "Fazer Download" para exportar seu design final como PNG, JPG ou MP4.</li>
+                            <li><strong>Adicionar Mídia:</strong> Na barra lateral esquerda, clique em "Uploads" para enviar suas imagens/vídeos ou "Galeria" para usar mídias prontas. Arraste o item desejado para a tela.</li>
+                            <li><strong>Adicionar Texto/Formas:</strong> Use as abas "Texto" e "Elementos" na barra lateral para adicionar esses itens.</li>
+                            <li><strong>Manipular Camadas:</strong> Clique em um item na tela para selecioná-lo. Arraste para mover. Use as alças para redimensionar e rotacionar.</li>
+                            <li><strong>Editar Propriedades:</strong> Com um item selecionado, o painel da direita mostrará suas propriedades (tamanho, posição, etc.). A barra superior mostrará opções de contexto (cor do texto, fonte, etc.).</li>
+                            <li><strong>Remover Fundo:</strong> Selecione uma imagem, vá para "IA Mágica" na barra lateral e clique em "Removedor de Fundo".</li>
+                            <li><strong>Adicionar Fontes/Presets:</strong> Na barra superior, com uma camada de texto selecionada, clique no seletor de fontes e depois em "Adicionar Fonte".</li>
+                            <li><strong>Salvar Projeto:</strong> No painel da direita (sem nada selecionado), clique em "Salvar Projeto" para salvá-lo na nuvem ou no seu computador (arquivo .brmp).</li>
+                            <li><strong>Carregar Projeto:</strong> No mesmo painel, clique em "Carregar Projeto" para abrir um projeto salvo.</li>
+                            <li><strong>Exportar:</strong> Clique em "Fazer Download" para exportar seu trabalho final como imagem ou vídeo.</li>
                         </ol>
                     </FaqItem>
                     <FaqItem question="Gerador de Mockups">
                         <p>Cria mockups de produtos (camisetas, canecas, etc.) aplicando sua arte de forma realista.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
                         <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
                             <li>Selecione o tipo de produto que deseja criar.</li>
                             <li>Na janela que abrir, clique para carregar sua arte (ex: seu logo, uma estampa).</li>
-                            <li>Opcionalmente, adicione instruções extras para a IA.</li>
+                            <li>Opcionalmente, adicione instruções extras para a IA (ex: "coloque a arte um pouco mais para cima").</li>
                             <li>Clique em "Gerar Mockup".</li>
                         </ol>
                     </FaqItem>
                     <FaqItem question="Estúdio de Produto">
                         <p>Cria fotos de produto profissionais, colocando seu item em um cenário virtual com iluminação de estúdio.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
                         <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
                             <li>Carregue uma imagem do seu produto (de preferência com fundo neutro).</li>
                             <li>Descreva a cena onde o produto deve ser inserido.</li>
@@ -141,30 +158,35 @@ const HelpView: React.FC = () => {
                         <CodeBlock>{`Um frasco de perfume sobre uma mesa de mármore preto, com algumas pétalas de rosa vermelha espalhadas ao redor e uma iluminação suave vindo da lateral.`}</CodeBlock>
                     </FaqItem>
                     <FaqItem question="Vídeo">
-                        <p>Anima uma foto sua, criando um vídeo curto com movimentos sutis. Ótimo para dar vida a retratos e posts.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
-                        <p>Carregue uma foto da pessoa. Descreva a animação desejada no campo de prompt. Escolha a proporção e o número de vídeos a serem gerados em sequência.</p>
+                        <p>Anima uma foto sua, criando um vídeo curto com movimentos sutis.</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Carregue uma foto da pessoa que será animada.</li>
+                            <li>No campo de prompt, descreva em inglês como a pessoa deve se mover.</li>
+                            <li>Escolha a "Proporção" (ex: 9:16 para Stories).</li>
+                            <li>Defina o "Número de Vídeos" para criar uma sequência.</li>
+                            <li>Clique em "Gerar Sequência".</li>
+                        </ol>
                         <h4 className="font-semibold mt-3 text-white">Exemplos de Prompts:</h4>
                         <CodeBlock>{`Animate the person in the image. They should be talking to the camera, as if explaining something in a UGC style.`}</CodeBlock>
-                        <CodeBlock>{`The person should smile gently and look around the room, with subtle, natural movements.`}</CodeBlock>
                     </FaqItem>
                     <FaqItem question="Limpar e Trocar">
-                        <p>Uma ferramenta especializada para limpar a interface de capturas de tela de jogos e, opcionalmente, trocar o personagem principal por outro com características diferentes.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <p>Limpa a interface de capturas de tela de jogos e, opcionalmente, troca o personagem principal.</p>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
                          <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
                             <li>Carregue a captura de tela do jogo.</li>
-                            <li>Selecione as características da pessoa que você quer que apareça na imagem (gênero, etnia, etc.).</li>
-                            <li>Clique em "Gerar". A IA irá remover a interface e substituir o personagem automaticamente.</li>
+                            <li>Selecione as características da nova pessoa que você quer que apareça na imagem.</li>
+                            <li>Clique em "Gerar". A IA irá remover a interface e substituir o personagem.</li>
                         </ol>
                     </FaqItem>
                     <FaqItem question="Unir (Image Blender)">
                         <p>Combina elementos de várias imagens em uma única criação coesa, guiada por um prompt.</p>
-                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <h4 className="font-semibold mt-3 text-white">Passo a Passo:</h4>
                          <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
-                            <li>Carregue a "Imagem Base", que servirá como referência principal de estilo e assunto.</li>
-                            <li>Carregue uma ou mais "Imagens para Misturar", que contêm elementos que você quer adicionar (ex: um chapéu, um animal, um objeto).</li>
-                            <li>Escreva um prompt descrevendo a cena final que você imagina.</li>
-                            <li>Ajuste as configurações e clique em "Gerar".</li>
+                            <li>Carregue a "Imagem Base" (a imagem principal).</li>
+                            <li>Carregue uma ou mais "Imagens para Misturar" (com os elementos a adicionar).</li>
+                            <li>No campo "Prompt", descreva a cena final, explicando como combinar os elementos.</li>
+                            <li>Ajuste as "Definições" e clique em "Gerar".</li>
                         </ol>
                         <h4 className="font-semibold mt-3 text-white">Exemplo de Uso:</h4>
                         <p><strong>Imagem Base:</strong> Foto de um homem em um sofá. <br/><strong>Imagem para Misturar:</strong> Foto de um chapéu de cowboy. <br/><strong>Prompt:</strong> "O homem no sofá agora está usando o chapéu de cowboy."</p>

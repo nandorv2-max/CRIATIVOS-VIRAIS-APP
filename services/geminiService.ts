@@ -1,7 +1,28 @@
-import { GoogleGenAI, Part, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
+
+let ai: GoogleGenAI | null = null;
+let currentApiKey: string | null = null;
+
+export const initializeGeminiClient = (apiKey: string) => {
+    if (apiKey) {
+        // FIX: The API key should be passed as a named parameter to the GoogleGenAI constructor.
+        ai = new GoogleGenAI({ apiKey });
+        currentApiKey = apiKey;
+    } else {
+        ai = null;
+        currentApiKey = null;
+    }
+};
+
+const getClient = (): GoogleGenAI => {
+    if (!ai) {
+        throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
+    }
+    return ai;
+};
 
 const base64ToPart = (base64Data: string): Part => {
     const match = base64Data.match(/^data:(image\/[a-z]+);base64,(.*)$/);
@@ -23,58 +44,26 @@ const base64ToPart = (base64Data: string): Part => {
 
 interface GenerateImageParams {
     prompt: string;
-    apiKey: string;
     base64ImageData?: string;
     base64Mask?: string;
     detailImages?: string[];
 }
 
-export const getChatResponse = async (history: { role: 'user' | 'model', parts: string }[], knowledgeBase: string, apiKey: string): Promise<string> => {
-    if (!apiKey) {
-        throw new Error("A chave de API é necessária para o chat.");
-    }
-    const client = new GoogleGenAI({ apiKey });
-    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const systemInstruction = `You are a helpful and friendly support agent for an application called AuraStudio. Your knowledge base is provided below. Answer the user's questions based ONLY on this information. Be concise and clear. If the user asks something not covered in the knowledge base, politely state that you don't have information on that topic and suggest they escalate to a human support agent.
-
-    **KNOWLEDGE BASE:**
-    ${knowledgeBase}`;
-
-    const chat = model.startChat({
-        history: history.map(h => ({ role: h.role, parts: [{ text: h.parts }] })),
-        systemInstruction: {
-            role: "system",
-            parts: [{ text: systemInstruction }],
-        },
-    });
-
-    const lastMessage = history[history.length - 1].parts;
-    const result = await chat.sendMessage(lastMessage);
-    const response = await result.response;
-    return response.text();
-};
-
-
 export const generateImageWithRetry = async (params: GenerateImageParams, retries = 3): Promise<string> => {
-    if (!params.apiKey) {
-        throw new Error("A chave de API é necessária para gerar imagens.");
-    }
-    const client = new GoogleGenAI({ apiKey: params.apiKey });
-
+    const client = getClient();
     for (let i = 0; i < retries; i++) {
         try {
             const { prompt, base64ImageData, base64Mask, detailImages } = params;
             
-            const parts: Part[] = [{ text: prompt }];
+            const parts: Part[] = [];
 
             if (base64ImageData) {
-                parts.unshift(base64ToPart(base64ImageData));
+                parts.push(base64ToPart(base64ImageData));
             }
             
             if (detailImages) {
                 detailImages.forEach(imgData => {
-                    parts.unshift(base64ToPart(imgData));
+                    parts.push(base64ToPart(imgData));
                 });
             }
             
@@ -82,24 +71,37 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
                  parts.push(base64ToPart(base64Mask));
             }
 
-            const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts }],
+            parts.push({ text: prompt });
+
+            const response: GenerateContentResponse = await client.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: { parts: parts },
+                config: {
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
+                },
             });
 
-            const response = result.response;
-
             if (response?.candidates?.[0]?.content?.parts) {
+                let textResponse = '';
                 for (const part of response.candidates[0].content.parts) {
                     if (part.inlineData && part.inlineData.data) {
                         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
                     }
+                    if (part.text) {
+                        textResponse += part.text + ' ';
+                    }
+                }
+                if (textResponse.trim()) {
+                     throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
                 }
             }
             
             let failureReason = "Nenhuma imagem foi gerada na resposta.";
             if (response?.promptFeedback?.blockReason) {
                 failureReason = `A geração de imagem foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`;
+                if (response.promptFeedback.blockReasonMessage) {
+                    failureReason += ` Detalhes: ${response.promptFeedback.blockReasonMessage}`;
+                }
             } else if (!response?.candidates || response.candidates.length === 0) {
                  failureReason = "A geração de imagem falhou: Nenhum resultado válido foi retornado pelo modelo.";
             }
@@ -117,22 +119,22 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
     throw new Error("A geração de imagem falhou após várias tentativas.");
 };
 
-export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1', apiKey: string): Promise<string> => {
-    if (!apiKey) {
-        throw new Error("A chave de API é necessária para gerar imagens.");
-    }
-    const client = new GoogleGenAI({ apiKey });
-    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
+    const client = getClient();
     try {
-        const result = await model.generateContent(`--aspect_ratio ${aspectRatio} ${prompt}`);
-        const response = result.response;
+        const response = await client.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: aspectRatio,
+            },
+        });
 
-        if (response?.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                }
-            }
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
         }
         
         throw new Error("Nenhuma imagem foi gerada.");
@@ -221,17 +223,34 @@ export const generateVideo = async (
     }
 };
 
-export const translateText = async (text: string, targetLanguage: string = 'English', apiKey: string): Promise<string> => {
-    if (!apiKey) {
-        throw new Error("A chave de API é necessária para tradução.");
-    }
-    const client = new GoogleGenAI({ apiKey });
+
+export const removeBackground = async (base64ImageData: string): Promise<string> => {
+    const prompt = "CRITICAL TASK: Your only function is to remove the background from the provided image. Identify the primary subject(s) and perfectly isolate them. The output MUST be a high-resolution PNG of ONLY the subject(s) on a fully transparent background. Do not add shadows, reflections, or any other elements. Do not alter the subject in any way.";
+    return generateImageWithRetry({ prompt, base64ImageData });
+};
+
+export const magicExpand = async (base64ImageData: string, prompt: string): Promise<string> => {
+    const fullPrompt = `CRITICAL TASK: You are a professional photo editor. The user has provided an image and wants to expand it. Your task is to intelligently fill the new, empty areas around the original image content. The generated areas must seamlessly blend with the original image in terms of style, lighting, texture, and content. The expansion should feel like a natural continuation of the scene. User's creative direction: "${prompt}"`;
+    return generateImageWithRetry({ prompt: fullPrompt, base64ImageData });
+};
+
+export const magicCapture = async (base64ImageData: string, objectToCapture: string): Promise<string> => {
+    const prompt = `CRITICAL TASK: From the provided image, precisely extract ONLY the object described as: "${objectToCapture}". The output MUST be a high-resolution PNG of the extracted object on a fully transparent background. Ensure the edges are clean and accurate. Do not include any part of the original background or other objects.`;
+    return generateImageWithRetry({ prompt, base64ImageData });
+};
+
+export const translateText = async (text: string, targetLanguage: string = 'English'): Promise<string> => {
+    const client = getClient();
     if (!text.trim()) return text;
     try {
-        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent(`Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`);
-        const response = result.response;
-        return response.text().trim();
+        const response = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
+            config: {
+                temperature: 0.1,
+            }
+        });
+        return response.text.trim();
     } catch (error) {
         console.error("Translation failed:", error);
         throw new Error("Failed to translate text.");

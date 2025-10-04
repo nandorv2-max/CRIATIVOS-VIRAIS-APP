@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useContext } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from '../../components/Button.tsx';
@@ -13,7 +13,6 @@ import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { uploadUserAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
-import { ApiKeyContext } from '../../types.ts';
 
 
 // A self-contained image uploader component with drag-and-drop support
@@ -94,7 +93,6 @@ const UnirView: React.FC = () => {
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
     const [uploadTarget, setUploadTarget] = useState<'base' | 'blend' | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const apiKey = useContext(ApiKeyContext);
 
     const handleFilesUpload = async (files: FileList, target: 'base' | 'blend') => {
         setError(null);
@@ -183,14 +181,11 @@ const UnirView: React.FC = () => {
         const textToTranslate = type === 'prompt' ? prompt : negativePrompt;
         const setText = type === 'prompt' ? setPrompt : setNegativePrompt;
         
-        if (!textToTranslate.trim() || !apiKey) {
-            setError("Texto ou chave de API não encontrados para tradução.");
-            return;
-        }
+        if (!textToTranslate.trim()) return;
 
         setIsTranslating(type);
         try {
-            const translated = await translateText(textToTranslate, 'English', apiKey);
+            const translated = await translateText(textToTranslate, 'English');
             setText(translated);
         } catch (e) {
             setError("A tradução falhou. Por favor, verifique a sua API Key.");
@@ -206,10 +201,6 @@ const UnirView: React.FC = () => {
         }
         if (!prompt.trim()) {
             setError("Por favor, escreva um prompt para guiar a IA.");
-            return;
-        }
-        if (!apiKey) {
-            setError("A sua chave de API não foi encontrada.");
             return;
         }
 
@@ -238,7 +229,6 @@ const UnirView: React.FC = () => {
                 prompt: modelInstruction,
                 base64ImageData: baseImage,
                 detailImages: blendImages.length > 0 ? blendImages : undefined,
-                apiKey,
             });
             setResultImage(newImage);
 

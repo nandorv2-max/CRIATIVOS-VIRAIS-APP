@@ -1,4 +1,4 @@
-import React, { useState, useRef, useContext } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import Button from './Button.tsx';
 import { IconUpload, IconX, IconImage, IconDownload, IconImageIcon } from './Icons.tsx';
@@ -6,7 +6,7 @@ import { toBase64, base64ToFile, blobToBase64 } from '../utils/imageUtils.ts';
 import { generateImageWithRetry, getModelInstruction } from '../services/geminiService.ts';
 import { uploadUserAsset, createSignedUrlForPath } from '../services/databaseService.ts';
 import { nanoid } from 'nanoid';
-import { Prompt, UploadedAsset, ApiKeyContext } from '../types.ts';
+import { Prompt, UploadedAsset } from '../types.ts';
 import UploadOptionsModal from './UploadOptionsModal.tsx';
 import GalleryPickerModal from './GalleryPickerModal.tsx';
 import { showGoogleDrivePicker } from '../services/googleDriveService.ts';
@@ -29,7 +29,6 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
 
     const [isUploadOptionsModalOpen, setIsUploadOptionsModalOpen] = useState(false);
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
-    const apiKey = useContext(ApiKeyContext);
 
     const handleArtUpload = async (file: File | null) => {
         if (!file) return;
@@ -74,10 +73,6 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
             setError("Por favor, carregue sua arte.");
             return;
         }
-        if (!apiKey) {
-            setError("A sua chave de API não foi encontrada.");
-            return;
-        }
         setIsLoading(true);
         setError(null);
         setResultImages([]);
@@ -91,7 +86,6 @@ const MockupDetailModal: React.FC<MockupDetailModalProps> = ({ isOpen, onClose, 
             const imageUrl = await generateImageWithRetry({
                 prompt: fullPrompt,
                 base64ImageData: artImage,
-                apiKey,
             });
             setResultImages([imageUrl]);
         } catch (err) {

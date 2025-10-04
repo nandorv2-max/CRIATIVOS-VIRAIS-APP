@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, useContext } 
 import { motion, AnimatePresence } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import { useHotkeys } from 'react-hotkeys-hook';
+// FIX: The default import for '@imgly/background-removal' was causing a type error where the imported module was not callable. Changed to a namespace import to robustly handle module interoperability and access the default export explicitly.
 import * as remove from '@imgly/background-removal';
 import CreativeEditorHeader from '../CreativeEditorHeader.tsx';
 import CreativeEditorSidebar from '../CreativeEditorSidebar.tsx';
@@ -14,12 +15,14 @@ import BackgroundRemoverModal from '../BackgroundRemoverModal.tsx';
 import ProjectBrowserModal from '../ProjectBrowserModal.tsx';
 import { 
     ProjectState, Page, AnyLayer, TextLayer, ShapeLayer, ImageLayer, VideoLayer, AudioTrack,
-    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext, DownloadJob, ApiKeyContext
+    UploadedAsset, PublicAsset, Project, UserProfile, AssetContext, DownloadJob
 } from '../../types.ts';
 import { blobToBase64, toBase64 } from '../../utils/imageUtils.ts';
 import { setItem, getItem, removeItem } from '../../utils/db.ts';
 import SelectionBox from '../SelectionBox.tsx';
+// FIX: Swapped adminUploadPublicAsset for the correct adminUploadPublicProject function.
 import { uploadUserAsset, getPublicAssets, adminUploadPublicProject, createSignedUrlForPath } from '../../services/databaseService.ts';
+// FIX: Corrected import path for geminiService to point to the correct file in the services directory.
 import { generateImageFromPrompt } from '../../services/geminiService.ts';
 import { IconMinus, IconPlus, IconMaximize, IconDownload, IconLayers, IconEdit, IconImageIcon, IconEnterFocusMode, IconExitFocusMode } from '../Icons.tsx';
 import type { User } from '@supabase/gotrue-js';
@@ -253,6 +256,7 @@ ctx.onmessage = async (e) => {
 // Helper function to load media and return an HTML element
 const loadMedia = (src: string, type: 'image' | 'video'): Promise<HTMLImageElement | HTMLVideoElement> => {
     return new Promise((resolve, reject) => {
+        // FIX: Add a guard to prevent calling methods on a null or undefined src, which would crash the app.
         if (!src || typeof src !== 'string') {
             return reject(new Error('Fonte de mídia inválida ou ausente.'));
         }
@@ -453,7 +457,6 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const debounceTimer = useRef<number | null>(null);
     const isInitialMount = useRef(true);
-    const apiKey = useContext(ApiKeyContext);
 
     // Effect for screen size detection
     useEffect(() => {
@@ -678,6 +681,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                 if (layerIndex !== -1) {
                     const originalLayer = page.layers[layerIndex];
                     const runtimeElements: { _imageElement?: HTMLImageElement; _videoElement?: HTMLVideoElement } = {};
+                    // FIX: Ensure _imageElement and _videoElement are preserved from the current state in the draft.
                     if (originalLayer.type === 'image' && 'src' in originalLayer) {
                         runtimeElements._imageElement = (originalLayer as ImageLayer)._imageElement;
                     } else if (originalLayer.type === 'video' && 'src' in originalLayer) {
@@ -906,13 +910,8 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
     const handleGenerateImage = async (prompt: string) => {
         setIsGeneratingImage(true);
         setError(null);
-        if (!apiKey) {
-            setError("A sua chave de API não foi encontrada.");
-            setIsGeneratingImage(false);
-            return;
-        }
         try {
-            const base64Image = await generateImageFromPrompt(prompt, '1:1', apiKey);
+            const base64Image = await generateImageFromPrompt(prompt);
             const tempAsset: PublicAsset = {
                 id: nanoid(),
                 name: prompt.substring(0, 30),
@@ -1365,6 +1364,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
             if (layer.id !== currentlyEditingTextId) {
                 if (layer.type === 'image' || layer.type === 'video') {
                     const mediaLayer = layer as ImageLayer | VideoLayer;
+                    // FIX: Type-check to correctly access _videoElement or _imageElement from the union type, resolving "Property does not exist on type" errors.
                     let mediaElement = mediaLayer.type === 'video' ? mediaLayer._videoElement : mediaLayer._imageElement;
                     if (!mediaElement) {
                         mediaElement = await loadMedia(mediaLayer.src, mediaLayer.type);
@@ -1574,6 +1574,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
         const file = new File([projectJson], `${projectName}.brmp`, { type: 'application/json' });
         
         try {
+            // FIX: The call to adminUploadPublicProject was missing the 'projectName' argument and using the wrong function.
             await adminUploadPublicProject(file, projectName, 'Public', null);
             alert('Modelo de projeto salvo publicamente com sucesso!');
         } catch (err) {
@@ -1899,6 +1900,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                     ref={canvasContainerRef} 
                     className="flex-grow flex items-center justify-center p-4 md:p-8 bg-brand-accent relative overflow-hidden"
                     onClick={(e) => {
+                        // FIX: Add a click handler to the main canvas area to deselect all layers, resolving an issue where it was impossible to access screen properties when the canvas was fully covered by other layers.
                         if (!interaction && !editingTextLayerId && selectedLayerIds.length > 0) {
                             if (cropLayerId) onCancelCrop();
                             setSelectedLayerIds([]);
@@ -2031,6 +2033,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                         {mobilePanel && <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setMobilePanel(null)} />}
                         {mobilePanel === 'sidebar' && (
                             <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', stiffness: 400, damping: 40 }} className="fixed top-0 left-0 h-full z-40">
+                                {/* FIX: Corrected shorthand prop names by passing the correctly named handler functions from the parent component. */}
                                 <CreativeEditorSidebar 
                                     isMobileView 
                                     onClose={() => setMobilePanel(null)} 
@@ -2050,6 +2053,7 @@ const CreativeEditorView: React.FC<CreativeEditorViewProps> = ({ userProfile }) 
                         )}
                         {mobilePanel === 'properties' && (
                              <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 400, damping: 40 }} className="fixed top-0 right-0 h-full z-40">
+                                {/* FIX: Corrected shorthand prop names by passing the correctly named handler functions from the parent component. */}
                                 <PropertiesPanel 
                                     isMobileView 
                                     onClose={() => setMobilePanel(null)} 

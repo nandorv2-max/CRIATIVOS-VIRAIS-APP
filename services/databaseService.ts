@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.ts';
-import type { UploadedAsset, PublicAsset, UserProfile, Plan, UserRole, Category, Feature, CreditCost, AssetVisibility, UploadedAssetType, PublicProject, PublicProjectCategory, Theme, SupportTicket, TicketStatus } from '../types.ts';
+import type { UploadedAsset, PublicAsset, UserProfile, Plan, UserRole, Category, Feature, CreditCost, AssetVisibility, UploadedAssetType, PublicProject, PublicProjectCategory, Theme } from '../types.ts';
 import { nanoid } from 'nanoid';
 
 // Helper to get user ID
@@ -201,31 +201,7 @@ export const updateUserProfile = async (updates: { name?: string; avatar_url?: s
     if (error) throw error;
 };
 
-// =========================================================================================
-// SUPPORT TICKET FUNCTIONS
-// =========================================================================================
-export const createSupportTicket = async (subject: string, messages: { content: string, sender: 'user' | 'ai' }[]): Promise<void> => {
-    const { error } = await supabase.rpc('create_support_ticket', { p_subject: subject, p_messages: messages });
-    if (error) throw error;
-};
-
-export const getAdminSupportTickets = async (): Promise<SupportTicket[]> => {
-    const { data, error } = await supabase.rpc('admin_get_all_support_tickets_with_messages');
-    if (error) throw error;
-    return data || [];
-};
-
-export const updateSupportTicketStatus = async (ticketId: string, newStatus: TicketStatus): Promise<void> => {
-    const { error } = await supabase.rpc('admin_update_ticket_status', { p_ticket_id: ticketId, p_new_status: newStatus });
-    if (error) throw error;
-};
-
-export const adminAddSupportMessage = async (ticketId: string, content: string): Promise<void> => {
-    const { error } = await supabase.rpc('admin_add_support_message', { p_ticket_id: ticketId, p_content: content });
-    if (error) throw error;
-};
-
-
+// FIX: Added missing theme customization functions to resolve export errors.
 // =========================================================================================
 // THEME & CUSTOMIZATION FUNCTIONS
 // =========================================================================================
@@ -317,6 +293,7 @@ export const removeFavoritePublicAsset = async (assetId: string): Promise<void> 
     if (error) throw error;
 };
 
+// FIX: Added missing deductVideoCredits function to call the Supabase RPC.
 export const deductVideoCredits = async (amount: number): Promise<void> => {
     const { error } = await supabase.rpc('deduct_video_credits', { amount_to_deduct: amount });
     if (error) throw error;
@@ -371,6 +348,7 @@ export const adminGetPlanFeatures = async (planId: string): Promise<string[]> =>
     return data;
 };
 
+// FIX: Corrected the type definition for updates to match the Plan interface and the RPC function.
 export const adminUpdatePlan = async (planId: string, updates: Partial<Pick<Plan, 'name' | 'stripe_payment_link' | 'video_credits_monthly' | 'storage_limit_gb' | 'download_limit_gb' | 'trial_days'>>): Promise<void> => {
     const { error } = await supabase.rpc('admin_update_plan', { p_plan_id: planId, p_updates: updates });
     if (error) throw error;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, Reorder } from 'framer-motion';
+import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { getAdminSupportTickets, updateSupportTicketStatus, adminAddSupportMessage } from '../../services/databaseService.ts';
 import type { SupportTicket, TicketStatus } from '../../types.ts';
 import { helpContent } from './HelpView.tsx';

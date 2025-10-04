@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, Part, GenerateContentResponse, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
@@ -49,30 +49,7 @@ export const describeImage = async (base64ImageData: string): Promise<string> =>
         const prompt = "Describe this image in detail for an AI image generator prompt. Focus on the subject's clothing, pose, the environment, lighting, colors, and overall style. Be descriptive and concise. The description should be in English.";
         const imagePart = base64ToPart(base64ImageData);
 
-        const safetySettings = [
-            {
-                category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-                category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-                category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-                category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-        ];
-
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [prompt, imagePart] }],
-            safetySettings,
-        });
-        
+        const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
         return text.trim();

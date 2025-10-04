@@ -52,6 +52,14 @@ export const TEMPLATES: Templates = {
         isPolaroid: false,
         prompts: []
     },
+    sceneCopier: {
+        name: 'Copiador de Cenas',
+        description: 'Recrie o estilo e a cena de uma foto de inspiração com a sua própria imagem.',
+        icon: '🪄',
+        sidebarIcon: IconMagicWand,
+        isPolaroid: false,
+        prompts: []
+    },
     worldTour: { name: 'Viagem pelo Mundo', description: 'Escolha um destino e veja-se lá.', icon: '🌍', sidebarIcon: IconWorld, isPolaroid: true,
         // FIX: Added missing 'prompts' property to satisfy the 'Template' interface.
         prompts: [],

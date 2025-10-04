@@ -105,6 +105,41 @@ const HelpView: React.FC = () => {
                         <CodeBlock>{`Remove the watch from the person's left wrist.`}</CodeBlock>
                         <CodeBlock>{`Change the color of the car to a metallic dark blue.`}</CodeBlock>
                     </FaqItem>
+                    <FaqItem question="Studio Criativo">
+                        <p>Sua tela em branco para projetos complexos. Crie designs completos adicionando imagens, vídeos, textos e formas em camadas. Use as ferramentas de IA para gerar imagens ou remover fundos diretamente na tela.</p>
+                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                         <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li><strong>Adicionar Elementos:</strong> Use a barra lateral esquerda para adicionar Texto, Formas, ou mídias da Galeria e seus Uploads.</li>
+                            <li><strong>Manipular Camadas:</strong> Clique para selecionar um elemento na tela. Arraste para mover. Use as alças nos cantos para redimensionar e a alça superior para rotacionar.</li>
+                            <li><strong>Painel de Propriedades (Direita):</strong> Com uma camada selecionada, ajuste sua posição (X, Y), tamanho, opacidade e outras propriedades específicas.</li>
+                            <li><strong>Barra Superior:</strong> As ferramentas mudam com a seleção. Para texto, você pode mudar a fonte, cor e alinhamento. Para formas, pode alterar o preenchimento.</li>
+                            <li><strong>Ferramentas de IA:</strong> Na barra lateral, use "IA Mágica" para gerar imagens a partir de um prompt ou usar o "Removedor de Fundo" em uma imagem selecionada.</li>
+                            <li><strong>Salvar/Carregar:</strong> No painel de Propriedades (quando nada está selecionado), use os botões para salvar seu projeto no computador/nuvem ou carregar um projeto existente.</li>
+                            <li><strong>Download:</strong> Use o botão "Fazer Download" para exportar seu design final como PNG, JPG ou MP4.</li>
+                        </ol>
+                    </FaqItem>
+                    <FaqItem question="Gerador de Mockups">
+                        <p>Cria mockups de produtos (camisetas, canecas, etc.) aplicando sua arte de forma realista.</p>
+                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Selecione o tipo de produto que deseja criar.</li>
+                            <li>Na janela que abrir, clique para carregar sua arte (ex: seu logo, uma estampa).</li>
+                            <li>Opcionalmente, adicione instruções extras para a IA.</li>
+                            <li>Clique em "Gerar Mockup".</li>
+                        </ol>
+                    </FaqItem>
+                    <FaqItem question="Estúdio de Produto">
+                        <p>Cria fotos de produto profissionais, colocando seu item em um cenário virtual com iluminação de estúdio.</p>
+                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                        <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Carregue uma imagem do seu produto (de preferência com fundo neutro).</li>
+                            <li>Descreva a cena onde o produto deve ser inserido.</li>
+                            <li>Escolha a perspectiva da câmera e o tipo de iluminação.</li>
+                            <li>Clique em "Gerar Cena".</li>
+                        </ol>
+                        <h4 className="font-semibold mt-3 text-white">Exemplo de Descrição de Cena:</h4>
+                        <CodeBlock>{`Um frasco de perfume sobre uma mesa de mármore preto, com algumas pétalas de rosa vermelha espalhadas ao redor e uma iluminação suave vindo da lateral.`}</CodeBlock>
+                    </FaqItem>
                     <FaqItem question="Vídeo">
                         <p>Anima uma foto sua, criando um vídeo curto com movimentos sutis. Ótimo para dar vida a retratos e posts.</p>
                         <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
@@ -113,10 +148,26 @@ const HelpView: React.FC = () => {
                         <CodeBlock>{`Animate the person in the image. They should be talking to the camera, as if explaining something in a UGC style.`}</CodeBlock>
                         <CodeBlock>{`The person should smile gently and look around the room, with subtle, natural movements.`}</CodeBlock>
                     </FaqItem>
-                    <FaqItem question="Studio Criativo">
-                        <p>Sua tela em branco para projetos complexos. Crie designs completos adicionando imagens, vídeos, textos e formas em camadas. Use as ferramentas de IA para gerar imagens ou remover fundos diretamente na tela.</p>
+                    <FaqItem question="Limpar e Trocar">
+                        <p>Uma ferramenta especializada para limpar a interface de capturas de tela de jogos e, opcionalmente, trocar o personagem principal por outro com características diferentes.</p>
                         <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
-                        <p>Use a barra lateral esquerda para adicionar elementos. Selecione um elemento na tela para ver suas propriedades na barra direita. Use a linha do tempo na parte inferior para criar projetos com múltiplas páginas ou cenas.</p>
+                         <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Carregue a captura de tela do jogo.</li>
+                            <li>Selecione as características da pessoa que você quer que apareça na imagem (gênero, etnia, etc.).</li>
+                            <li>Clique em "Gerar". A IA irá remover a interface e substituir o personagem automaticamente.</li>
+                        </ol>
+                    </FaqItem>
+                    <FaqItem question="Unir (Image Blender)">
+                        <p>Combina elementos de várias imagens em uma única criação coesa, guiada por um prompt.</p>
+                        <h4 className="font-semibold mt-3 text-white">Como Usar:</h4>
+                         <ol className="list-decimal list-inside mt-2 space-y-2 pl-4">
+                            <li>Carregue a "Imagem Base", que servirá como referência principal de estilo e assunto.</li>
+                            <li>Carregue uma ou mais "Imagens para Misturar", que contêm elementos que você quer adicionar (ex: um chapéu, um animal, um objeto).</li>
+                            <li>Escreva um prompt descrevendo a cena final que você imagina.</li>
+                            <li>Ajuste as configurações e clique em "Gerar".</li>
+                        </ol>
+                        <h4 className="font-semibold mt-3 text-white">Exemplo de Uso:</h4>
+                        <p><strong>Imagem Base:</strong> Foto de um homem em um sofá. <br/><strong>Imagem para Misturar:</strong> Foto de um chapéu de cowboy. <br/><strong>Prompt:</strong> "O homem no sofá agora está usando o chapéu de cowboy."</p>
                     </FaqItem>
                 </Section>
             </motion.div>

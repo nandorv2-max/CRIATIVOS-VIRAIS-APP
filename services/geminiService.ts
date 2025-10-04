@@ -1,15 +1,14 @@
-import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
+import { GoogleGenerativeAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
 
-let ai: GoogleGenAI | null = null;
+let ai: GoogleGenerativeAI | null = null;
 let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        // FIX: The API key should be passed as a named parameter to the GoogleGenAI constructor.
-        ai = new GoogleGenAI({ apiKey });
+        ai = new GoogleGenerativeAI({ apiKey });
         currentApiKey = apiKey;
     } else {
         ai = null;
@@ -17,7 +16,7 @@ export const initializeGeminiClient = (apiKey: string) => {
     }
 };
 
-const getClient = (): GoogleGenAI => {
+const getClient = (): GoogleGenerativeAI => {
     if (!ai) {
         throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
     }
@@ -201,7 +200,7 @@ export const generateVideo = async (
         }
         
         // Use a dedicated, local client for video generation to ensure it always uses the master key.
-        const videoClient = new GoogleGenAI({ apiKey: masterApiKey });
+        const videoClient = new GoogleGenerativeAI({ apiKey: masterApiKey });
 
         let operation = await videoClient.models.generateVideos({
             model: 'veo-2.0-generate-001',

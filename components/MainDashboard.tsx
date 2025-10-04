@@ -16,7 +16,6 @@ import AdminView from './views/AdminView.tsx';
 import ThemeCustomizationView from './views/ThemeCustomizationView.tsx';
 import PendingApprovalView from './views/PendingApprovalView.tsx';
 import SettingsView from './views/SettingsView.tsx'; // Import the new SettingsView
-import SceneRecreatorView from './views/SceneRecreatorView.tsx';
 import type { UserProfile } from '../types.ts';
 import { TEMPLATES } from '../constants.ts';
 
@@ -58,7 +57,6 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
             editor: <ProfessionalEditorView />,
             cleanAndSwap: <GeneratorView templateKey="cleanAndSwap" userProfile={userProfile} />,
             unir: <UnirView />,
-            sceneRecreator: <SceneRecreatorView />,
         };
 
         const allowedKeys = new Set<string>(['home', 'settings', 'upgrade', 'projects']);

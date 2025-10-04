@@ -18,8 +18,7 @@ const LoginScreen: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // FIX: `signInWithPassword` does not exist on older Supabase versions. Use `signIn` instead.
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signIn({
             email,
             password,
         });
@@ -35,8 +34,7 @@ const LoginScreen: React.FC = () => {
             setError("A funcionalidade de login não está disponível. A conexão com o Supabase falhou.");
             return;
         }
-        // FIX: `signInWithOAuth` does not exist on older Supabase versions. Use `signIn` with a provider instead.
-        await supabase.auth.signInWithOAuth({ provider: 'google' });
+        await supabase.auth.signIn({ provider: 'google' });
     };
 
     return (

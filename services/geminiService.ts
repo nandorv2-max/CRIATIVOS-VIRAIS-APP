@@ -1,14 +1,14 @@
-import * as genAI from "@google/genai";
+import GoogleGenerativeAI, { type Part, type GenerateContentResponse, Modality } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
 
-let ai: genAI.GoogleGenerativeAI | null = null;
+let ai: GoogleGenerativeAI | null = null;
 let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        ai = new genAI.GoogleGenerativeAI({ apiKey });
+        ai = new GoogleGenerativeAI({ apiKey });
         currentApiKey = apiKey;
     } else {
         ai = null;
@@ -16,14 +16,14 @@ export const initializeGeminiClient = (apiKey: string) => {
     }
 };
 
-const getClient = (): genAI.GoogleGenerativeAI => {
+const getClient = (): GoogleGenerativeAI => {
     if (!ai) {
         throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
     }
     return ai;
 };
 
-const base64ToPart = (base64Data: string): genAI.Part => {
+const base64ToPart = (base64Data: string): Part => {
     const match = base64Data.match(/^data:(image\/[a-z]+);base64,(.*)$/);
     if (match) {
         return {
@@ -89,7 +89,7 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
         try {
             const { prompt, base64ImageData, base64Mask, detailImages } = params;
             
-            const parts: genAI.Part[] = [];
+            const parts: Part[] = [];
 
             if (base64ImageData) {
                 parts.push(base64ToPart(base64ImageData));
@@ -107,11 +107,11 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 
             parts.push({ text: prompt });
 
-            const response: genAI.GenerateContentResponse = await client.models.generateContent({
+            const response: GenerateContentResponse = await client.models.generateContent({
                 model: 'gemini-2.5-flash-image-preview',
                 contents: { parts: parts },
                 config: {
-                    responseModalities: [genAI.Modality.IMAGE, genAI.Modality.TEXT],
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
                 },
             });
 
@@ -200,7 +200,7 @@ export const generateVideo = async (
         }
         
         // Use a dedicated, local client for video generation to ensure it always uses the master key.
-        const videoClient = new genAI.GoogleGenerativeAI({ apiKey: masterApiKey });
+        const videoClient = new GoogleGenerativeAI({ apiKey: masterApiKey });
 
         let operation = await videoClient.models.generateVideos({
             model: 'veo-2.0-generate-001',

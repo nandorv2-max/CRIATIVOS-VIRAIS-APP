@@ -50,8 +50,11 @@ interface GenerateImageParams {
     detailImages?: string[];
 }
 
-export const getChatResponse = async (history: { role: 'user' | 'model', parts: string }[], knowledgeBase: string): Promise<string> => {
-    const client = getClient();
+export const getChatResponse = async (history: { role: 'user' | 'model', parts: string }[], knowledgeBase: string, apiKey: string): Promise<string> => {
+    if (!apiKey) {
+        throw new Error("A chave de API é necessária para o chat.");
+    }
+    const client = new GoogleGenAI({ apiKey });
     const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const systemInstruction = `You are a helpful and friendly support agent for an application called AuraStudio. Your knowledge base is provided below. Answer the user's questions based ONLY on this information. Be concise and clear. If the user asks something not covered in the knowledge base, politely state that you don't have information on that topic and suggest they escalate to a human support agent.

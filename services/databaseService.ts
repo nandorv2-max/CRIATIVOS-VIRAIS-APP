@@ -210,9 +210,9 @@ export const createSupportTicket = async (subject: string, messages: { content: 
 };
 
 export const getAdminSupportTickets = async (): Promise<SupportTicket[]> => {
-    const { data, error } = await supabase.rpc('admin_get_all_support_tickets');
+    const { data, error } = await supabase.rpc('admin_get_all_support_tickets_with_messages');
     if (error) throw error;
-    return data;
+    return data || [];
 };
 
 export const updateSupportTicketStatus = async (ticketId: string, newStatus: TicketStatus): Promise<void> => {

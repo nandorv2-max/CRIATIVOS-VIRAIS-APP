@@ -34,8 +34,12 @@ const SupportAgent: React.FC = () => {
         setIsLoading(true);
 
         try {
+            const apiKey = window.localStorage.getItem('user_gemini_api_key');
+            if (!apiKey) {
+                throw new Error("A chave de API do usuário não foi encontrada.");
+            }
             const history = [...messages, userMessage];
-            const response = await getChatResponse(history, helpContent);
+            const response = await getChatResponse(history, helpContent, apiKey);
             const aiMessage: Message = { role: 'model', parts: response };
             setMessages(prev => [...prev, aiMessage]);
         } catch (error) {

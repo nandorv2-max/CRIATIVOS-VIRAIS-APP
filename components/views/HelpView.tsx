@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconChevronDown } from '../Icons.tsx';
+import SupportAgent from '../SupportAgent.tsx';
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
     <div className="mb-12">
@@ -260,6 +261,7 @@ const HelpView: React.FC = () => {
                     </FaqItem>
                 </Section>
             </motion.div>
+            <SupportAgent />
         </div>
     );
 };

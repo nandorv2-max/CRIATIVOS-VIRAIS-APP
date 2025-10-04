@@ -121,51 +121,28 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 
 export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
     const client = getClient();
-    for (let i = 0; i < 3; i++) { // 3 total attempts
-        try {
-            const fullPrompt = `User prompt: "${prompt}". Generate a photorealistic image based on this prompt. The image aspect ratio must be strictly ${aspectRatio}.`;
-            
-            const response: GenerateContentResponse = await client.models.generateContent({
-                model: 'gemini-2.5-flash-image-preview',
-                contents: { parts: [{ text: fullPrompt }] },
-                config: {
-                    responseModalities: [Modality.IMAGE, Modality.TEXT],
-                },
-            });
+    try {
+        const response = await client.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: aspectRatio,
+            },
+        });
 
-            if (response?.candidates?.[0]?.content?.parts) {
-                let textResponse = '';
-                for (const part of response.candidates[0].content.parts) {
-                    if (part.inlineData && part.inlineData.data) {
-                        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    }
-                    if (part.text) {
-                        textResponse += part.text + ' ';
-                    }
-                }
-                if (textResponse.trim()) {
-                     throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
-                }
-            }
-
-            let failureReason = "Nenhuma imagem foi gerada na resposta.";
-            if (response?.promptFeedback?.blockReason) {
-                failureReason = `A geração de imagem foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`;
-            } else if (!response?.candidates || response.candidates.length === 0) {
-                 failureReason = "A geração de imagem falhou: Nenhum resultado válido foi retornado pelo modelo.";
-            }
-
-            throw new Error(failureReason);
-
-        } catch (error) {
-            console.error(`Attempt ${i + 1} failed for generateImageFromPrompt:`, error);
-            if (i === 2) { // Last attempt
-                throw error;
-            }
-            await delay(2000 * (i + 1)); // Wait before retrying
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
         }
+        
+        throw new Error("Nenhuma imagem foi gerada.");
+
+    } catch (error) {
+        console.error("Image generation from prompt failed:", error);
+        throw error;
     }
-    throw new Error("A geração de imagem falhou após várias tentativas.");
 };
 
 export const generateVideo = async (
@@ -266,14 +243,14 @@ export const translateText = async (text: string, targetLanguage: string = 'Engl
     const client = getClient();
     if (!text.trim()) return text;
     try {
-        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const prompt = `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`;
-        
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const translatedText = response.text();
-        
-        return translatedText.trim();
+        const response = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
+            config: {
+                temperature: 0.1,
+            }
+        });
+        return response.text.trim();
     } catch (error) {
         console.error("Translation failed:", error);
         throw new Error("Failed to translate text.");

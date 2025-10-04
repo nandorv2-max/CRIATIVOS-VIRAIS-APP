@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { nanoid } from 'nanoid';
 import Button from './Button.tsx';
@@ -11,7 +11,6 @@ import UploadOptionsModal from './UploadOptionsModal.tsx';
 import GalleryPickerModal from './GalleryPickerModal.tsx';
 import { uploadUserAsset, createSignedUrlForPath } from '../services/databaseService.ts';
 import type { UploadedAsset, UserProfile } from '../types.ts';
-import { AssetContext } from '../types.ts';
 import { showGoogleDrivePicker } from '../services/googleDriveService.ts';
 
 interface VideoGeneratorProps {
@@ -34,7 +33,6 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile, refetchUse
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
     const [savingVideoIndex, setSavingVideoIndex] = useState<number | null>(null);
-    const assetContext = useContext(AssetContext);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -159,7 +157,6 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ userProfile, refetchUse
         try {
             const videoFile = new File([videoBlob], `GenIA_Video_${nanoid(6)}.mp4`, { type: 'video/mp4' });
             await uploadUserAsset(videoFile);
-            await assetContext?.refetchAssets();
             alert(`Vídeo ${index + 1} salvo na galeria com sucesso!`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useContext } from 'react';
+import React, { useState, useRef } from 'react';
 import Button from '../Button.tsx';
 import { IconUpload, IconImage, IconDownload, IconImageIcon } from '../Icons.tsx';
 import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts';
@@ -6,7 +6,7 @@ import { toBase64, base64ToFile, blobToBase64 } from '../../utils/imageUtils.ts'
 import { generateImageWithRetry, getModelInstruction } from '../../services/geminiService.ts';
 import { uploadUserAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
 import { nanoid } from 'nanoid';
-import { Prompt, UploadedAsset, AssetContext } from '../../types.ts';
+import { Prompt, UploadedAsset } from '../../types.ts';
 import UploadOptionsModal from '../UploadOptionsModal.tsx';
 import GalleryPickerModal from '../GalleryPickerModal.tsx';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
@@ -24,7 +24,6 @@ const ProductStudioView: React.FC = () => {
 
     const [isUploadOptionsModalOpen, setIsUploadOptionsModalOpen] = useState(false);
     const [isGalleryPickerModalOpen, setIsGalleryPickerModalOpen] = useState(false);
-    const assetContext = useContext(AssetContext);
 
     const handleProductImageUpload = async (file: File | null) => {
         if (!file) return;
@@ -108,7 +107,6 @@ const ProductStudioView: React.FC = () => {
             const fileName = `ProductScene_${nanoid(6)}.png`;
             const file = base64ToFile(resultImage, fileName);
             await uploadUserAsset(file);
-            await assetContext?.refetchAssets();
             alert('Cena de produto salva na sua galeria com sucesso!');
         } catch (err) {
             setError('Falha ao salvar na galeria.');

@@ -266,14 +266,14 @@ export const translateText = async (text: string, targetLanguage: string = 'Engl
     const client = getClient();
     if (!text.trim()) return text;
     try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`,
-            config: {
-                temperature: 0.1,
-            }
-        });
-        return response.text.trim();
+        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = `Translate the following text to ${targetLanguage}. Return only the translated text, without any preamble or explanation. Text to translate: "${text}"`;
+        
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const translatedText = response.text();
+        
+        return translatedText.trim();
     } catch (error) {
         console.error("Translation failed:", error);
         throw new Error("Failed to translate text.");

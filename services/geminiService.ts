@@ -45,17 +45,26 @@ const base64ToPart = (base64Data: string): Part => {
 export const describeImage = async (base64ImageData: string): Promise<string> => {
     const client = getClient();
     try {
-        const model = client.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-        const prompt = "Describe this image in detail for an AI image generator prompt. Focus on the subject's clothing, pose, the environment, lighting, colors, and overall style. Be descriptive and concise. The description should be in English.";
+        const model = client.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const prompt = "Analyze the provided image and generate a detailed, descriptive prompt in English for an AI image generator. The prompt should capture the complete scene, including: the environment and background, the subject's appearance and clothing, the overall mood and atmosphere, the lighting style (e.g., golden hour, studio lighting), the camera angle, and the artistic style (e.g., photorealistic, cinematic). Be comprehensive. Your response should only be the prompt text.";
         const imagePart = base64ToPart(base64ImageData);
 
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
+        
+        if (!text || text.trim().length === 0) {
+            throw new Error("The model returned an empty description.");
+        }
+
         return text.trim();
     } catch (error) {
         console.error("Image description failed:", error);
-        throw new Error("Failed to generate a description for the image.");
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        if (errorMessage.includes('SAFETY')) {
+             throw new Error("A descrição da imagem foi bloqueada por políticas de segurança. Tente uma imagem diferente.");
+        }
+        throw new Error(`Falha ao gerar a descrição da imagem: ${errorMessage}`);
     }
 };
 

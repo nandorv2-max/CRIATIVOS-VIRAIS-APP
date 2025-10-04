@@ -299,6 +299,16 @@ export const deductVideoCredits = async (amount: number): Promise<void> => {
     if (error) throw error;
 };
 
+export const getUserFeatures = async (): Promise<string[]> => {
+    const { data, error } = await supabase.rpc('get_user_features');
+    if (error) {
+        console.error("Error fetching user features:", error);
+        // Don't throw, just return empty array on failure so UI doesn't break
+        return []; 
+    }
+    return data || [];
+};
+
 // =========================================================================================
 // ADMIN FUNCTIONS (RPC-based for security and robustness)
 // =========================================================================================

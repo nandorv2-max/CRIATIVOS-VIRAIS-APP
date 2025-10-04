@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from '@supabase/gotrue-js';
 import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from './Sidebar.tsx';
@@ -17,6 +17,7 @@ import ThemeCustomizationView from './views/ThemeCustomizationView.tsx';
 import PendingApprovalView from './views/PendingApprovalView.tsx';
 import SettingsView from './views/SettingsView.tsx'; // Import the new SettingsView
 import type { UserProfile } from '../types.ts';
+import { TEMPLATES } from '../constants.ts';
 
 
 interface MainDashboardProps {
@@ -38,32 +39,51 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
         }
     }, [isMobileView]);
 
-    const viewComponents: { [key: string]: React.ReactNode } = {
-        home: <DashboardView userProfile={userProfile} setActiveView={handleSetActiveView} />,
-        settings: <SettingsView userProfile={userProfile} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
-        upgrade: <PendingApprovalView showLogout={false} />,
-        projects: <ProjectsView />,
-        admin: <AdminView />,
-        personalizacao: <ThemeCustomizationView />,
-        imageGenerator: <ImageGeneratorView />,
-        mockupGenerator: <MockupGeneratorView />,
-        productStudio: <ProductStudioView />,
-        studioCriativo: <CreativeEditorView userProfile={userProfile} />,
-        video: <VideoGenerator userProfile={userProfile!} refetchUserProfile={refetchUserProfile} />,
-        cenasDoInstagram: <GeneratorView templateKey="cenasDoInstagram" userProfile={userProfile} />,
-        worldTour: <GeneratorView templateKey="worldTour" userProfile={userProfile} />,
-        editor: <ProfessionalEditorView />,
-        cleanAndSwap: <GeneratorView templateKey="cleanAndSwap" userProfile={userProfile} />,
-        unir: <UnirView />,
-    };
+    const availableViewComponents = useMemo(() => {
+        const allViews: { [key: string]: React.ReactNode } = {
+            home: <DashboardView userProfile={userProfile} setActiveView={handleSetActiveView} />,
+            settings: <SettingsView userProfile={userProfile} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
+            upgrade: <PendingApprovalView showLogout={false} />,
+            projects: <ProjectsView />,
+            admin: <AdminView />,
+            personalizacao: <ThemeCustomizationView />,
+            imageGenerator: <ImageGeneratorView />,
+            mockupGenerator: <MockupGeneratorView />,
+            productStudio: <ProductStudioView />,
+            studioCriativo: <CreativeEditorView userProfile={userProfile} />,
+            video: <VideoGenerator userProfile={userProfile!} refetchUserProfile={refetchUserProfile} />,
+            cenasDoInstagram: <GeneratorView templateKey="cenasDoInstagram" userProfile={userProfile} />,
+            worldTour: <GeneratorView templateKey="worldTour" userProfile={userProfile} />,
+            editor: <ProfessionalEditorView />,
+            cleanAndSwap: <GeneratorView templateKey="cleanAndSwap" userProfile={userProfile} />,
+            unir: <UnirView />,
+        };
+
+        const allowedKeys = new Set<string>(['home', 'settings', 'upgrade', 'projects']);
+        if (userProfile?.isAdmin) {
+            allowedKeys.add('admin');
+            allowedKeys.add('personalizacao');
+            Object.keys(TEMPLATES).forEach(key => allowedKeys.add(key));
+        } else if (userProfile?.features) {
+            userProfile.features.forEach(key => allowedKeys.add(key));
+        }
+
+        return Object.fromEntries(
+            Object.entries(allViews).filter(([key]) => allowedKeys.has(key))
+        );
+    }, [userProfile, handleSetActiveView, refetchUserProfile]);
+
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const viewFromUrl = urlParams.get('view');
-        if (viewFromUrl && viewComponents.hasOwnProperty(viewFromUrl)) {
+        if (viewFromUrl && availableViewComponents.hasOwnProperty(viewFromUrl)) {
             setActiveView(viewFromUrl);
+        } else if (viewFromUrl) {
+            // If view from URL is not available, default to home
+            setActiveView('home');
         }
-    }, []); // Empty dependency array means this runs only once on mount
+    }, [availableViewComponents]);
 
 
     useEffect(() => {
@@ -137,7 +157,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
                         </button>
                     </div>
                 )}
-                {Object.entries(viewComponents).map(([key, Component]) => (
+                {Object.entries(availableViewComponents).map(([key, Component]) => (
                     <div key={key} hidden={activeView !== key} className={`h-full w-full`}>
                         {Component}
                     </div>

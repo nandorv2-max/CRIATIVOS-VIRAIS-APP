@@ -284,6 +284,7 @@ export interface UserProfile {
   storage_used_bytes: number;
   plan?: Plan; // Include full plan details
   plan_name?: string; // Add plan_name for direct display
+  features?: string[];
 }
 
 export interface Folder {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { TEMPLATES } from '../constants.ts';
@@ -74,6 +74,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const userButtonRef = useRef<HTMLButtonElement>(null);
 
+    const availableTemplates = useMemo(() => {
+        if (userProfile?.isAdmin) {
+            return TEMPLATES; // Admins see everything
+        }
+        if (!userProfile?.features) {
+            return {}; // No features, show nothing
+        }
+        return Object.fromEntries(
+            Object.entries(TEMPLATES).filter(([key]) => userProfile.features!.includes(key))
+        );
+    }, [userProfile]);
+
     const handleLogout = async () => {
         if (supabase) {
             await supabase.auth.signOut();
@@ -109,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
                 <div className="custom-sidebar-scroll flex flex-col items-center gap-5 flex-grow overflow-y-auto overflow-x-hidden min-h-0 w-full pt-5">
                     <NavItem id="home" template={{ name: 'Início', sidebarIcon: IconHome } as any} setActiveView={setActiveView} activeView={activeView} />
                     <NavItem id="projects" template={{ name: 'Projetos', sidebarIcon: IconFolder } as any} setActiveView={setActiveView} activeView={activeView} />
-                    {Object.entries(TEMPLATES).map(([key, template]) => (
+                    {Object.entries(availableTemplates).map(([key, template]) => (
                         <NavItem key={key} id={key} template={template as Template} setActiveView={setActiveView} activeView={activeView} />
                     ))}
                 </div>

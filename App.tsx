@@ -9,8 +9,8 @@ import { supabase } from './services/supabaseClient.ts';
 import { initializeGeminiClient } from './services/geminiService.ts';
 import { ThemeContext, AssetContext } from './types.ts';
 import type { UserProfile, UploadedAsset, Theme, AssetContextType } from './types.ts';
-import { MASTER_USERS } from './constants.ts';
-import { getUserAssets, getThemeSettings } from './services/databaseService.ts';
+import { MASTER_USERS, TEMPLATES } from './constants.ts';
+import { getUserAssets, getThemeSettings, getUserFeatures } from './services/databaseService.ts';
 import { initTouchEventBridge } from './utils/touchEvents.ts';
 
 
@@ -121,11 +121,17 @@ const App: React.FC = () => {
     const fetchUserProfile = useCallback(async (user: User): Promise<(User & UserProfile & { isAdmin: boolean })> => {
         const isAdmin = MASTER_USERS.includes(user.email ?? '');
         
-        const { data, error } = await supabase
-            .from('user_profiles')
-            .select('*, plan:plans(*)')
-            .eq('id', user.id)
-            .maybeSingle();
+        const [profileResult, featuresResult] = await Promise.all([
+            supabase
+                .from('user_profiles')
+                .select('*, plan:plans(*)')
+                .eq('id', user.id)
+                .maybeSingle(),
+            getUserFeatures()
+        ]);
+
+        const { data, error } = profileResult;
+        const features = featuresResult || [];
 
         if (error || !data) {
             if (error) {
@@ -145,14 +151,16 @@ const App: React.FC = () => {
                 access_expires_at: null,
                 storage_used_bytes: 0,
                 isAdmin,
+                features: isAdmin ? Object.keys(TEMPLATES) : features,
             };
         } else {
             return {
                 ...user,
-                ...data, // Spread all properties from the fetched data
-                id: user.id, // Ensure user.id from auth isn't overwritten
-                email: user.email ?? '', // Ensure email from auth is used
-                isAdmin, // Our calculated admin status
+                ...data,
+                id: user.id,
+                email: user.email ?? '',
+                isAdmin,
+                features: isAdmin ? Object.keys(TEMPLATES) : features,
             };
         }
     }, []);

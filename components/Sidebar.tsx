@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { TEMPLATES } from '../constants.ts';
-import { IconUser, IconLogout, IconKey, IconLogo, IconFolder, IconX, IconPalette, IconHome, IconHelpCircle } from './Icons.tsx';
+import { IconUser, IconLogout, IconKey, IconLogo, IconFolder, IconX, IconPalette, IconHome, IconHelpCircle, IconLifeBuoy } from './Icons.tsx';
 import { supabase } from '../services/supabaseClient.ts';
 import { initializeGeminiClient } from '../services/geminiService.ts';
 import type { Template, UserProfile } from '../types.ts';
@@ -125,6 +125,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
                         <NavItem key={key} id={key} template={template as Template} setActiveView={setActiveView} activeView={activeView} />
                     ))}
                     <NavItem id="help" template={{ name: 'Ajuda & Suporte', sidebarIcon: IconHelpCircle } as any} setActiveView={setActiveView} activeView={activeView} />
+                    {userProfile?.isAdmin && (
+                        <NavItem id="support" template={{ name: 'Suporte', sidebarIcon: IconLifeBuoy } as any} setActiveView={setActiveView} activeView={activeView} />
+                    )}
                 </div>
                 
                 <div className="relative">

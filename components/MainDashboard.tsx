@@ -17,6 +17,8 @@ import ThemeCustomizationView from './views/ThemeCustomizationView.tsx';
 import PendingApprovalView from './views/PendingApprovalView.tsx';
 import SettingsView from './views/SettingsView.tsx';
 import HelpView from './views/HelpView.tsx';
+import SupportAgent from './SupportAgent.tsx';
+import SupportKanbanView from './views/SupportKanbanView.tsx';
 import type { UserProfile } from '../types.ts';
 import { TEMPLATES } from '../constants.ts';
 
@@ -48,6 +50,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
             projects: <ProjectsView />,
             help: <HelpView />,
             admin: <AdminView />,
+            support: <SupportKanbanView />,
             personalizacao: <ThemeCustomizationView />,
             imageGenerator: <ImageGeneratorView />,
             mockupGenerator: <MockupGeneratorView />,
@@ -65,6 +68,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
         if (userProfile?.isAdmin) {
             allowedKeys.add('admin');
             allowedKeys.add('personalizacao');
+            allowedKeys.add('support');
             Object.keys(TEMPLATES).forEach(key => allowedKeys.add(key));
         } else if (userProfile?.features) {
             userProfile.features.forEach(key => allowedKeys.add(key));
@@ -164,6 +168,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
                         {Component}
                     </div>
                 ))}
+                <SupportAgent />
             </main>
         </div>
     );

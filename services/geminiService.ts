@@ -49,6 +49,30 @@ interface GenerateImageParams {
     detailImages?: string[];
 }
 
+export const getChatResponse = async (history: { role: 'user' | 'model', parts: string }[], knowledgeBase: string): Promise<string> => {
+    const client = getClient();
+    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const systemInstruction = `You are a helpful and friendly support agent for an application called AuraStudio. Your knowledge base is provided below. Answer the user's questions based ONLY on this information. Be concise and clear. If the user asks something not covered in the knowledge base, politely state that you don't have information on that topic and suggest they escalate to a human support agent.
+
+    **KNOWLEDGE BASE:**
+    ${knowledgeBase}`;
+
+    const chat = model.startChat({
+        history: history.map(h => ({ role: h.role, parts: [{ text: h.parts }] })),
+        systemInstruction: {
+            role: "system",
+            parts: [{ text: systemInstruction }],
+        },
+    });
+
+    const lastMessage = history[history.length - 1].parts;
+    const result = await chat.sendMessage(lastMessage);
+    const response = await result.response;
+    return response.text();
+};
+
+
 export const generateImageWithRetry = async (params: GenerateImageParams, retries = 3): Promise<string> => {
     const client = getClient();
     for (let i = 0; i < retries; i++) {

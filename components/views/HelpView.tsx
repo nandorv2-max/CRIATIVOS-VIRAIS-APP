@@ -44,6 +44,73 @@ const CodeBlock: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </pre>
 );
 
+export const helpContent = `
+# Configuração Essencial
+## Como obter minha Chave de API do Google?
+Para usar os recursos de IA, você precisa de uma chave de API do Google. É grátis para começar.
+1. Acesse o Google AI Studio.
+2. Faça login com sua conta Google.
+3. Clique em "Get API Key".
+4. Clique em "Create API key in new project".
+5. Copie a chave gerada.
+6. No nosso app, cole a chave quando solicitado.
+
+## Por que e como configurar o faturamento no Google?
+O nível gratuito da API do Google tem limites. Para uso contínuo, ative o faturamento no Google Cloud Console. Você só paga pelo que usar acima do limite gratuito.
+1. Acesse o Google Cloud Console Billing.
+2. Selecione o projeto criado pelo AI Studio.
+3. Siga as instruções para vincular uma conta de faturamento.
+
+# Guia dos Módulos
+## Gerador de Imagem
+Cria imagens a partir de texto (prompt).
+- Como Usar: Escreva uma descrição em inglês no campo "Comando". Use "Potenciadores" para refinar o estilo. Escolha o tamanho e clique em "Gerar".
+- Exemplo de Prompt: "A photorealistic portrait of an ancient warrior queen, intricate silver armor, piercing blue eyes, cinematic lighting."
+
+## Cenas do Instagram / Viagem pelo Mundo
+Coloca a pessoa da sua foto em um novo cenário.
+- Como Usar: Carregue sua foto. Para "Viagem pelo Mundo", escolha um destino. Para "Cenas do Instagram", descreva a cena. Use "Potenciadores" e clique em "Gerar".
+- Exemplo de Prompt (Cenas do Instagram): "Trabalhando em um café moderno e elegante, com um laptop."
+
+## Editor Profissional
+Oferece ajustes manuais e edições com IA.
+- Como Usar: Carregue uma imagem. Use os sliders em "Ajustes" para edições manuais. Para IA, descreva a alteração em "Edição com IA" (em inglês) e clique em "Editar com IA".
+- Exemplo de Prompt (Edição com IA): "Remove the watch from the person's left wrist."
+
+## Studio Criativo
+Editor completo para designs com múltiplas camadas.
+- Como Usar:
+  1. Adicionar Elementos: Use a barra lateral esquerda (Uploads, Galeria, Texto, Elementos).
+  2. Manipular Camadas: Clique para selecionar, arraste para mover, use as alças para redimensionar/rotacionar.
+  3. Editar Propriedades: Use o painel da direita para ajustes finos (tamanho, posição, opacidade).
+  4. Ferramentas de IA: Na barra lateral, use "IA Mágica" para gerar imagens ou remover fundos.
+  5. Salvar/Carregar: No painel da direita (sem nada selecionado), salve seu projeto como um arquivo .brmp.
+  6. Download: Exporte o resultado final como PNG, JPG ou MP4.
+
+## Gerador de Mockups
+Aplica sua arte em produtos como camisetas, canecas, etc.
+- Como Usar: Selecione o produto, carregue sua arte (logo, estampa), adicione instruções se necessário e clique em "Gerar Mockup".
+
+## Estúdio de Produto
+Cria fotos de produto profissionais em cenários virtuais.
+- Como Usar: Carregue a imagem do seu produto. Descreva a cena, escolha a perspectiva e a iluminação. Clique em "Gerar Cena".
+- Exemplo de Cena: "Um frasco de perfume sobre uma mesa de mármore preto, com pétalas de rosa ao redor."
+
+## Vídeo
+Anima uma foto, criando um vídeo curto.
+- Como Usar: Carregue uma foto. Descreva a animação desejada (em inglês). Escolha a proporção e clique em "Gerar Sequência".
+- Exemplo de Prompt: "Animate the person in the image. They should be talking to the camera, as if explaining something in a UGC style."
+
+## Limpar e Trocar
+Remove a interface de capturas de tela de jogos e troca o personagem.
+- Como Usar: Carregue a captura de tela. Selecione as características da nova pessoa. Clique em "Gerar".
+
+## Unir (Image Blender)
+Combina elementos de várias imagens em uma só.
+- Como Usar: Carregue uma "Imagem Base" e "Imagens para Misturar". Descreva a cena final no "Prompt" e clique em "Gerar".
+- Exemplo: Imagem Base (homem no sofá) + Imagem para Misturar (chapéu) + Prompt "O homem no sofá agora está usando o chapéu".
+`;
+
 const HelpView: React.FC = () => {
     return (
         <div className="h-full w-full overflow-y-auto p-6 md:p-8">

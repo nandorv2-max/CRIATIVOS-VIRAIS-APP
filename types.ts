@@ -375,6 +375,28 @@ export interface Theme {
     };
 }
 
+// Support System Types
+export type TicketStatus = 'new' | 'in_progress' | 'resolved';
+
+export interface SupportMessage {
+    id: string;
+    ticket_id: string;
+    content: string;
+    sender: 'user' | 'ai';
+    created_at: string;
+}
+
+export interface SupportTicket {
+    id: string;
+    user_id: string;
+    user_email: string;
+    subject: string;
+    status: TicketStatus;
+    created_at: string;
+    messages: SupportMessage[];
+}
+
+
 // FIX: Moved ThemeContext definition here from App.tsx to break a circular dependency.
 export interface ThemeContextType {
     theme: Theme | null;

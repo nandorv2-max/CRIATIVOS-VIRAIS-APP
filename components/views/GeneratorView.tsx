@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { nanoid } from 'nanoid';
@@ -22,6 +22,7 @@ import { generateImageWithRetry, getModelInstruction, translateText } from '../.
 import { uploadUserAsset, createSignedUrlForPath } from '../../services/databaseService.ts';
 import { TEMPLATES, ENHANCER_CATEGORIES } from '../../constants.ts';
 import type { GeneratedImage, Prompt, Template, UserProfile, UploadedAsset } from '../../types.ts';
+import { AssetContext } from '../../types.ts';
 import { showGoogleDrivePicker } from '../../services/googleDriveService.ts';
 
 interface GeneratorViewProps {
@@ -59,6 +60,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
     const [openEnhancerSections, setOpenEnhancerSections] = useState<Set<string>>(new Set());
     const [selectedEnhancers, setSelectedEnhancers] = useState<Set<string>>(new Set());
     
+    const assetContext = useContext(AssetContext);
     const template = TEMPLATES[templateKey];
 
     const toggleEnhancerSection = (sectionName: string) => {
@@ -193,27 +195,11 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
         }
 
         setGeneratedImages(promptsForGeneration.map(p => ({ id: p.id, status: 'pending', imageUrl: null })));
-        
-        let translatedBasePrompt = instagramScenePrompt;
-        if (templateKey === 'cenasDoInstagram') {
-            try {
-                translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
-            } catch (e) {
-                setError("A tradução do prompt falhou. A gerar com o prompt original.");
-                console.error("Translation failed:", e);
-            }
-        }
-
 
         for (let i = 0; i < promptsForGeneration.length; i++) {
             const p = promptsForGeneration[i];
             try {
-                let promptForModel = p;
-                 if (templateKey === 'cenasDoInstagram') {
-                    const translatedVariation = i > 0 ? ` (variation ${i + 1})` : '';
-                    promptForModel = { ...p, base: translatedBasePrompt + translatedVariation };
-                }
-
+                const promptForModel = p; // Use the original prompt directly
                 const aspectRatio = templateKey === 'cenasDoInstagram' ? instagramSceneAspectRatio : undefined;
                 let modelInstruction = getModelInstruction(templateKey, promptForModel, options, aspectRatio);
                 
@@ -238,16 +224,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
             return;
         }
         
-        let promptsForGeneration = getPromptsForTemplate();
-        
-        if (templateKey === 'cenasDoInstagram' && instagramScenePrompt) {
-             const translatedBasePrompt = await translateText(instagramScenePrompt, 'English');
-             promptsForGeneration = Array.from({ length: numImages }, (_, i) => ({
-                id: `Variação ${i + 1}`,
-                base: `${translatedBasePrompt}${i > 0 ? `, variação ${i + 1}` : ''}`
-            }));
-        }
-
+        const promptsForGeneration = getPromptsForTemplate();
         const promptToRegenerate = promptsForGeneration[imageIndex];
         
         if (!promptToRegenerate) {
@@ -357,6 +334,7 @@ const GeneratorView: React.FC<GeneratorViewProps> = ({ templateKey, userProfile 
             const fileName = `GenIA_${template?.name}_${era}_${nanoid(4)}.png`;
             const file = base64ToFile(imageUrl, fileName);
             await uploadUserAsset(file);
+            await assetContext?.refetchAssets();
             alert(`'${era}' salvo na sua galeria com sucesso!`);
         } catch (err) {
             console.error("Failed to save to gallery:", err);

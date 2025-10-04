@@ -122,26 +122,47 @@ export const generateImageWithRetry = async (params: GenerateImageParams, retrie
 export const generateImageFromPrompt = async (prompt: string, aspectRatio: string = '1:1'): Promise<string> => {
     const client = getClient();
     try {
-        const response = await client.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: prompt,
+        // Use the more general-purpose generateContent method which seems more stable across browsers like Safari.
+        const fullPrompt = `User prompt: "${prompt}". Generate a photorealistic image based on this prompt. The image aspect ratio must be strictly ${aspectRatio}.`;
+        
+        const response: GenerateContentResponse = await client.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview', // Using a model known to be stable with this method
+            contents: { parts: [{ text: fullPrompt }] },
             config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: aspectRatio,
+                responseModalities: [Modality.IMAGE, Modality.TEXT], // Request image and text
             },
         });
 
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64ImageBytes}`;
+        if (response?.candidates?.[0]?.content?.parts) {
+            let textResponse = '';
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                    // Found the image, return it
+                    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                }
+                if (part.text) {
+                    textResponse += part.text + ' ';
+                }
+            }
+            // If we looped and only found text, it means the model refused to generate an image.
+            if (textResponse.trim()) {
+                 throw new Error(`A geração de imagem falhou. O modelo respondeu com: "${textResponse.trim()}"`);
+            }
         }
-        
-        throw new Error("Nenhuma imagem foi gerada.");
+
+        // Handle other failure cases (blocked prompt, empty response)
+        let failureReason = "Nenhuma imagem foi gerada na resposta.";
+        if (response?.promptFeedback?.blockReason) {
+            failureReason = `A geração de imagem foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`;
+        } else if (!response?.candidates || response.candidates.length === 0) {
+             failureReason = "A geração de imagem falhou: Nenhum resultado válido foi retornado pelo modelo.";
+        }
+
+        throw new Error(failureReason);
 
     } catch (error) {
         console.error("Image generation from prompt failed:", error);
-        throw error;
+        throw error; // Re-throw to be caught by the UI component
     }
 };
 

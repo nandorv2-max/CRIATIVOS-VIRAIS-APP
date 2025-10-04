@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IconHelpCircle, IconX, IconUser } from './Icons.tsx';
+import { IconHelpCircle, IconX, IconUser, IconSparkles } from './Icons.tsx';
 import { helpContent } from './views/HelpView.tsx';
 import { getChatResponse } from '../services/geminiService.ts';
 import { createSupportTicket } from '../services/databaseService.ts';

@@ -40,16 +40,21 @@ const SceneRecreatorView: React.FC = () => {
         setError(null);
         setResultImage(null);
 
-        const modelInstruction = `**CRITICAL TASK: Scene Recreation.**
-        You will be given two images.
-        1.  **Inspiration Image (First Image):** This is the primary image. It contains the scene, style, lighting, composition, and clothing style to be replicated.
-        2.  **Reference Image (Second Image):** This image contains the person/subject whose face and identity should be used.
+        const modelInstruction = `**CRITICAL TASK: Subject Replacement and Scene Recreation.**
+        You are given two images.
+        - **IMAGE 1 (The Scene):** This image provides the complete background, environment, lighting, camera angle, and clothing style.
+        - **IMAGE 2 (The Person):** This image provides the person whose face and identity MUST be used in the final result.
 
-        **Your job is to create a new, photorealistic image that places the person from the Reference Image (Second Image) into the scene and style of the Inspiration Image (First Image).**
-        - The final image's background, lighting, camera angle, and overall mood must match the Inspiration Image.
-        - The person in the final image must be clearly identifiable as the person from the Reference Image.
-        - The clothing of the person should be adapted to match the style seen in the Inspiration Image.
-        - The integration must be seamless and photorealistic. DO NOT simply return the inspiration image. You MUST replace the person.`;
+        **YOUR GOAL:** Create a new image by taking the person from IMAGE 2 and placing them into the scene from IMAGE 1.
+
+        **MANDATORY INSTRUCTIONS:**
+        1.  **IGNORE THE PERSON IN IMAGE 1.** Their identity is irrelevant.
+        2.  **USE ONLY THE PERSON FROM IMAGE 2.** Their face and likeness must be accurately represented.
+        3.  **RECREATE THE SCENE from IMAGE 1.** This includes the background, lighting, and overall mood.
+        4.  **ADAPT THE CLOTHING.** The person from IMAGE 2 should be wearing clothes that match the style and type seen in IMAGE 1.
+        5.  **SEAMLESS INTEGRATION:** The final image must be a single, photorealistic photograph. The person must look like they were naturally part of the scene.
+
+        **DO NOT, under any circumstances, return the original IMAGE 1. You MUST perform the subject replacement.**`;
 
         try {
             const imageUrl = await generateImageWithRetry({

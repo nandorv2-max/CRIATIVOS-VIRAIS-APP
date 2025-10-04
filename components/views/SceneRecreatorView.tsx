@@ -42,20 +42,20 @@ const SceneRecreatorView: React.FC = () => {
 
         const modelInstruction = `**CRITICAL TASK: Scene Recreation.**
         You will be given two images.
-        1.  **Reference Image (First Image):** This contains the person/subject to be used.
-        2.  **Inspiration Image (Second Image):** This contains the scene, style, lighting, composition, and clothing style to be replicated.
+        1.  **Inspiration Image (First Image):** This is the primary image. It contains the scene, style, lighting, composition, and clothing style to be replicated.
+        2.  **Reference Image (Second Image):** This image contains the person/subject whose face and identity should be used.
 
-        **Your job is to create a new, photorealistic image that places the person from the Reference Image into the scene and style of the Inspiration Image.**
+        **Your job is to create a new, photorealistic image that places the person from the Reference Image (Second Image) into the scene and style of the Inspiration Image (First Image).**
         - The final image's background, lighting, camera angle, and overall mood must match the Inspiration Image.
         - The person in the final image must be clearly identifiable as the person from the Reference Image.
         - The clothing of the person should be adapted to match the style seen in the Inspiration Image.
-        - The integration must be seamless and photorealistic.`;
+        - The integration must be seamless and photorealistic. DO NOT simply return the inspiration image. You MUST replace the person.`;
 
         try {
             const imageUrl = await generateImageWithRetry({
                 prompt: modelInstruction,
-                base64ImageData: userImage, // User's photo is the primary subject
-                detailImages: [inspirationImage], // Inspiration photo provides the context/style
+                base64ImageData: inspirationImage, // SCENE is now the primary image
+                detailImages: [userImage],       // PERSON is now the detail image
             });
             setResultImage(imageUrl);
         } catch (err) {

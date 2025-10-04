@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User } from '@supabase/gotrue-js';
 import { TEMPLATES } from '../constants.ts';
-import { IconUser, IconLogout, IconKey, IconLogo, IconFolder, IconX, IconPalette, IconHome } from './Icons.tsx';
+import { IconUser, IconLogout, IconKey, IconLogo, IconFolder, IconX, IconPalette, IconHome, IconHelpCircle } from './Icons.tsx';
 import { supabase } from '../services/supabaseClient.ts';
 import { initializeGeminiClient } from '../services/geminiService.ts';
 import type { Template, UserProfile } from '../types.ts';
@@ -124,6 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
                     {Object.entries(availableTemplates).map(([key, template]) => (
                         <NavItem key={key} id={key} template={template as Template} setActiveView={setActiveView} activeView={activeView} />
                     ))}
+                    <NavItem id="help" template={{ name: 'Ajuda & Suporte', sidebarIcon: IconHelpCircle } as any} setActiveView={setActiveView} activeView={activeView} />
                 </div>
                 
                 <div className="relative">
@@ -153,6 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, userProfil
                              <div className="mt-1 space-y-1">
                                 <button onClick={() => { setActiveView('home'); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconHome className="w-5 h-5" /><span>Dashboard</span></button>
                                 <button onClick={() => { setActiveView('settings'); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconUser className="w-5 h-5" /><span>Configurações</span></button>
+                                <button onClick={() => { setActiveView('help'); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconHelpCircle className="w-5 h-5" /><span>Ajuda & Suporte</span></button>
                                 {userProfile?.isAdmin && (
                                     <>
                                         <button onClick={() => { setActiveView('admin'); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2 text-left text-gray-100 hover:bg-brand-light rounded-md transition-colors"><IconKey className="w-5 h-5" /><span>Administração</span></button>

@@ -15,7 +15,8 @@ import ProfessionalEditorView from './views/ProfessionalEditorView.tsx';
 import AdminView from './views/AdminView.tsx';
 import ThemeCustomizationView from './views/ThemeCustomizationView.tsx';
 import PendingApprovalView from './views/PendingApprovalView.tsx';
-import SettingsView from './views/SettingsView.tsx'; // Import the new SettingsView
+import SettingsView from './views/SettingsView.tsx';
+import HelpView from './views/HelpView.tsx';
 import type { UserProfile } from '../types.ts';
 import { TEMPLATES } from '../constants.ts';
 
@@ -45,6 +46,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
             settings: <SettingsView userProfile={userProfile} refetchUserProfile={refetchUserProfile} setActiveView={handleSetActiveView} />,
             upgrade: <PendingApprovalView showLogout={false} />,
             projects: <ProjectsView />,
+            help: <HelpView />,
             admin: <AdminView />,
             personalizacao: <ThemeCustomizationView />,
             imageGenerator: <ImageGeneratorView />,
@@ -59,7 +61,7 @@ const MainDashboard: React.FC<MainDashboardProps> = ({ userProfile, refetchUserP
             unir: <UnirView />,
         };
 
-        const allowedKeys = new Set<string>(['home', 'settings', 'upgrade', 'projects']);
+        const allowedKeys = new Set<string>(['home', 'settings', 'upgrade', 'projects', 'help']);
         if (userProfile?.isAdmin) {
             allowedKeys.add('admin');
             allowedKeys.add('personalizacao');

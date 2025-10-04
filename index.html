@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AuraStudio</title>
     <link rel="manifest" href="manifest.json" />
-    <meta name="theme-color" content="#4a423b" />
+    <meta name="theme-color" content="#0D1B2A" />
     
     <!-- Performance Optimizations -->
     <link rel="preconnect" href="https://i.imgur.com">
@@ -35,8 +35,8 @@
     </script>
     <style>
       :root {
-        --color-primary: #AE8F6F;
-        --color-secondary: #D4C0A9;
+        --color-primary: #36D1DC;
+        --color-secondary: #5B86E5;
         --font-family-main: 'Inter', sans-serif;
         --font-family-handwriting: 'Caveat', cursive;
         --bg-image-url: '';
@@ -44,9 +44,9 @@
 
       /* Base variables for themes */
       :root {
-        --color-dark-base: #121212;
-        --color-light-base: #1E1E1E;
-        --color-accent-base: #2A2A2A;
+        --color-dark-base: #0D1B2A;
+        --color-light-base: #1B263B;
+        --color-accent-base: #415A77;
         --text-color-base-default: #e5e7eb;
         --text-color-muted-default: #9ca3af;
       }
@@ -76,15 +76,15 @@
       .bg-gradient-main {
         background-color: var(--color-dark);
         background-image: var(--bg-image-url), 
-                          radial-gradient(circle at top left, var(--bg-gradient-color-1, rgba(174, 143, 111, 0.15)), transparent 40%),
-                          radial-gradient(circle at bottom right, var(--bg-gradient-color-2, rgba(74, 66, 59, 0.2)), transparent 40%);
+                          radial-gradient(circle at top left, var(--bg-gradient-color-1, rgba(54, 209, 220, 0.15)), transparent 40%),
+                          radial-gradient(circle at bottom right, var(--bg-gradient-color-2, rgba(91, 134, 229, 0.2)), transparent 40%);
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
       }
       html.light-mode .bg-gradient-main {
-        --bg-gradient-color-1: rgba(174, 143, 111, 0.1);
-        --bg-gradient-color-2: rgba(74, 66, 59, 0.1);
+        --bg-gradient-color-1: rgba(54, 209, 220, 0.1);
+        --bg-gradient-color-2: rgba(91, 134, 229, 0.1);
       }
 
       /* Tailwind color class overrides */

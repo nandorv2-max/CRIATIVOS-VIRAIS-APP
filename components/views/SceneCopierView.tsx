@@ -41,8 +41,7 @@ const SceneCopierView: React.FC = () => {
             const description = await describeImage(inspirationImage);
             setGeneratedPrompt(description);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Ocorreu um erro desconhecido.";
-            setError(`Falha ao descrever a imagem de inspiração. Detalhes: ${msg}`);
+            setError("Falha ao descrever a imagem de inspiração.");
         } finally {
             setIsLoading(false);
         }

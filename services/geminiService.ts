@@ -1,14 +1,15 @@
-import GoogleGenerativeAI, { type Part, type GenerateContentResponse, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Part, GenerateContentResponse } from "@google/genai";
 import type { Prompt, ModelInstructionOptions, UserRole } from '../types.ts';
 import { delay } from '../utils/imageUtils.ts';
 import { deductVideoCredits } from './databaseService.ts';
 
-let ai: GoogleGenerativeAI | null = null;
+let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
 
 export const initializeGeminiClient = (apiKey: string) => {
     if (apiKey) {
-        ai = new GoogleGenerativeAI({ apiKey });
+        // FIX: The API key should be passed as a named parameter to the GoogleGenAI constructor.
+        ai = new GoogleGenAI({ apiKey });
         currentApiKey = apiKey;
     } else {
         ai = null;
@@ -16,7 +17,7 @@ export const initializeGeminiClient = (apiKey: string) => {
     }
 };
 
-const getClient = (): GoogleGenerativeAI => {
+const getClient = (): GoogleGenAI => {
     if (!ai) {
         throw new Error("O cliente da API não foi inicializado. Por favor, forneça uma chave de API.");
     }
@@ -50,29 +51,11 @@ export const describeImage = async (base64ImageData: string): Promise<string> =>
 
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
-
-        if (response.promptFeedback?.blockReason) {
-            throw new Error(`A descrição foi bloqueada. Motivo: ${response.promptFeedback.blockReason}.`);
-        }
-
         const text = response.text();
-        if (!text) {
-            throw new Error("O modelo não retornou uma descrição de texto.");
-        }
         return text.trim();
     } catch (error) {
         console.error("Image description failed:", error);
-        if (error instanceof Error) {
-            if (error.message.includes('API key not valid')) {
-                throw new Error("A sua chave de API do Google não é válida. Por favor, verifique-a nas Configurações.");
-            }
-            // Avoid duplicating the error message if it's already one of ours.
-            if (error.message.startsWith("A descrição foi bloqueada") || error.message.startsWith("O modelo não retornou")) {
-                throw error;
-            }
-            throw new Error(`Falha na API: ${error.message}`);
-        }
-        throw new Error("Falha ao gerar a descrição da imagem devido a um erro desconhecido.");
+        throw new Error("Failed to generate a description for the image.");
     }
 };
 
@@ -200,7 +183,7 @@ export const generateVideo = async (
         }
         
         // Use a dedicated, local client for video generation to ensure it always uses the master key.
-        const videoClient = new GoogleGenerativeAI({ apiKey: masterApiKey });
+        const videoClient = new GoogleGenAI({ apiKey: masterApiKey });
 
         let operation = await videoClient.models.generateVideos({
             model: 'veo-2.0-generate-001',
